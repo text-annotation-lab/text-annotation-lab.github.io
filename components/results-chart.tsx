@@ -2,9 +2,9 @@
 import {useState,type ComponentType} from 'react';
 import {ChartNoAxesCombined} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import type {ChartRow} from '@/lib/results-chart';
+import type {ChartSourceRow} from '@/lib/chart-model';
 
-export type ResultsChartProps={rows:ChartRow[];onInspect:(id:string)=>void;subjectLabel?:string;onSaveYears?:(years:Map<string,number|null>)=>void};
+export type ResultsChartProps={rows:ChartSourceRow[];onInspect:(id:string)=>void;subjectLabel?:string;onSaveYears?:(years:Map<string,number|null>)=>void;onSaveGroups?:(groups:Map<string,string|null>)=>void};
 export type ResultsChartDialogProps=ResultsChartProps&{open:boolean;onOpenChange:(open:boolean)=>void};
 export function ResultsChart(props:ResultsChartProps){
  const [Chart,setChart]=useState<ComponentType<ResultsChartDialogProps>|null>(null),[open,setOpen]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState('');

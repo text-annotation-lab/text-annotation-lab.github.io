@@ -1,83 +1,74 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),ts=require('../node_modules/typescript');
 function load(file){const exports={};new Function('exports','require',ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText)(exports,id=>id.startsWith('.')?load(path.join(path.dirname(file),id)+'.ts'):require(id));return exports;}
-const {chartData}=load('lib/results-chart.ts');
-const {figureDistribution,resultsFigureSvg,figureStyles,rankedDistribution,defaultFigureStyle,scoreColor}=load('lib/results-figure.ts');
-const field={key:'score',label:'Score / category'};
-const row=(value,i=0)=>({id:String(i),name:'Text '+i,status:'done',score:String(value),explanation:'PRIVATE EXPLANATION MUST NOT APPEAR'});
-const {suggestedYear,calendarAxis}=load('lib/results-chart.ts');
-for(const name of ['1789-04-30_Washington.txt','1789_Washington.txt','Washington_1789_address.txt','Washington (1789).pdf'])assert.equal(suggestedYear(name),'1789');
-for(const name of ['letters_1861–65.txt','letters_1998-02.txt','letters_1861–1865.txt','Lincoln_1861_reprinted_1905.txt','undated.txt','idA1945x.txt','id_1234567.txt'])assert.equal(suggestedYear(name),'');
-const dated=chartData([1900,1901,1950,1900].map((year,i)=>({...row(3,i),chartYear:year})),field);
-const years=calendarAxis(dated.points,0,500,600);
-assert.equal(years.x(1901)-years.x(1900),10);
-assert.deepEqual(calendarAxis(dated.points.slice(0,1),0,500,600).ticks,[1900]);
-const yearFigure=resultsFigureSvg(dated,'Tone','Tone over time','year');
-assert.equal(yearFigure.style,'year');assert.match(yearFigure.svg,/>Year<\/text>/);
-assert.deepEqual(yearFigure.distribution.bars.map(bar=>bar.count),[2,1,1]);
-assert(!yearFigure.svg.includes('PRIVATE EXPLANATION'));assert.match(yearFigure.svg,/n = 4 annotations/);
-const signed=chartData(Array.from({length:25},(_,i)=>({...row(i%3===0?-2:-3,i),prompt:'Score: integer from -3 to 3.'})),field);
-const distribution=figureDistribution(signed);
-assert.equal(distribution.kind,'scores');assert.deepEqual(distribution.bars.map(b=>b.value),[-3,-2,-1,0,1,2,3]);assert.deepEqual(distribution.bars.map(b=>b.count),[16,9,0,0,0,0,0]);
-const figure=resultsFigureSvg(signed,'Tone','Tone of the sampled texts');
-assert.equal(figure.width,1200);assert(figure.height>600);assert.match(figure.svg,/Mean = -2.64/);assert.match(figure.svg,/n = 25 annotations/);assert(!figure.svg.includes('PRIVATE EXPLANATION'));
-const exact=figureDistribution(chartData([row('1'),row('1.0',1),row('2',2)],field));assert.deepEqual(exact.bars.map(b=>b.count),[2,1]);
-const categories=chartData([row('A'),row('B',1),row('A',2),{...row('C',3),status:'pending'},row('',4)],field);
-assert.deepEqual(figureDistribution(categories).bars.map(b=>[b.label,b.count]),[['A',2],['B',1]]);
-const categoryFigure=resultsFigureSvg(categories,'Genre','Genres');assert.match(categoryFigure.svg,/2 \(67%\)/);assert.match(categoryFigure.svg,/2 results without a plotted value excluded/);assert(!categoryFigure.svg.includes('Mean ='));
-const named=chartData([{...row('',1),answerFields:['Genre','Score'],answers:{f0:'FICTION',f1:'9'}},{...row('',2),answerFields:['Score','Genre'],answers:{f0:'1',f1:'HISTORY'}}],{key:'field:Genre',name:'Genre',label:'Genre'});
-assert.deepEqual(figureDistribution(named).bars.map(b=>b.label).sort(),['FICTION','HISTORY']);
-const decimals=chartData(Array.from({length:101},(_,i)=>row(i/100,i)),field),hist=figureDistribution(decimals);
-assert.equal(hist.kind,'histogram');assert.equal(hist.bars.reduce((sum,b)=>sum+b.count,0),101);assert.equal(hist.edges[0],0);assert.equal(hist.edges.at(-1),1);assert(hist.bars.at(-1).count>0);
-const closeScores=resultsFigureSvg(chartData(Array.from({length:30},(_,i)=>row(.1234+i*.000001,i)),field),'Value','Small differences');assert(!closeScores.svg.includes('NaN'));
-const extreme=figureDistribution(chartData(Array.from({length:30},(_,i)=>row(-1e308*(1-i/29)+1e308*(i/29),i)),field));assert.equal(extreme.bars.reduce((sum,b)=>sum+b.count,0),30);assert(extreme.edges.every(Number.isFinite));
-const escaped=resultsFigureSvg(chartData([row('<script> & "test"')],field),'A & B','<script>alert(1)</script>');assert(escaped.svg.includes('&lt;script&gt;'));assert(!escaped.svg.includes('<script>'));assert(!escaped.svg.includes('NaN'));
-assert.throws(()=>figureDistribution(chartData([],field)),/no completed values/);
-assert.throws(()=>figureDistribution(chartData(Array.from({length:41},(_,i)=>row('Category '+i,i)),field)),/too many categories/);
-assert.equal(figureDistribution(chartData([row(0)],field)).bars[0].count,1);
-assert.deepEqual(figureStyles(signed).map(option=>option.value),['points','distribution','ranked']);
-assert.deepEqual(figureStyles(categories).map(option=>option.value),['distribution','stacked']);
-assert.deepEqual(figureStyles(chartData([row('ONLY')],field)).map(option=>option.value),['distribution']);
-assert.deepEqual(figureStyles(chartData(Array.from({length:9},(_,i)=>row('Category '+i,i)),field)).map(option=>option.value),['distribution']);
-const pointsFigure=resultsFigureSvg(signed,'Tone','Individual scores','points');assert.equal(pointsFigure.style,'points');assert.equal((pointsFigure.svg.match(/<circle /g)||[]).length,25);assert.match(pointsFigure.svg,/Annotation order/);assert(!pointsFigure.svg.includes('equal-width intervals'));
-const stacked=resultsFigureSvg(categories,'Genre','Genres','stacked');assert.equal(stacked.style,'stacked');assert.match(stacked.svg,/100%/);assert.match(stacked.svg,/2 \(67%\)/);assert.match(stacked.svg,/1 \(33%\)/);assert(!stacked.svg.includes('Mean ='));
-assert.equal(resultsFigureSvg(categories,'Genre','Genres','points').style,'distribution');
-assert.equal(resultsFigureSvg(signed,'Tone','Tone','stacked').style,'distribution');
-for(const dataset of [signed,categories,decimals]){
- const dist=figureDistribution(dataset);assert(dist.bars.every(bar=>bar.count===bar.points.length));
- assert.deepEqual(dist.bars.flatMap(bar=>bar.points.map(point=>point.id)).sort(),dataset.points.map(point=>point.id).sort());
- const exported=resultsFigureSvg(dataset,'Values','Values','distribution');
- assert(!exported.svg.includes('data-figure-bin'));assert(!exported.svg.includes('PRIVATE EXPLANATION'));
- const interactive=resultsFigureSvg(dataset,'Values','Values','distribution',{compact:true,interactive:true});
- assert.equal((interactive.svg.match(/data-figure-bin=/g)||[]).length,dist.bars.filter(bar=>bar.count).length);
- assert(!interactive.svg.includes('Mean ='));assert(interactive.height<exported.height);
+const m=load('lib/chart-model.ts'),f=load('lib/chart-figures.ts');
+const score={key:'score',label:'Score'},opts={latestOnly:true,combine:true},o={width:760,interactive:true,noun:'texts'},plain={...o,interactive:false};
+const row=(value,i=0,extra={})=>({id:String(i),name:'Text '+i,status:'done',score:String(value),explanation:'PRIVATE EXPLANATION MUST NOT APPEAR',...extra});
+const units=(rows,options=opts)=>m.buildUnits(rows,score,options).units;
+const scale=(min,max,type)=>({min,max,type:type||(min<0&&max>0?'diverging':'sequential'),lowLabel:'',highLabel:'',source:'declared'});
+const clean=svg=>{assert(!svg.includes('NaN'));assert(!svg.includes('Infinity'));assert(!svg.includes('undefined'));assert(!svg.includes('PRIVATE EXPLANATION'));};
+
+// Inaugural study: 60 speeches on a 1–7 scale, which only used 3–7.
+const inauguralScores={1789:7,1793:5,1797:7,1801:7,1805:7,1825:7,1829:6,1833:6,1837:7,1841:7,1845:6,1849:6,1853:7,1869:5,1873:5,1933:5,1937:5,1941:5,1945:3,1949:5,1953:6,1957:6,1961:5,1965:5,1969:5,1973:4,1977:4,1981:4,1985:4,1989:5,1993:5,1997:4,2001:4,2005:5,2009:5,2013:5,2017:3,2021:4,2025:3};
+const inaugural=Array.from({length:60},(_,i)=>1789+4*i).map((year,i)=>row(inauguralScores[year]??6,i,{name:`${year}_President.txt`,prompt:'Rate formality from 1 to 7.'}));
+const iu=units(inaugural),is=m.suggestedScale(inaugural,score,iu.map(u=>u.number));
+assert.deepEqual([is.min,is.max,is.source],[1,7,'prompt']);
+const dist=f.distributionScale(iu,is,o);clean(dist.svg);
+assert.equal(dist.picks.length,5);// Scores 3–7 have bars; 1 and 2 show 0.
+assert.equal(dist.picks.reduce((s,p)=>s+p.ids.length,0),60);
+for(const label of ['>1<','>2<','>7<'])assert(dist.svg.includes(label));
+assert.equal((dist.svg.match(/>0<\/text>/g)||[]).length,3);// two empty scores plus the count axis
+const dots=f.timeDots(iu,is,true,o);clean(dots.svg);assert.equal(dots.picks.length,60);assert.match(dots.notes[0],/smoothed average/);
+// Dots sit on their exact score: one row per score, and no vertical jitter.
+const cys=new Set(Array.from(dots.svg.matchAll(/<circle cx="[^"]+" cy="([^"]+)"/g),x=>x[1]));assert.equal(cys.size,5);
+assert(!dots.notes.some(n=>/side by side/.test(n)));
+const shares=f.timeShares(iu,is,undefined,40,o);clean(shares.svg);assert.match(shares.svg,/1760–1799/);assert.equal(shares.picks.reduce((s,p)=>s+p.ids.length,0),60);
+// Same year and score: dots sit side by side.
+const twins=f.timeDots(units([row(5,1,{name:'1900_a.txt'}),row(5,2,{name:'1900_b.txt'}),row(4,3,{name:'1901_c.txt'})]),scale(1,7),false,o);
+assert(twins.notes.some(n=>/side by side/.test(n)));
+
+// Groups: F/M obituaries on a 1–7 scale, plus a diverging scale centered on zero.
+const obits=Array.from({length:20},(_,i)=>row(i%2?(i%7)+1:((i+3)%7)+1,i,{name:`19${String(i).padStart(2,'0')}-01${i%2?'M':'F'}.txt`}));
+const ou=m.buildUnits(obits,score,{...opts,groupRule:'end'}).units;assert.deepEqual(Array.from(new Set(ou.map(u=>u.group))).sort(),['F','M']);
+const groups=f.groupsView(ou,['F','M'],scale(1,7),undefined,o);clean(groups.svg);assert.match(groups.svg,/Average, with 95% range/);assert.equal(groups.picks.reduce((s,p)=>s+p.ids.length,0),20);
+const narrow=f.groupsView(ou,['F','M'],scale(1,7),undefined,{...o,width:340});clean(narrow.svg);assert(narrow.height>groups.height);
+const div=f.groupsView(m.buildUnits(obits.map((r,i)=>({...r,score:String((i%7)-3)})),score,{...opts,groupRule:'end'}).units,['F','M'],scale(-3,3),undefined,o);clean(div.svg);assert.match(div.svg,/← lower/);
+
+// Categories: one hue for a single distribution; more than seven categories fold into “Other”.
+const cats=units(['A','B','A','C','D','E','F','G','H','I'].map((v,i)=>row(v,i,{name:`${1900+i}_x.txt`})));
+const cd=f.distributionCategories(cats,o);clean(cd.svg);assert.equal(cd.picks[0].label,'A');assert.equal(cd.picks[0].ids.length,2);assert.match(cd.svg,/2 \(20%\)/);
+assert.equal(new Set(Array.from(cd.svg.matchAll(/<rect x="[^"]+" y="[^"]+" width="[^"]+" height="[^"]+" rx="3" fill="([^"]+)"/g),x=>x[1])).size,1);
+const top7=['A','B','C','D','E','F','G'],cs=f.timeShares(cats,undefined,top7,5,o);clean(cs.svg);
+assert.equal(cs.picks.reduce((s,p)=>s+p.ids.length,0),10);assert(cs.picks.some(p=>/Other/.test(p.label)));
+
+// Runs: disagreements first.
+const runs=[['s1',[3,3]],['s2',[2,6]],['s3',[4,5]]].flatMap(([s,v])=>v.map((x,i)=>row(x,s+i,{name:'Subject '+s,subjectId:s,runNumber:i+1})));
+const rv=f.runsView(units(runs),scale(1,7),o);clean(rv.svg);assert.deepEqual(rv.picks.map(p=>p.label),['Subject s2','Subject s3','Subject s1']);assert.match(rv.svg,/✓ agree/);assert.match(rv.svg,/▲ differ by 4/);
+const rc=f.runsView(units(runs.map(r=>({...r,score:r.runNumber===1?'YES':r.subjectId==='s1'?'YES':'NO'}))),undefined,o);clean(rc.svg);
+assert.equal((rc.svg.match(/<g/g)||[]).length,(rc.svg.match(/<\/g>/g)||[]).length);
+
+// Free numbers, close and extreme values never produce NaN, Infinity, or lost results.
+for(const values of [[0],[.1234,.1235,.12351],[-1e308,1e308],Array.from({length:101},(_,i)=>i/100)]){
+ const u=units(values.map((v,i)=>row(v,i))),fig=f.distributionNumbers(u,o);clean(fig.svg);assert.equal(fig.picks.reduce((s,p)=>s+p.ids.length,0),values.length);
 }
-assert.equal((resultsFigureSvg(categories,'Genre','Genres','stacked',{interactive:true}).svg.match(/tabindex="0"/g)||[]).length,2);
-const rankedData=chartData([row(10,0),row(-2,1),row(2,2),row(-10,3),row(-2,4),{...row(99,5),status:'pending'}],field);
-assert.deepEqual(rankedDistribution(rankedData).bars.map(bar=>bar.points[0].id),['3','1','4','2','0']);
-assert.deepEqual(rankedData.points.map(point=>point.id),['0','1','2','3','4']); // Sorting never changes the table's order.
-assert.deepEqual(rankedDistribution(rankedData,'','highest').bars.map(bar=>bar.points[0].id),['0','2','1','4','3']);
-assert.deepEqual(rankedDistribution(rankedData,'  TEXT 4 ','highest').bars.map(bar=>bar.points[0].id),['4']);
-assert.equal(rankedDistribution(rankedData,'missing').bars.length,0);
-const large=chartData(Array.from({length:5000},(_,i)=>row(i%7,i)),field);
-assert.equal(defaultFigureStyle(large),'distribution');assert.equal(defaultFigureStyle(signed),'points');assert.equal(defaultFigureStyle(categories),'distribution');
-const subset=resultsFigureSvg(large,'Score','Selected results','ranked',{rankedOrder:'highest',rankedScope:'page',rankedPage:1});
-assert.equal((subset.svg.match(/<circle /g)||[]).length,15);assert.match(subset.svg,/15 of 5,000 results/);assert.match(subset.svg,/Results 16–30 of 5000 in score order/);assert.match(subset.svg,/Highest first/);assert(!subset.svg.includes('Mean ='));
-const filtered=resultsFigureSvg(rankedData,'Score','Filtered results','ranked',{rankedQuery:'text 4'});assert.match(filtered.svg,/1 of 5 results/);assert.match(filtered.svg,/Name filter: text 4/);assert.equal((filtered.svg.match(/<circle /g)||[]).length,1);
-assert.equal(new Set([0,1,2,3,4,5,6].map(scoreColor(large))).size,1);
-const colored=resultsFigureSvg(large,'Score','Scores','distribution');assert.match(colored.svg,/#344f6c/);assert(!colored.svg.includes('#94b6c6'));assert(!colored.svg.includes('#1d536e'));assert(!colored.svg.includes('NaN'));
-const ranked=resultsFigureSvg(signed,'Score','Ranked scores','ranked');
-assert.equal((ranked.svg.match(/<circle /g)||[]).length,25);assert(!ranked.svg.includes('PRIVATE EXPLANATION'));assert(!ranked.svg.includes('data-figure-bin'));
-const firstRanked=resultsFigureSvg(signed,'Score','Ranked scores','ranked',{compact:true,interactive:true,rankedPage:0});
-const lastRanked=resultsFigureSvg(signed,'Score','Ranked scores','ranked',{compact:true,interactive:true,rankedPage:1});
-assert.equal((firstRanked.svg.match(/data-figure-bin=/g)||[]).length,15);assert.equal((lastRanked.svg.match(/data-figure-bin=/g)||[]).length,10);
-assert.match(lastRanked.svg,/data-figure-bin="15"/);assert.match(lastRanked.svg,/data-figure-bin="24"/);
-assert.equal(lastRanked.distribution.bars[24].points[0].id,'24');
-assert.equal(resultsFigureSvg(categories,'Genre','Genres','ranked').style,'distribution');
-assert.throws(()=>resultsFigureSvg(decimals,'Score','Ranked scores','ranked'),/too many named results/);
-assert.equal((resultsFigureSvg(decimals,'Score','Ranked scores','ranked',{compact:true,interactive:true,rankedPage:6}).svg.match(/<circle /g)||[]).length,11);
-for(const values of [[0],[-1e308,1e308],[.000001,.000002],[-3,-2]]){
- const svg=resultsFigureSvg(chartData(values.map((value,i)=>({...row(value,i),name:'<img onerror="bad"> & sample'})),field),'Score','Ranked scores','ranked').svg;
- assert(!svg.includes('NaN'));assert(!svg.includes('Infinity'));assert(!svg.includes('<img'));assert(svg.includes('&lt;img'));
- const coords=Array.from(svg.matchAll(/<circle cx="([^"]+)"/g),match=>Number(match[1]));assert(coords.every(Number.isFinite));assert(coords.every((x,i)=>i===0||x>=coords[i-1]));
+
+// Every view keeps its tags balanced and escapes text.
+const evil=units([row('<script> & "x"',1,{name:'<img onerror="bad"> & 1900.txt'}),row('B',2,{name:'1901_b.txt'})]);
+for(const fig of [f.distributionCategories(evil,o),f.timeShares(evil,undefined,['<script> & "x"','B'],5,o),f.groupsView(evil.map(u=>({...u,group:'G<1>'})),['G<1>'],undefined,['<script> & "x"','B'],o)]){
+ clean(fig.svg);assert(!fig.svg.includes('<script>'));assert(!fig.svg.includes('<img'));assert.equal((fig.svg.match(/<g[ >]/g)||[]).length,(fig.svg.match(/<\/g>/g)||[]).length);
 }
-console.log('PASS: figure counts, full rating scales, numeric normalization, categories, exclusions, named fields, histogram endpoints, close and extreme values, and safe SVG text.');
+
+// Exported figures: title, caption, legend, notes, white background; no interactive marks when drawn for export.
+const exported=f.exportFigure(f.distributionScale(iu,is,plain),'Inaugural addresses became plainer & shorter','Formality for 60 texts. Scale 1 to 7.',[{label:'Low',color:'#86b6ef'}]);
+clean(exported.svg);assert.match(exported.svg,/<title>Inaugural addresses became plainer &amp; shorter<\/title>/);assert.match(exported.svg,/Formality for 60 texts/);assert.match(exported.svg,/fill="#ffffff"/);assert(!exported.svg.includes('data-pick'));assert(!exported.svg.includes('pick-hit'));
+assert(exported.width>760&&exported.height>dist.height);
+assert.equal(f.fileName('Tone: over time / 1789–2025','png'),'Tone-over-time-17892025.png');assert.equal(f.fileName('???','svg'),'results-figure.svg');
+
+// Colors: a single blue ramp for low-to-high scales; gray at the neutral point of a diverging scale.
+assert.equal(f.scaleColor(scale(1,7),1),'#86b6ef');assert.equal(f.scaleColor(scale(1,7),7),'#082650');assert.equal(f.scaleColor(scale(-3,3),0),'#c3c2b7');
+assert.notEqual(f.scaleColor(scale(-3,3),-3),f.scaleColor(scale(-3,3),3));assert.equal(f.scaleLabel(scale(-3,3),2),'+2');assert.equal(f.scaleLabel(scale(-3,3),-2),'−2');
+
+// A large corpus draws quickly with exact counts.
+const large=units(Array.from({length:5000},(_,i)=>row(i%7+1,i,{name:`${1800+i%200}_t${i}.txt`})));
+const started=Date.now(),ld=f.distributionScale(large,scale(1,7),o),lt=f.timeDots(large,scale(1,7),true,o);assert(Date.now()-started<4000);
+assert.equal(ld.picks.reduce((s,p)=>s+p.ids.length,0),5000);clean(lt.svg);
+console.log('PASS: whole-scale distributions, exact dot positions, trend and periods, groups, categories with Other, run agreement, extreme values, safe SVG text, figure export, colors, and large sets.');
