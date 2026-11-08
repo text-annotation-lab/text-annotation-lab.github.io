@@ -250,3 +250,6 @@ header{gap:24px}
 @media(max-width:600px){.study-controls .study-menu-trigger{max-width:none}}
 @media(min-width:1350px) and (max-width:1439px){.study-tabs:has(.start-hint) [data-slot=tabs-trigger]{padding-left:13px;padding-right:13px}}
 .intro-video{margin:24px 0 8px}.intro-video video{display:block;width:100%;aspect-ratio:16/9;background:#0f2238;border-radius:12px}.intro-video figcaption{font-size:14px;color:#64728b;margin-top:8px}
+/* Keep the autosave status a fixed width so the Studies button never shifts while a run saves. */
+.header-study-actions .saved svg{flex-shrink:0}
+@media(min-width:781px){.header-study-actions .saved{min-width:14.5em;white-space:nowrap;align-items:center}}
