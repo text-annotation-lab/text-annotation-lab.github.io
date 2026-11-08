@@ -6,6 +6,14 @@ export function GetStarted() {
     <h2 id="get-started" tabIndex={-1}>Get started</h2>
     <p>Follow these steps to set up your account, try a small pilot, and save your results.</p>
 
+    <figure className="intro-video">
+      <video controls preload="metadata" playsInline poster="/video/text-annotation-lab-walkthrough.jpg" aria-label="Introduction to the Text Annotation Lab (3.5 minutes)">
+        <source src="/video/text-annotation-lab-walkthrough.mp4" type="video/mp4" />
+        <a href="/video/text-annotation-lab-walkthrough.mp4">Download the introduction video (MP4)</a>
+      </video>
+      <figcaption>New to the lab? This 3½-minute introduction shows how it works.</figcaption>
+    </figure>
+
     <h2 className="mt-8">Set up your API key</h2>
     <p>An API key connects the lab to the account that pays for your annotations. If you already have a key, including one from your instructor, go straight to step 3.</p>
     <ol className="teaching-tips">
