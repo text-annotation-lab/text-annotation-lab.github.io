@@ -1,9 +1,10 @@
+import {allowedOrigin} from '@/lib/request-guards';
 import {providerError,providerJson} from '@/lib/provider-errors';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const amount=(value:unknown):value is number=>typeof value==='number'&&Number.isFinite(value)&&value>=0;
 // The ordinary student key can read only its own allowance. Never query account credits.
 export async function POST(request:Request){
- if(request.headers.get('origin')!==new URL(request.url).origin)return reply({error:'Request origin not allowed.'},403);
+ if(!allowedOrigin(request))return reply({error:'Request origin not allowed.'},403);
  const auth=request.headers.get('authorization')||'';
  if(!/^Bearer sk-or-[\w-]+$/.test(auth))return reply({error:'Enter an OpenRouter API key to check its allowance.'},401);
  try{

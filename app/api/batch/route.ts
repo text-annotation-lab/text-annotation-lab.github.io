@@ -1,3 +1,4 @@
+import {allowedOrigin,requestBody} from '@/lib/request-guards';
 import {readAnswerFields} from '@/lib/answer-fields';
 import {PROVIDERS,reasoningOptions,GEMINI_ENABLED,type Provider} from '@/lib/providers';
 import {supportedFile} from '@/lib/extract-text';
@@ -7,12 +8,12 @@ import {MAX_BATCH_ITEMS,MAX_BATCH_SOURCE_BYTES,MAX_BATCH_REQUEST_BYTES} from '@/
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export async function POST(request:Request){
  try{
-  if(request.headers.get('origin')!==new URL(request.url).origin)return reply({error:'Request origin not allowed.'},403);
+  if(!allowedOrigin(request))return reply({error:'Request origin not allowed.'},403);
   const auth=request.headers.get('authorization')||'',key=auth.startsWith('Bearer ')?auth.slice(7):'';
   if(!key||!/^[\x21-\x7e]+$/.test(key))return reply({error:'Enter your provider’s API key.'},401);
   if(Number(request.headers.get('content-length')||0)>MAX_BATCH_REQUEST_BYTES)return reply({error:'This batch upload exceeds 54 MB. Submit fewer or smaller items together.'},413);
   let bytes=0;
-  const limited=request.body?.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,controller){bytes+=chunk.byteLength;if(bytes>MAX_BATCH_REQUEST_BYTES)throw new BatchError('This batch upload exceeds 54 MB. Submit fewer or smaller items together.',413);controller.enqueue(chunk);}}));
+  const limited=(await requestBody(request))?.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,controller){bytes+=chunk.byteLength;if(bytes>MAX_BATCH_REQUEST_BYTES)throw new BatchError('This batch upload exceeds 54 MB. Submit fewer or smaller items together.',413);controller.enqueue(chunk);}}));
   let f:FormData;try{f=await new Response(limited,{headers:{'Content-Type':request.headers.get('content-type')||''}}).formData();}catch(error){if(bytes>MAX_BATCH_REQUEST_BYTES)throw new BatchError('This batch upload exceeds 54 MB. Submit fewer or smaller items together.',413);throw error;}
   const provider=f.get('provider') as Provider,action=f.get('action');
   if(provider==='openrouter')return reply({error:'This operation is not available through OpenRouter. Use Instant processing and the rough cost estimate.'},400);

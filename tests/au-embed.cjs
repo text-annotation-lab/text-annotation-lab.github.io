@@ -13,7 +13,7 @@ assert(header.inert);assert(!cookies.inert);assert(!attributes.has('data-ready')
 cookieEvents.click();assert.match(status.textContent,/preferences are unavailable/);
 assert(!/\bsrc=/.test(html.replace(/data-src=/g,'')),'Consent continues to control the iframe source');
 assert.match(html,/<iframe\b[^>]*data-cookiescript="accepted"[^>]*data-cookiecategory="functionality"/,'CookieScript must recognize the consent-gated iframe');
-const ready={origin:'https://text-annotation-lab.jenskc1987.chatgpt.site',source:frame.contentWindow,data:{type:'text-annotation-lab:ready'}};
+const ready={origin:'https://text-annotation-lab.github.io',source:frame.contentWindow,data:{type:'text-annotation-lab:ready'}};
 events.message({...ready,origin:'https://wrong.example'});assert(!attributes.has('data-ready'));
 events.message({...ready,source:{}});assert(!attributes.has('data-ready'));
 for(const callback of timers.values())callback();assert.match(status.textContent,/not finished loading/);

@@ -17,12 +17,12 @@ html:has(#asca-annotation-shell),body:has(#asca-annotation-shell){margin:0!impor
   <section id="asca-annotation-fallback" aria-labelledby="asca-annotation-title">
     <h1 id="asca-annotation-title">Text Annotation Lab</h1>
     <p id="asca-annotation-status" role="status">Loading the Lab…</p>
-    <p>If the Lab does not appear, check whether functionality cookies are allowed in your AU cookie preferences, or <a href="https://text-annotation-lab.jenskc1987.chatgpt.site/">open the Lab directly</a>.</p>
+    <p>If the Lab does not appear, check whether functionality cookies are allowed in your AU cookie preferences, or <a href="https://text-annotation-lab.github.io/">open the Lab directly</a>.</p>
     <p><a href="https://international.au.dk/cookie-policy/">AU cookie information</a></p>
     <p class="saving-note">The direct address may have a separate set of saved studies. To move work between addresses, download a study backup from Studies and import it at the other address.</p>
     <noscript><p>JavaScript must be enabled to use the Lab.</p></noscript>
   </section>
-  <iframe title="Text Annotation Lab" inert allow="clipboard-write" referrerpolicy="strict-origin-when-cross-origin" data-cookiescript="accepted" data-cookiecategory="functionality" data-src="https://text-annotation-lab.jenskc1987.chatgpt.site/"></iframe>
+  <iframe title="Text Annotation Lab" inert allow="clipboard-write" referrerpolicy="strict-origin-when-cross-origin" data-cookiescript="accepted" data-cookiecategory="functionality" data-src="https://text-annotation-lab.github.io/"></iframe>
   <button type="button" id="asca-annotation-cookies">AU cookie preferences</button>
 </div>
 <script>
@@ -30,7 +30,7 @@ html:has(#asca-annotation-shell),body:has(#asca-annotation-shell){margin:0!impor
   const shell=document.getElementById('asca-annotation-shell');
   const frame=shell.querySelector('iframe');
   const status=document.getElementById('asca-annotation-status');
-  const origin='https://text-annotation-lab.jenskc1987.chatgpt.site';
+  const origin='https://text-annotation-lab.github.io';
   let timer;
   document.getElementById('asca-annotation-cookies').addEventListener('click',()=>{
     if(window.CookieScript?.instance?.show)window.CookieScript.instance.show();

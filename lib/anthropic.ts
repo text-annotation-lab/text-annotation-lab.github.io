@@ -20,7 +20,7 @@ export async function annotateAnthropic(file:File,prompt:string,model:string,eff
   const haiku=model.startsWith('claude-haiku-4-5');
   const thinking=haiku?(effort==='off'?{type:'disabled'}:{type:'enabled',budget_tokens:Number(effort)}):{type:'adaptive'};
   const r=await fetch('https://api.anthropic.com/v1/messages',{
-   method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','Content-Type':'application/json'},signal:AbortSignal.timeout(180000),
+   method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true','Content-Type':'application/json'},signal:AbortSignal.timeout(180000),
    body:JSON.stringify({model,max_tokens:12000,thinking,
     system:prompt,
     messages:[{role:'user',content}],output_config:{...(!haiku?{effort}:{}),format:{type:'json_schema',schema:annotationSchema(answerFields,false,schemaPrompt,knowledge)}}
