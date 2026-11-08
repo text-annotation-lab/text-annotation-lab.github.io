@@ -1,6 +1,10 @@
+import {useEffect,useState} from 'react';
 import {TabsContent} from '@/components/ui/tabs';
 
 export function GetStarted() {
+  // Inside an embed without fullscreen permission, the player's fullscreen button is missing or does nothing.
+  const [canFullscreen,setCanFullscreen]=useState(true);
+  useEffect(()=>{setCanFullscreen(document.fullscreenEnabled!==false);},[]);
   return <TabsContent value="get-started" className="reading-panel panel">
     <p className="eyebrow">YOUR FIRST ANNOTATION</p>
     <h2 id="get-started" tabIndex={-1}>Get started</h2>
@@ -11,7 +15,7 @@ export function GetStarted() {
         <source src="/video/text-annotation-lab-walkthrough.mp4" type="video/mp4" />
         <a href="/video/text-annotation-lab-walkthrough.mp4">Download the introduction video (MP4)</a>
       </video>
-      <figcaption>Introduction to the lab · 3½ minutes</figcaption>
+      <figcaption>Introduction to the lab · 3½ minutes{!canFullscreen&&<> · <a href="/video/text-annotation-lab-walkthrough.mp4" target="_blank" rel="noreferrer">Watch full screen ↗</a></>}</figcaption>
     </figure>
 
     <h2 className="mt-8">Set up your API key</h2>
