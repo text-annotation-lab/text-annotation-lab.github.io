@@ -11,15 +11,19 @@ html:has(#asca-annotation-shell),body:has(#asca-annotation-shell){margin:0!impor
 #asca-annotation-fallback a:focus-visible,#asca-annotation-cookies:focus-visible{outline:2px solid #003d73;outline-offset:4px}
 #asca-annotation-cookies{position:fixed;right:16px;bottom:16px;z-index:1;border:1px solid #52617c;border-radius:4px;background:#faf9f6;color:#003d73;padding:8px 12px;font:14px/1.4 Arial,sans-serif;cursor:pointer}
 #asca-annotation-fallback .saving-note{font-size:14px;color:#52617c}
+#asca-annotation-fallback .open-lab{display:inline-block;margin:8px 0 28px;padding:14px 26px;border-radius:8px;background:#003d73;color:#fff;font:600 18px/1.3 Arial,sans-serif;text-decoration:none}
+#asca-annotation-fallback .open-lab:hover{background:#00315c}
+#asca-annotation-fallback .open-lab:focus-visible{outline:2px solid #003d73;outline-offset:4px}
 #c94867,#c94870,#c94873,#c94876,#c94879,#c94882{display:none!important}
 </style>
 <div id="asca-annotation-shell">
   <section id="asca-annotation-fallback" aria-labelledby="asca-annotation-title">
     <h1 id="asca-annotation-title">Text Annotation Lab</h1>
     <p id="asca-annotation-status" role="status">Loading the Lab…</p>
-    <p>If the Lab does not appear, check whether functionality cookies are allowed in your AU cookie preferences, or <a href="https://text-annotation-lab.github.io/">open the Lab directly</a>.</p>
+    <p><a class="open-lab" href="https://text-annotation-lab.github.io/">Open the Lab →</a></p>
+    <p>The Lab appears on this page when functionality cookies are allowed in your AU cookie preferences. The button above opens the same Lab at its own address and works either way.</p>
     <p><a href="https://international.au.dk/cookie-policy/">AU cookie information</a></p>
-    <p class="saving-note">The direct address may have a separate set of saved studies. To move work between addresses, download a study backup from Studies and import it at the other address.</p>
+    <p class="saving-note">Studies are saved separately at each address. To move work between them, download a study backup from Studies and import it at the other address.</p>
     <noscript><p>JavaScript must be enabled to use the Lab.</p></noscript>
   </section>
   <iframe title="Text Annotation Lab" inert allow="clipboard-write" referrerpolicy="strict-origin-when-cross-origin" data-cookiescript="accepted" data-cookiecategory="functionality" data-src="https://text-annotation-lab.github.io/"></iframe>
@@ -34,14 +38,14 @@ html:has(#asca-annotation-shell),body:has(#asca-annotation-shell){margin:0!impor
   let timer;
   document.getElementById('asca-annotation-cookies').addEventListener('click',()=>{
     if(window.CookieScript?.instance?.show)window.CookieScript.instance.show();
-    else status.textContent='AU cookie preferences are unavailable. Reload this page to try again, or open the Lab directly.';
+    else status.textContent='AU cookie preferences are unavailable. Reload this page to try again, or use Open the Lab.';
   });
   function waiting(){
     shell.removeAttribute('data-ready');
     frame.inert=true;
     status.textContent='Loading the Lab…';
     clearTimeout(timer);
-    timer=setTimeout(()=>{status.textContent='The Lab has not finished loading. You can use the options below.';},15000);
+    timer=setTimeout(()=>{status.textContent='The Lab has not finished loading here. Use Open the Lab to go straight to it.';},15000);
   }
   window.addEventListener('message',event=>{
     if(event.origin!==origin||event.source!==frame.contentWindow||event.data?.type!=='text-annotation-lab:ready')return;
