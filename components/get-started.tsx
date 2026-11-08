@@ -11,7 +11,7 @@ export function GetStarted() {
         <source src="/video/text-annotation-lab-walkthrough.mp4" type="video/mp4" />
         <a href="/video/text-annotation-lab-walkthrough.mp4">Download the introduction video (MP4)</a>
       </video>
-      <figcaption>Introduction to the lab · 3½ minutes · The step-by-step guide continues below.</figcaption>
+      <figcaption>Introduction to the lab · 3½ minutes</figcaption>
     </figure>
 
     <h2 className="mt-8">Set up your API key</h2>
