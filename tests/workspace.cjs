@@ -68,7 +68,8 @@ function harness(initial,save=async()=>{},fetcher=async()=>Response.json({score:
  const headerText=()=>header.text(header.find(n=>n.type==='header'));
  assert.match(headerText(),/Preparing workspace/);
  knowledge().onSaveStateChange('saved');await header.flush();assert.match(headerText(),/Autosaved in this browser/);
- knowledge().onSaveStateChange('saving');await header.flush();assert.match(headerText(),/Autosaving/);assert(!headerText().includes('Autosaved in this browser'));
+ knowledge().onSaveStateChange('saving');await header.flush();assert.match(headerText(),/Autosaved in this browser/,'A quick save must not flicker the header');
+ knowledge().onSaveStateChange('saved');await header.flush();knowledge().onSaveStateChange('saving');await header.flush();await new Promise(resolve=>setTimeout(resolve,1600));await header.flush();assert.match(headerText(),/Autosaving/);assert(!headerText().includes('Autosaved in this browser'));
  knowledge().onSaveStateChange('error');await header.flush();assert.match(headerText(),/Working copy not saved/);
  knowledge().onSaveStateChange('saved');await header.flush();assert.match(headerText(),/Autosaved in this browser/);
  // Busy/ready state is independent of persistence: merely running a task does not report a save failure.
