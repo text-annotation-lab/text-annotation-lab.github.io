@@ -126,7 +126,7 @@ function ChartBody({rows,subjectLabel,onInspect,onSaveYears,onSaveGroups}:{rows:
     figure=groupsView(grouped,groupNames,kind==='scale'?scale:undefined,categories,o);if(categories)legend=categoryLegend;
     if(kind==='scale'&&scale){const avgs=groupNames.map(g=>({g,m:mean(grouped.filter(u=>u.group===g).map(u=>u.number!))}));
      stats=avgs.slice(0,4).map(({g,m})=>[`${g}, average`,formatNumber(m,2)] as [string,ReactNode]);
-     if(avgs.length===2)stats.push(['Difference in averages',formatNumber(avgs[1].m-avgs[0].m,2),'points']);
+     if(avgs.length===2)stats.push([`${avgs[1].g} minus ${avgs[0].g}`,formatNumber(avgs[1].m-avgs[0].m,2),'points']);
      read=`Each bar is one group and adds up to 100%${scale.type==='diverging'?', centered on the neutral score, so lower scores extend left and higher ones right':''}. ${width<620?'Below':'On the right'}, each dot is a group’s average; the short bar shows how much it could shift with a different sample of ${noun} (a 95% range). If two ranges don’t overlap, the difference is unlikely to be chance alone; ranges that overlap a little can still differ. Neither shows whether the model judged correctly.`;}
     else{stats=groupNames.slice(0,4).map(g=>[g,`${grouped.filter(u=>u.group===g).length} ${noun}`] as [string,ReactNode]);read=`Each bar is one group and adds up to 100%, so groups of different sizes can be compared. Select a segment to read those ${noun}.`;}
    }
@@ -201,8 +201,8 @@ function ChartBody({rows,subjectLabel,onInspect,onSaveYears,onSaveGroups}:{rows:
 function RankedList({units,page,pages,onPage,query,onQuery,order,onOrder,scale,kind,noun,onInspect,explanation}:{units:Unit[];page:number;pages:number;onPage:(p:number)=>void;query:string;onQuery:(q:string)=>void;order:'highest'|'lowest';onOrder:(o:'highest'|'lowest')=>void;scale?:Scale;kind:string;noun:string;onInspect:(id:string)=>void;explanation:(u:Unit)=>string}){
  return <div className="chart-list">
   <div className="chart-list-controls"><input type="search" aria-label={`Find ${noun} by name`} placeholder={`Find a ${noun.replace(/s$/,'')}…`} value={query} maxLength={140} onChange={e=>onQuery(e.target.value)}/>{kind==='scale'&&<select aria-label="Order" value={order} onChange={e=>onOrder(e.target.value as 'highest'|'lowest')}><option value="highest">Highest first</option><option value="lowest">Lowest first</option></select>}</div>
-  {!units.length?<p className="chart-empty">No matching {noun}. Try another name.</p>:<ol className="chart-list-rows" start={page*25+1}>{units.slice(page*25,page*25+25).map(unit=><li key={unit.key}>
-   <span className="chart-chip" style={scale&&unit.number!==null?{background:scaleColor(scale,Math.round(unit.number))}:undefined} data-dark={scale&&unit.number!==null?String(isDark(scaleColor(scale,Math.round(unit.number)))):undefined}>{kind==='text'?'':unit.value}</span>
+  {!units.length?<p className="chart-empty">No matching {noun}. Try another name.</p>:<ol className={'chart-list-rows'+(kind==='text'?' plain':'')} start={page*25+1}>{units.slice(page*25,page*25+25).map(unit=><li key={unit.key}>
+   {kind!=='text'&&<span className="chart-chip" style={scale&&unit.number!==null?{background:scaleColor(scale,Math.round(unit.number))}:undefined} data-dark={scale&&unit.number!==null?String(isDark(scaleColor(scale,Math.round(unit.number)))):undefined}>{unit.value}</span>}
    <div><strong>{unit.name}</strong>{kind==='text'?<p>{excerpt(unit.value,300)}</p>:explanation(unit)&&<p>{excerpt(explanation(unit),180)}</p>}</div>
    <button type="button" className="chart-link" onClick={()=>onInspect(unit.ids[0])}>Open →</button></li>)}</ol>}
   {pages>1&&<div className="chart-pages"><Button variant="outline" disabled={page===0} onClick={()=>onPage(page-1)}>Previous</Button><span>{page*25+1}–{Math.min(units.length,page*25+25)} of {units.length}</span><Button variant="outline" disabled={page===pages-1} onClick={()=>onPage(page+1)}>Next</Button></div>}

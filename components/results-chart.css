@@ -102,7 +102,7 @@
 .chart-list-rows li strong{overflow-wrap:anywhere}
 .chart-list-rows li p{margin:4px 0 0;color:#52617c;font-size:13px;line-height:1.5}
 .chart-chip{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:26px;padding:0 8px;border-radius:5px;background:#eef2f7;color:#1b2942;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.chart-chip:empty{display:none}
+.chart-list-rows.plain li{grid-template-columns:minmax(0,1fr) auto}
 .chart-chip[data-dark=true]{color:#fff}
 
 .chart-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:18px;padding-top:14px;border-top:1px solid #e7ecf2}
@@ -145,6 +145,8 @@
  .chart-list-controls select{width:100%}
  .chart-list-rows li{grid-template-columns:auto minmax(0,1fr)}
  .chart-list-rows li>.chart-link{grid-column:2}
+ .chart-list-rows.plain li{grid-template-columns:minmax(0,1fr)}
+ .chart-list-rows.plain li>.chart-link{grid-column:1}
  .chart-foot>*{flex:1}
  .chart-download{flex-basis:100%}
  .chart-download button{flex:1}

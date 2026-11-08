@@ -239,7 +239,8 @@ export function smoothTrend(points:{year:number;value:number}[],span:number){
  return out;
 }
 export function trendWindow(years:number[]){
- const first=Math.min(...years),last=Math.max(...years);return Math.max(1,(last-first)/16);
+ // Wider with few texts, so a handful of points gives a gentle line rather than one that chases each dot.
+ const first=Math.min(...years),last=Math.max(...years);return Math.max(1,(last-first)/16,1.5*(last-first)/Math.max(1,years.length));
 }
 
 export const periodLengths=[5,10,20,25,40,50,100];
