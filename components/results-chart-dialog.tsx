@@ -1,152 +1,259 @@
 'use client';
-import {useEffect,useId,useMemo,useRef,useState} from 'react';
+import {useEffect,useId,useMemo,useRef,useState,type ReactNode} from 'react';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/ui/dialog';
 import {Button} from '@/components/ui/button';
-import {chartFields,chartData,validChartYear,numericChartLayout,type ChartPoint,type ChartCategory,type ChartRow,type ChartScale} from '@/lib/results-chart';
 import type {ResultsChartDialogProps} from './results-chart';
-import {ResultsFigure} from './results-figure';
-import {ChartYearReview} from './chart-year-review';
-import {resultsFigureSvg,figureStyles,rankedPageSize,rankedDistribution,defaultFigureStyle,type RankedOptions,type FigureStyle,type FigureData} from '@/lib/results-figure';
+import {ChartReview} from './chart-review';
+import {buildUnits,chartFieldList,formatNumber,groupableFields,mean,median,mostCommon,periodLengths,settingsSummary,suggestedGroupRule,suggestedPeriodLength,suggestedRowGroup,suggestedRowYear,suggestedScale,type ChartSourceRow,type Field,type GroupRule,type Scale,type Unit} from '@/lib/chart-model';
+import {OTHER,categoryColors,crowdedDots,distributionCategories,distributionNumbers,distributionScale,downloadPng,downloadSvg,exportFigure,groupsView,runsView,scaleColor,scaleLabel,scalePoints,timeDots,timeShares,type Figure} from '@/lib/chart-figures';
 import './results-chart.css';
 
-const numberLabel=(value:number)=>Math.abs(value)>=1e6||(value!==0&&Math.abs(value)<.001)?value.toExponential(2):new Intl.NumberFormat('en-US',{maximumSignificantDigits:5}).format(value);
-const excerpt=(value:string)=>value.length>180?value.slice(0,177)+'…':value;
+type Tab='distribution'|'time'|'groups'|'runs'|'list';
+const tabLabels:Record<Tab,string>={distribution:'Distribution',time:'Over time',groups:'Compare groups',runs:'Run agreement',list:'Ranked list'};
+const excerpt=(value:string,length=220)=>value.length>length?value.slice(0,length-1)+'…':value;
 
-function NumericChart({points,total,label,subjectLabel,onInspect,scale}:{points:ChartPoint[];total:number;label:string;subjectLabel:string;onInspect:(id:string)=>void;scale?:ChartScale}){
- const container=useRef<HTMLDivElement>(null),svg=useRef<SVGSVGElement>(null);
- const [width,setWidth]=useState(680),[hovered,setHovered]=useState<number|null>(null),[focused,setFocused]=useState(0),[selected,setSelected]=useState<number|null>(null);
- const instructions=useId();
- useEffect(()=>{const element=container.current;if(!element)return;const resize=()=>setWidth(Math.max(280,element.clientWidth));resize();const observer=new ResizeObserver(resize);observer.observe(element);return()=>observer.disconnect();},[]);
- useEffect(()=>{
-  const element=container.current;if(!element)return;
-  const document=element.ownerDocument;
-  const dismiss=(event:PointerEvent)=>{
-   const target=event.target;
-   if(!(target instanceof Element)||!element.closest('[role="dialog"]')?.contains(target))return;
-   if(element.contains(target)&&target.closest('.chart-dot,.chart-details'))return;
-   // Return focus before removing a detail card that contains the active button.
-   if(element.contains(document.activeElement))svg.current?.focus({preventScroll:true});
-   setSelected(null);setHovered(null);
-  };
-  document.addEventListener('pointerdown',dismiss);
-  return()=>document.removeEventListener('pointerdown',dismiss);
- },[]);
- const layout=useMemo(()=>numericChartLayout(points,total,width,scale),[points,total,width,scale]);
- const activeIndex=hovered??selected,active=activeIndex===null?undefined:points[activeIndex],pinned=activeIndex!==null&&activeIndex===selected;
- const cardWidth=Math.min(pinned?440:260,width-16);
- return <div className="results-chart-plot" ref={container}>
-  <p id={instructions} className="sr-only">Use Left and Right Arrow to explore points, or Home and End to jump to the first and last. Press Enter to keep a point's details open in the chart.</p>
-  <svg ref={svg} tabIndex={-1} viewBox={`0 0 ${width} 332`} width="100%" height="332" role="group" aria-label={`${label} by ${subjectLabel.toLowerCase()} order`} aria-describedby={instructions}>
-   {layout.ticks.map((tick,index)=><g key={index} aria-hidden="true"><line x1={layout.left} x2={layout.right} y1={tick.y} y2={tick.y} className={tick.value===0?'chart-grid chart-zero':'chart-grid'}/><text x={layout.left-12} y={tick.y+4} textAnchor="end">{numberLabel(tick.value)}</text></g>)}
-   <line x1={layout.left} x2={layout.right} y1={layout.bottom+16} y2={layout.bottom+16} className="chart-axis" aria-hidden="true"/>
-   {layout.xTicks.map(order=><g key={order} aria-hidden="true"><line x1={layout.x(order)} x2={layout.x(order)} y1={layout.bottom+16} y2={layout.bottom+20} className="chart-axis"/><text x={layout.x(order)} y={302} textAnchor="middle">{order}</text></g>)}
-   <text x={(layout.left+layout.right)/2} y={326} textAnchor="middle" aria-hidden="true">{subjectLabel} order</text>
-   {points.map((point,index)=><circle key={point.id} data-point-index={index} cx={layout.x(point.order)} cy={layout.y(point.number!)} r={activeIndex===index?7:5} className="chart-dot" role="button" tabIndex={focused===index?0:-1} aria-pressed={selected===index} aria-label={`${point.name}: ${point.value}. Show details.`} onMouseEnter={()=>setHovered(index)} onMouseLeave={()=>setHovered(null)} onFocus={()=>{setFocused(index);setHovered(index);}} onBlur={()=>setHovered(null)} onClick={()=>setSelected(index)} onKeyDown={event=>{
-    if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelected(index);return;}
-    const next=event.key==='Home'?0:event.key==='End'?points.length-1:event.key==='ArrowRight'||event.key==='ArrowDown'?Math.min(points.length-1,index+1):event.key==='ArrowLeft'||event.key==='ArrowUp'?Math.max(0,index-1):undefined;
-    if(next!==undefined){event.preventDefault();setFocused(next);svg.current?.querySelector<SVGCircleElement>(`[data-point-index="${next}"]`)?.focus();}
-   }}/>) }
-  </svg>
-  {active&&<div className={`chart-tooltip${pinned?' chart-details':''}`} role={pinned?'region':'tooltip'} aria-label={pinned?'Selected point details':undefined} style={{width:cardWidth,left:Math.min(Math.max(8,layout.x(active.order)-cardWidth/2),Math.max(8,width-cardWidth-8)),top:pinned?8:layout.y(active.number!)>135?16:164}}><strong>{active.name}</strong><span>{label}: {active.value}</span>{active.explanation&&<p>{pinned?active.explanation:excerpt(active.explanation)}</p>}{pinned&&<div className="chart-detail-actions"><button type="button" onClick={()=>onInspect(active.id)}>{subjectLabel==='Document'?'Open text':'Open result'}</button><button type="button" aria-label="Dismiss point details" onClick={()=>{setSelected(null);setHovered(null);svg.current?.focus();}}>Dismiss</button></div>}</div>}
- </div>;
+function readStored<T>(key:string):T|undefined{try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw) as T:undefined;}catch{return undefined;}}
+function writeStored(key:string,value:unknown){try{localStorage.setItem(key,JSON.stringify(value));}catch{/* Storage can be unavailable; the chart still works. */}}
+
+function Segmented<T extends string>({options,value,onChange,label}:{options:{value:T;label:string}[];value:T;onChange:(value:T)=>void;label:string}){
+ return <div className="chart-seg" role="radiogroup" aria-label={label}>{options.map(option=><button type="button" key={option.value} role="radio" aria-checked={value===option.value} className={value===option.value?'on':''} onClick={()=>onChange(option.value)}>{option.label}</button>)}</div>;
 }
 
-function PageControls({page,pages,onChange,label,showPageNumber=true}:{page:number;pages:number;onChange:(page:number)=>void;label:string;showPageNumber?:boolean}){
- return pages>1?<div className="chart-pages" aria-label={label}><Button variant="outline" disabled={page===0} onClick={()=>onChange(page-1)}>Previous</Button>{showPageNumber&&<span>{page+1} / {pages}</span>}<Button variant="outline" disabled={page===pages-1} onClick={()=>onChange(page+1)}>Next</Button></div>:null;
+function Stats({items}:{items:[string,ReactNode,ReactNode?][]}){
+ return <dl className="chart-stats">{items.map(([label,value,extra])=><div key={label}><dt>{label}</dt><dd>{value}{extra?<small>{extra}</small>:null}</dd></div>)}</dl>;
 }
 
-function CategoryChart({categories,total,onInspect}:{categories:ChartCategory[];total:number;onInspect:(id:string)=>void}){
- const [selected,setSelected]=useState<string|null>(null),[page,setPage]=useState(0),[resultPage,setResultPage]=useState(0);
- const largest=categories[0]?.points.length||1,pages=Math.ceil(categories.length/20),safePage=Math.min(page,pages-1);
+function ScaleKey({scale,onEdit}:{scale:Scale;onEdit:()=>void}){
+ const points=scalePoints(scale),shown=points.length<=11?points:points.filter((_,i)=>i%Math.ceil(points.length/11)===0);
+ return <div className="chart-scale"><span className="chart-key" aria-hidden="true"><small>{scaleLabel(scale,scale.min)}{scale.lowLabel?' '+scale.lowLabel:''}</small><span>{shown.map(p=><i key={p} style={{background:scaleColor(scale,p)}}/>)}</span><small>{scaleLabel(scale,scale.max)}{scale.highLabel?' '+scale.highLabel:''}</small></span>
+  <span className="chart-scale-meta">Scale {scaleLabel(scale,scale.min)} to {scaleLabel(scale,scale.max)} · {scale.type==='sequential'?'low to high':'neutral middle'}{scale.source==='data'?' · read from the results':''}</span>
+  <button type="button" className="chart-link" onClick={onEdit}>Edit scale</button></div>;
+}
+
+function ScaleEditor({scale,suggested,onSave,onCancel}:{scale:Scale;suggested:Scale;onSave:(scale:Scale)=>void;onCancel:()=>void}){
+ const [min,setMin]=useState(String(scale.min)),[max,setMax]=useState(String(scale.max)),[type,setType]=useState(scale.type),[low,setLow]=useState(scale.lowLabel),[high,setHigh]=useState(scale.highLabel);
+ const lo=Number(min.replace('−','-')),hi=Number(max.replace('−','-')),ok=Number.isInteger(lo)&&Number.isInteger(hi)&&hi>lo&&hi-lo<=20&&lo<=suggested.min&&hi>=suggested.max;
  const id=useId();
- return <div className="category-chart">
-  {categories.slice(safePage*20,safePage*20+20).map((category,index)=>{
-   const expanded=selected===category.value,panelId=id+'-'+index,matchPages=Math.ceil(category.points.length/10),matchPage=Math.min(resultPage,matchPages-1);
-   return <div key={category.value} className="category-chart-group">
-    <button type="button" className="category-chart-bar" aria-expanded={expanded} aria-controls={expanded?panelId:undefined} aria-label={`${category.value}: ${category.points.length} of ${total} results. Show matching results.`} onClick={()=>{setSelected(expanded?null:category.value);setResultPage(0);}} title={category.value}>
-     <span className="category-chart-label">{category.value}</span><span className="category-chart-track" aria-hidden="true"><span style={{width:100*category.points.length/largest+'%'}}/></span><span className="category-chart-count">{category.points.length}<small>{Math.round(100*category.points.length/total)}%</small></span>
-    </button>
-    {expanded&&<div id={panelId} className="category-chart-matches" role="region" aria-label={category.value+' results'}>
-     {category.points.slice(matchPage*10,matchPage*10+10).map(point=><button type="button" className="chart-result-link" key={point.id} onClick={()=>onInspect(point.id)}><strong>{point.name}</strong>{point.explanation&&<span>{excerpt(point.explanation)}</span>}<span className="chart-open-label">Open result →</span></button>)}
-     <PageControls page={matchPage} pages={matchPages} onChange={setResultPage} label="Matching results pages"/>
-    </div>}
-   </div>;
-  })}
-  <PageControls page={safePage} pages={pages} onChange={value=>{setPage(value);setSelected(null);}} label="Category pages"/>
+ return <div className="chart-scale-editor" role="group" aria-label="Edit scale">
+  <div className="row"><label htmlFor={id+'min'}>Lowest score</label><input id={id+'min'} value={min} inputMode="numeric" maxLength={4} onChange={e=>setMin(e.target.value)}/><label htmlFor={id+'max'}>Highest score</label><input id={id+'max'} value={max} inputMode="numeric" maxLength={4} onChange={e=>setMax(e.target.value)}/></div>
+  <div className="row"><span className="label">Colors</span><Segmented label="Scale type" value={type} onChange={setType} options={[{value:'sequential',label:'Low to high'},{value:'diverging',label:'Neutral middle'}]}/></div>
+  <p className="hint">{type==='sequential'?'One color that darkens toward the highest score. Use it for amounts, such as complexity or intensity.':'Two colors with gray in the middle. Use it when the middle means neutral, such as −3 (very negative) to +3 (very positive).'}</p>
+  <div className="row"><label htmlFor={id+'low'}>Label for lowest (optional)</label><input id={id+'low'} className="wide" value={low} maxLength={30} placeholder="e.g., plain" onChange={e=>setLow(e.target.value)}/><label htmlFor={id+'high'}>Label for highest</label><input id={id+'high'} className="wide" value={high} maxLength={30} placeholder="e.g., formal, dense" onChange={e=>setHigh(e.target.value)}/></div>
+  {!ok&&<p className="figure-error" role="alert">Use whole numbers, at most 20 apart, that include every result ({formatNumber(suggested.min)} to {formatNumber(suggested.max)}).</p>}
+  <div className="actions"><button type="button" className="chart-link" onClick={()=>onSave({...suggested,source:suggested.source})}>Reset to suggestion</button><span/><Button variant="outline" onClick={onCancel}>Cancel</Button><Button disabled={!ok} onClick={()=>onSave({min:lo,max:hi,type,lowLabel:low.trim(),highLabel:high.trim(),source:'custom'})}>Apply</Button></div>
  </div>;
 }
 
-function DistributionChart({data,label,style,ranked,onRankedChange,onInspect}:{data:FigureData;label:string;style:FigureStyle;ranked:RankedOptions;onRankedChange:(options:RankedOptions)=>void;onInspect:(id:string)=>void}){
- const container=useRef<HTMLDivElement>(null),plot=useRef<HTMLDivElement>(null);
- const [selected,setSelected]=useState<number|null>(null),[page,setPage]=useState(0),[width,setWidth]=useState(800);
- const matches=useMemo(()=>style==='ranked'?rankedDistribution(data,ranked.query,ranked.order).bars.length:0,[data,style,ranked.query,ranked.order]);
- const rankedPages=Math.ceil(matches/rankedPageSize),rankedPage=Math.min(ranked.page,Math.max(0,rankedPages-1));
- useEffect(()=>{setSelected(null);setPage(0);},[ranked.query,ranked.order,ranked.page]);
- useEffect(()=>{const element=container.current;if(!element||(style!=='ranked'&&style!=='year'))return;const resize=()=>setWidth(element.clientWidth);resize();const observer=new ResizeObserver(resize);observer.observe(element);return()=>observer.disconnect();},[style]);
- const preview=useMemo(()=>{try{return {figure:resultsFigureSvg(data,label,`${label} results`,style,{compact:true,interactive:true,rankedPage,rankedQuery:ranked.query,rankedOrder:ranked.order,overviewWidth:width}),error:''};}catch(error){return {figure:null,error:error instanceof Error?error.message:'Could not prepare this chart.'};}},[data,label,style,rankedPage,ranked.query,ranked.order,width]);
- const markup=useMemo(()=>({__html:preview.figure?.svg||''}),[preview]);
- useEffect(()=>{plot.current?.querySelectorAll('[data-figure-bin]').forEach(mark=>mark.setAttribute('aria-pressed',String(Number(mark.getAttribute('data-figure-bin'))===selected)));},[selected,preview]);
- useEffect(()=>{
-  const element=container.current;if(!element)return;
-  const dismiss=(event:PointerEvent)=>{const target=event.target;if(!(target instanceof Element)||!element.closest('[role="dialog"]')?.contains(target)||target.closest('[data-figure-bin],.distribution-matches'))return;if(element.contains(element.ownerDocument.activeElement))plot.current?.focus({preventScroll:true});setSelected(null);};
-  element.ownerDocument.addEventListener('pointerdown',dismiss);return()=>element.ownerDocument.removeEventListener('pointerdown',dismiss);
- },[]);
- const bar=selected===null?undefined:preview.figure?.distribution.bars[selected],pages=Math.ceil((bar?.count||0)/10),safePage=Math.min(page,Math.max(0,pages-1));
- function select(target:EventTarget|null){if(!(target instanceof Element))return;const mark=target.closest('[data-figure-bin]');if(!mark)return;const index=Number(mark.getAttribute('data-figure-bin'));setSelected(value=>value===index?null:index);setPage(0);}
- return <div className={`distribution-chart${style==='ranked'?' ranked-chart':''}`} ref={container}>
-  {style==='ranked'&&<>
-   <div className="ranked-controls"><input type="search" aria-label="Find a result by name" placeholder="Find a text or subject…" maxLength={140} value={ranked.query} onChange={event=>onRankedChange({...ranked,query:event.target.value,page:0})}/><select aria-label="Score order" value={ranked.order} onChange={event=>onRankedChange({...ranked,order:event.target.value as RankedOptions['order'],page:0})}><option value="lowest">Lowest first</option><option value="highest">Highest first</option></select></div>
-   <div className="ranked-navigation"><span role="status">{matches?`${rankedPage*rankedPageSize+1}–${Math.min(matches,(rankedPage+1)*rankedPageSize)} of ${matches.toLocaleString('en-US')}${ranked.query.trim()?' matches':' results'}`:'No matching results'}</span><PageControls page={rankedPage} pages={rankedPages} onChange={next=>onRankedChange({...ranked,page:next})} label="Ranked results pages" showPageNumber={false}/></div>
-  </>}
-  {preview.figure&&<div className="overview-svg" ref={plot} tabIndex={-1} onClick={event=>select(event.target)} onKeyDown={event=>{if((event.key==='Enter'||event.key===' ')&&(event.target as Element).closest('[data-figure-bin]')){event.preventDefault();select(event.target);}else if(event.key==='Escape'&&selected!==null){event.preventDefault();event.stopPropagation();setSelected(null);plot.current?.focus({preventScroll:true});}}} dangerouslySetInnerHTML={markup}/>}
-  {preview.error&&(style==='ranked'&&!matches?<p className="chart-empty">Try another name or clear the search.</p>:<p className="figure-error" role="alert">{preview.error}</p>)}
-  {bar&&<div className="distribution-matches category-chart-matches" role="region" aria-label={`${bar.label} results`}>
-   <div className="distribution-matches-heading"><strong>{style==='ranked'?`${label}: ${bar.points[0].value}`:`${bar.label} · ${bar.count} ${bar.count===1?'result':'results'}`}</strong><button type="button" onClick={()=>{setSelected(null);plot.current?.focus({preventScroll:true});}}>Dismiss</button></div>
-   {bar.points.slice(safePage*10,safePage*10+10).map(point=><div className="distribution-result" key={point.id}><strong>{point.name}</strong>{point.explanation&&<p>{point.explanation}</p>}<button type="button" onClick={()=>onInspect(point.id)}>Open result →</button></div>)}
-   <PageControls page={safePage} pages={pages} onChange={setPage} label="Matching results pages"/>
-  </div>}
-  {preview.figure&&<p className="chart-instruction chart-footer">{style==='year'?'Select a dot to explore its texts. Larger dots contain more than one text.':style==='ranked'?'Select a dot to see its explanation':`Select a ${style==='stacked'?'segment':'bar'} to see its results`}</p>}
- </div>;
+function useWidth(){
+ const ref=useRef<HTMLDivElement>(null),[width,setWidth]=useState(760);
+ useEffect(()=>{const element=ref.current;if(!element)return;const resize=()=>{if(element.clientWidth)setWidth(Math.max(280,Math.floor(element.clientWidth)));};resize();const observer=new ResizeObserver(resize);observer.observe(element);return()=>observer.disconnect();},[]);
+ return [ref,width] as const;
 }
 
-function ChartBody({rows,subjectLabel,onInspect,chosen,onChoose,onSaveYears}:{rows:ChartRow[];onSaveYears?:ResultsChartDialogProps['onSaveYears'];subjectLabel:string;onInspect:(id:string)=>void;chosen:string;onChoose:(key:string)=>void}){
- const [exporting,setExporting]=useState(false),[chosenStyles,setChosenStyles]=useState<Record<string,FigureStyle>>({});
- const [ranked,setRanked]=useState<RankedOptions>({query:'',order:'lowest',page:0});
- const fields=useMemo(()=>chartFields(rows),[rows]);
- const field=fields.find(item=>item.key===chosen)||fields[0],selectId=useId();
- const [reviewing,setReviewing]=useState(false);
- const allData=useMemo(()=>field?chartData(rows,field):null,[rows,field]);
- const reviewRows=useMemo(()=>{
-  if(!reviewing||!allData) return [];
-  const ids=new Set(allData.points.map(point=>point.id));
-  return rows.filter(row=>ids.has(row.id));
- },[reviewing,allData,rows]);
- const styles=allData?figureStyles(allData):[];
- if(allData?.numeric && onSaveYears) styles.push({value:'year',label:'Plot by year'});
- const styleId=useId();
- const preferred=chosenStyles[field?.key]||(allData?defaultFigureStyle(allData):'distribution');
- const style=styles.some(option=>option.value===preferred)?preferred:'distribution';
- const data=useMemo(()=>{
-  if(style!=='year'||!field) return allData;
-  const dated=chartData(rows.filter(row=>validChartYear(row.chartYear)),field);
-  return {...dated,excluded:rows.length-dated.points.length};
- },[style,field,allData,rows]);
- const label=field?.name===undefined?(allData?.numeric?'Score':'Category'):field.label;
- function chooseStyle(next:FigureStyle){
-  if(next==='year'){setReviewing(true);return;}
-  setReviewing(false);
-  setChosenStyles(current=>({...current,[field.key]:next}));
+function ChartBody({rows,subjectLabel,onInspect,onSaveYears,onSaveGroups}:{rows:ChartSourceRow[];subjectLabel:string;onInspect:(id:string)=>void;onSaveYears?:ResultsChartDialogProps['onSaveYears'];onSaveGroups?:ResultsChartDialogProps['onSaveGroups']}){
+ const noun=subjectLabel==='Subject'?'subjects':'texts',supportsRuns=rows.some(row=>row.runNumber!==undefined);
+ const fields=useMemo(()=>chartFieldList(rows),[rows]);
+ const [fieldKey,setFieldKey]=useState(''),field:Field|undefined=fields.find(f=>f.key===fieldKey)||fields[0];
+ const settings=useMemo(()=>settingsSummary(rows),[rows]);
+ const [latestOnly,setLatestOnly]=useState(true),[combine,setCombine]=useState(true);
+ const allNames=useMemo(()=>rows.filter(r=>r.status==='done').map(r=>r.sourceName||r.name),[rows]);
+ const ruleOptions=useMemo(()=>{
+  const done=rows.filter(r=>r.status==='done');
+  return [...groupableFields(done).map(h=>({value:`field:${h}`,label:`The “${h}” field`})),...(noun==='texts'?[{value:'start',label:'The start of each filename'},{value:'end',label:'The end of each filename'}]:[]),{value:'',label:'Nothing (type them in)'}];
+ },[rows,noun]);
+ const [groupRule,setGroupRule]=useState<GroupRule|''|undefined>(undefined);
+ const autoRule=useMemo(()=>suggestedGroupRule(allNames,rows.filter(r=>r.status==='done')),[allNames,rows]);
+ const rule=(groupRule===undefined?autoRule:groupRule||undefined) as GroupRule|undefined;
+ const built=useMemo(()=>field?buildUnits(rows,field,{latestOnly,combine,groupRule:rule}):undefined,[rows,field,latestOnly,combine,rule]);
+ const [tab,setTab]=useState<Tab>('distribution');
+ const [scaleEdits,setScaleEdits]=useState<Record<string,Scale>>(()=>readStored('lab-chart-scales')||{});
+ const [editingScale,setEditingScale]=useState(false);
+ const [review,setReview]=useState<'year'|'group'|null>(null);
+ const [timeMode,setTimeMode]=useState<'dots'|'periods'|undefined>(),[trend,setTrend]=useState(true),[periodChoice,setPeriodChoice]=useState<number|undefined>();
+ const [picked,setPicked]=useState<number|null>(null),[matchPage,setMatchPage]=useState(0);
+ const [showTable,setShowTable]=useState(false),[exporting,setExporting]=useState(false);
+ const [query,setQuery]=useState(''),[order,setOrder]=useState<'highest'|'lowest'>('highest'),[listPage,setListPage]=useState(0);
+ const [plotRef,width]=useWidth();
+ useEffect(()=>{setPicked(null);setMatchPage(0);},[tab,fieldKey,timeMode,trend,periodChoice,latestOnly,combine,rule]);
+
+ if(!field||!built)return <p className="chart-empty">No completed results to chart yet.</p>;
+ const {units,kind}=built;
+ const numbers=units.map(u=>u.number).filter((v):v is number=>v!==null);
+ // The scale comes from the individual results, not from averages across runs or chunks.
+ const rawNumbers=units.flatMap(u=>u.numbers).filter((v):v is number=>v!==null);
+ const suggested=kind==='scale'?suggestedScale(built.rows,field,rawNumbers):undefined;
+ const scaleKey=`${field.label}`;
+ const stored=scaleEdits[scaleKey];
+ const scale=kind!=='scale'?undefined:stored&&rawNumbers.every(v=>v>=stored.min&&v<=stored.max)?stored:suggested;
+ const categories=kind==='category'?(()=>{const counts=new Map<string,number>();units.forEach(u=>counts.set(u.value,(counts.get(u.value)||0)+1));const sorted=Array.from(counts).sort((a,b)=>b[1]-a[1]).map(([v])=>v);return sorted.length>8?[...sorted.slice(0,7)]:sorted;})():undefined;
+ const tabs:Tab[]=['distribution','time','groups',...(supportsRuns?['runs' as Tab]:[]),'list'];
+ const view=kind==='text'?'list':tab;
+ // Downloaded figures are drawn at a fixed print width, without the interactive layer.
+ const o={width:exporting?860:width,interactive:!exporting,noun};
+ const byId=new Map(rows.map(row=>[row.id,row]));
+ const unitOf=new Map<string,Unit>();units.forEach(u=>u.ids.forEach(id=>unitOf.set(id,u)));
+
+ // ----- figure for the current view -----
+ let figure:Figure|undefined,empty:ReactNode=null,stats:[string,ReactNode,ReactNode?][]=[],read='',legend:{label:string;color:string}[]=[];
+ const dated=units.filter(u=>u.year!==undefined),grouped=units.filter(u=>u.group!==undefined);
+ // With many texts per year the dots pile up, so shares per period become the default.
+ const timeView:'dots'|'periods'=kind==='category'?'periods':!scale?'dots':timeMode??(dated.length&&crowdedDots(dated,width)?'periods':'dots');
+ const groupNames=Array.from(new Set(grouped.map(u=>u.group!))).sort((a,b)=>a.localeCompare(b));
+ const categoryLegend=categories?[...Array.from(categoryColors(categories)).map(([label,color])=>({label,color})),...(units.some(u=>!categories.includes(u.value))?[{label:'Other',color:OTHER}]:[])]:[];
+ try{
+  if(view==='distribution'){
+   if(kind==='scale'&&scale){figure=distributionScale(units,scale,o);
+    stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle score (median)',formatNumber(median(numbers))],['Average',formatNumber(mean(numbers),1)],['Most common',mostCommon(units.map(u=>scaleLabel(scale,Math.round(u.number!))))],['Lowest – highest',`${scaleLabel(scale,Math.min(...numbers))} – ${scaleLabel(scale,Math.max(...numbers))}`]];
+    read=`Each bar counts the ${noun} that received that score. Every point on the scale is shown, even when no ${noun.replace(/s$/,'')} received it, so you see where results sit on the whole scale. Select a bar to read those ${noun} and the model’s explanations.`;}
+   else if(kind==='scale'){figure=distributionNumbers(units,o);stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle value (median)',formatNumber(median(numbers))],['Average',formatNumber(mean(numbers))],['Lowest – highest',`${formatNumber(Math.min(...numbers))} – ${formatNumber(Math.max(...numbers))}`]];
+    read=`Each bar counts the ${noun} whose value falls in that range. Select a bar to read them.`;}
+   else{figure=distributionCategories(units,o);const top=mostCommon(units.map(u=>u.value));stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Most common',top.length>28?top.slice(0,27)+'…':top],['Categories',new Set(units.map(u=>u.value)).size]];
+    read=`Each bar counts the ${noun} the model put in that category, largest first. Select a bar to read them and the model’s explanations.`;}
+  }else if(view==='time'){
+   if(!dated.length)empty=<div className="chart-empty-state"><strong>No years yet</strong><p>{noun==='texts'?'Put the year in each filename, such as 1945_Roosevelt.txt, or type the years in yourself.':'Add a “Year” field to your subjects, or type the years in yourself.'}</p>{onSaveYears&&<Button variant="outline" onClick={()=>setReview('year')}>Enter years</Button>}</div>;
+   else{
+    const years=dated.map(u=>u.year!),length=periodChoice||suggestedPeriodLength(years);
+    if(timeView==='dots'){figure=timeDots(dated,scale,trend,o);read=`Each dot is one ${noun.replace(/s$/,'')}, placed at its year and exact score.${trend?' The line is a smoothed average: it shows the general direction, not a prediction.':''} Select a dot to read the ${noun.replace(/s$/,'')} and the model’s explanation.`;}
+    else{figure=timeShares(dated,kind==='scale'?scale:undefined,categories,length,o);read=`Each column is one ${length}-year period and adds up to 100%.${scale?' The bold number is the score.':''} Check the count under each column: with few ${noun} in a period, one ${noun.replace(/s$/,'')} moves the column a lot.`;if(categories)legend=categoryLegend;}
+    const first=Math.min(...years),last=Math.max(...years);
+    stats=[[`${noun==='texts'?'Texts':'Subjects'} with a year`,`${dated.length} of ${units.length}`],['Years',first===last?String(first):`${first}–${last}`]];
+    if(numbers.length&&kind==='scale'){const early=dated.filter(u=>u.year!<=median(years)).map(u=>u.number!),late=dated.filter(u=>u.year!>median(years)).map(u=>u.number!);if(early.length&&late.length)stats.push(['Average, earlier half',formatNumber(mean(early),1)],['Average, later half',formatNumber(mean(late),1)]);}
+   }
+  }else if(view==='groups'){
+   if(groupNames.length<2)empty=<div className="chart-empty-state"><strong>{groupNames.length===1?'Only one group so far':'No groups yet'}</strong><p>{noun==='texts'?`Groups let you compare, for example, women’s and men’s obituaries or two campaigns. The Lab can read groups from your filenames (such as …F.txt and …M.txt) or you can type them in.`:'Groups let you compare subjects, for example by author or period. The Lab can read them from one of your subject fields, or you can type them in.'}</p>{onSaveGroups&&<Button variant="outline" onClick={()=>setReview('group')}>Set up groups</Button>}</div>;
+   else if(kind==='scale'&&!scale)empty=<div className="chart-empty-state"><strong>Groups need a score scale</strong><p>These values are not whole-number scores on a short scale (such as 1 to 7), so the groups cannot be shown as shares of each score. Use “Show as table” on the Distribution tab, or Download Excel, to compare them.</p></div>;
+   else{
+    figure=groupsView(grouped,groupNames,kind==='scale'?scale:undefined,categories,o);if(categories)legend=categoryLegend;
+    if(kind==='scale'&&scale){const avgs=groupNames.map(g=>({g,m:mean(grouped.filter(u=>u.group===g).map(u=>u.number!))}));
+     stats=avgs.slice(0,4).map(({g,m})=>[`${g}, average`,formatNumber(m,2)] as [string,ReactNode]);
+     if(avgs.length===2)stats.push([`${avgs[1].g} minus ${avgs[0].g}`,formatNumber(avgs[1].m-avgs[0].m,2),'points']);
+     read=`Each bar is one group and adds up to 100%${scale.type==='diverging'?', centered on the neutral score, so lower scores extend left and higher ones right':''}. ${width<620?'Below':'On the right'}, each dot is a group’s average; the short bar shows how much it could shift with a different sample of ${noun} (a 95% range). If two ranges don’t overlap, the difference is unlikely to be chance alone; ranges that overlap a little can still differ. Neither shows whether the model judged correctly.`;}
+    else{stats=groupNames.slice(0,4).map(g=>[g,`${grouped.filter(u=>u.group===g).length} ${noun}`] as [string,ReactNode]);read=`Each bar is one group and adds up to 100%, so groups of different sizes can be compared. Select a segment to read those ${noun}.`;}
+   }
+  }else if(view==='runs'){
+   const repeated=units.filter(u=>u.values.length>1);
+   if(!combine)empty=<div className="chart-empty-state"><strong>Runs are counted separately</strong><p>Switch “Count” back to one value per subject to compare runs.</p></div>;
+   else if(!repeated.length)empty=<div className="chart-empty-state"><strong>No repeated runs yet</strong><p>Run some subjects again with the same settings (use “Repeat” in the results). This tab then shows whether the model gives the same answer each time.</p></div>;
+   else{figure=runsView(units,kind==='scale'?scale:undefined,o);
+    const spreads=repeated.map(u=>kind==='scale'?Math.max(...u.numbers as number[])-Math.min(...u.numbers as number[]):new Set(u.values).size-1);
+    stats=[['Same answer in every run',`${spreads.filter(d=>d===0).length} of ${repeated.length}`],...(kind==='scale'?[['Within one point',`${spreads.filter(d=>d<=1).length} of ${repeated.length}`] as [string,ReactNode],['Largest difference',`${formatNumber(Math.max(...spreads))} points`] as [string,ReactNode]]:[])];
+    read=`One row per subject, one dot per run with the same settings. Subjects whose runs disagree come first: read their explanations to see why. The other tabs use each subject’s ${kind==='scale'?'average':'most common answer'} across its runs.`;}
+  }
+ }catch(error){empty=<p className="figure-error" role="alert">{error instanceof Error?error.message:'Could not draw this chart.'}</p>;}
+
+ const pick=picked===null?undefined:figure?.picks[picked];
+ const matchIds=pick?pick.ids:[],matchRows=matchIds.map(id=>byId.get(id)).filter(Boolean) as ChartSourceRow[];
+ const pages=Math.ceil(matchRows.length/10),safePage=Math.min(matchPage,Math.max(0,pages-1));
+ function select(target:EventTarget|null){if(!(target instanceof Element))return;const mark=target.closest('[data-pick]');if(!mark)return;const index=Number(mark.getAttribute('data-pick'));setPicked(current=>current===index?null:index);setMatchPage(0);}
+
+ const caption=autoCaption({field,units,kind,scale,view,trend:view==='time'&&timeView==='dots'&&trend,rows:built.rows,noun,period:view==='time'&&timeView==='periods'?periodChoice||(dated.length?suggestedPeriodLength(dated.map(u=>u.year!)):0):0,groups:groupNames});
+ const yearEntries=units.map(unit=>{const row=byId.get(unit.ids[0])!;const year=row.chartYear===null?'':typeof row.chartYear==='number'?String(row.chartYear):String(suggestedRowYear(row)??'');return {unit,initial:year};});
+ const groupEntries=units.map(unit=>{const row=byId.get(unit.ids[0])!;const g=row.chartGroup===null?'':typeof row.chartGroup==='string'?row.chartGroup:suggestedRowGroup(row,rule)??'';return {unit,initial:g};});
+
+ if(review){
+  return <ChartReview kind={review} noun={noun} entries={review==='year'?yearEntries:groupEntries} onCancel={()=>setReview(null)}
+   rules={review==='group'?ruleOptions:undefined} rule={rule||''} onRuleChange={value=>setGroupRule(value as GroupRule|'')}
+   onApply={values=>{
+    const years=new Map<string,number|null>(),groupsOut=new Map<string,string|null>();
+    for(const unit of units){const value=values.get(unit.key)??'';for(const id of unit.ids){years.set(id,value?Number(value):null);groupsOut.set(id,value||null);}}
+    if(review==='year'){onSaveYears?.(years);setTab('time');}else{onSaveGroups?.(groupsOut);setTab('groups');}
+    setReview(null);
+   }}/>;
  }
+
+ const ranked=[...units].filter(u=>u.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())).sort((a,b)=>kind==='scale'?(order==='highest'?b.number!-a.number!:a.number!-b.number!)||a.name.localeCompare(b.name):a.value.localeCompare(b.value)||a.name.localeCompare(b.name));
+ const listPages=Math.ceil(ranked.length/25),safeList=Math.min(listPage,Math.max(0,listPages-1));
+
+ if(exporting&&figure)return <FigureExport figure={figure} caption={caption} legend={legend} defaultTitle={`${field.label}${view==='time'?' over time':view==='groups'?' by group':view==='runs'?': agreement between runs':''}`} onBack={()=>setExporting(false)}/>;
+
  return <>
-  <div className="chart-toolbar">{fields.length>1?<div className="chart-field"><label htmlFor={selectId}>Answer field</label><select id={selectId} value={field.key} onChange={event=>{setReviewing(false);onChoose(event.target.value);}}>{fields.map(item=><option key={item.key} value={item.key}>{item.label}</option>)}</select></div>:<strong className="chart-field-title">{field?label:'Results'}</strong>}<span className="chart-count" title="Unfinished results, missing answers, and insufficient knowledge are not plotted.">{data?.points.length||0} results{data?.mean!==undefined&&` · Mean: ${Math.abs(data.mean)>=1e6||(data.mean!==0&&Math.abs(data.mean)<.001)?numberLabel(data.mean):new Intl.NumberFormat('en-US',{maximumFractionDigits:2}).format(data.mean)}`}{Boolean(data?.excluded)&&` · ${data!.excluded} not plotted`}</span></div>
-  {!!allData?.points.length&&styles.length>1&&<div className="figure-style"><label htmlFor={styleId}>Chart style</label><select id={styleId} value={reviewing?'year':style} onChange={event=>chooseStyle(event.target.value as FigureStyle)}>{styles.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select>{style==='year'&&!reviewing&&<button className="textbutton" onClick={()=>setReviewing(true)}>Review years</button>}</div>}
-  {reviewing&&onSaveYears?<ChartYearReview rows={reviewRows} onCancel={()=>setReviewing(false)} onApply={years=>{
-   onSaveYears(years);setChosenStyles(current=>({...current,[field.key]:'year'}));setReviewing(false);
-  }}/>:!data?.points.length?<p className="chart-empty">No completed values to chart{field?' for this field':''}.</p>:exporting?<ResultsFigure key={field.key} data={data} label={label} style={style} ranked={ranked} onBack={()=>setExporting(false)}/>:<>{data.numeric&&style==='points'?<><NumericChart key={field.key} points={data.points} total={rows.length} label={label} subjectLabel={subjectLabel} onInspect={onInspect} scale={data.scale}/><p className="chart-instruction chart-footer">Hover to preview · Click to keep details open</p></>:!data.numeric&&data.categories.length>40?<><p className="chart-instruction">Click a bar to see its results.</p><CategoryChart key={field.key} categories={data.categories} total={data.points.length} onInspect={onInspect}/></>:<DistributionChart key={`${field.key}-${style}`} data={data} label={label} style={style} ranked={ranked} onRankedChange={setRanked} onInspect={onInspect}/>}<div className="chart-export-action"><Button variant="outline" onClick={()=>setExporting(true)}>Download figure</Button></div></>}
+  <div className="chart-top">
+   {fields.length>1?<label className="chart-field">Answer field <select value={field.key} onChange={event=>{setFieldKey(event.target.value);setEditingScale(false);}}>{fields.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</select></label>:<strong className="chart-field-title">{field.label}</strong>}
+   <span className="chart-count"><b>{units.length}</b> {units.length===1?noun.replace(/s$/,''):noun} plotted{built.excluded?<> · {built.excluded} left out{built.abstained?` (${built.abstained} insufficient knowledge)`:''}</>:null}{view==='time'&&dated.length>0&&onSaveYears?<> · <button type="button" className="chart-link" onClick={()=>setReview('year')}>Review years</button></>:null}{view==='groups'&&groupNames.length>1&&onSaveGroups?<> · <button type="button" className="chart-link" onClick={()=>setReview('group')}>Edit groups</button></>:null}</span>
+  </div>
+  {settings.count>1&&<div className="chart-notice" role="note"><p><strong>These results come from {settings.count} different settings.</strong> The prompt, model, or reasoning effort changed during the study, so the scores may not be comparable.</p><label><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/> Chart only the latest settings ({settings.latestCount} {noun})</label></div>}
+  {built.combinable&&<div className="chart-count-choice"><span>Count</span><Segmented label="How to count" value={combine?'one':'each'} onChange={v=>setCombine(v==='one')} options={built.hasChunks?[{value:'one',label:'One value per document'},{value:'each',label:'Each chunk'}]:[{value:'one',label:`One value per ${noun.replace(/s$/,'')}`},{value:'each',label:'Each run'}]}/><small>{combine?(built.hasChunks?`Chunks of the same document are combined (${kind==='scale'?'average':'most common answer'}).`:`Runs of the same ${noun.replace(/s$/,'')} are combined (${kind==='scale'?'average':'most common answer'}).`):'Every result counts on its own, so repeated texts weigh more.'}</small></div>}
+  {kind==='text'?<p className="chart-notice" role="note">“{field.label}” holds written answers rather than scores or categories, so it is listed rather than charted.</p>:
+   <div className="chart-tabs" role="tablist" aria-label="Chart type">{tabs.map(t=><button type="button" role="tab" key={t} aria-selected={view===t} className={view===t?'on':''} onClick={()=>{setTab(t);setShowTable(false);}}>{tabLabels[t]}</button>)}</div>}
+  {scale&&view!=='list'&&(editingScale&&suggested?<ScaleEditor scale={scale} suggested={suggested} onCancel={()=>setEditingScale(false)} onSave={next=>{const all={...scaleEdits};if(next.source==='custom')all[scaleKey]=next;else delete all[scaleKey];setScaleEdits(all);writeStored('lab-chart-scales',all);setEditingScale(false);}}/>:<ScaleKey scale={scale} onEdit={()=>setEditingScale(true)}/>)}
+  {view==='time'&&dated.length>0&&kind!=='text'&&<div className="chart-options">
+   {kind==='scale'&&scale&&<><span>Show</span><Segmented label="Show" value={timeView} onChange={setTimeMode} options={[{value:'dots',label:`Each ${noun.replace(/s$/,'')}`},{value:'periods',label:'Share per period'}]}/></>}
+   {timeView==='dots'?<label className="chart-check"><input type="checkbox" checked={trend} onChange={e=>setTrend(e.target.checked)}/> Show trend line</label>:
+    <label className="chart-check">Periods of <select value={periodChoice||suggestedPeriodLength(dated.map(u=>u.year!))} onChange={e=>setPeriodChoice(Number(e.target.value))}>{periodLengths.map(l=><option key={l} value={l}>{l} years</option>)}</select></label>}
+  </div>}
+  {view!=='list'&&stats.length>0&&!empty&&<Stats items={stats}/>}
+  {view==='list'?<RankedList units={ranked} page={safeList} pages={listPages} onPage={setListPage} query={query} onQuery={q=>{setQuery(q);setListPage(0);}} order={order} onOrder={setOrder} scale={scale} kind={kind} noun={noun} onInspect={onInspect} explanation={unit=>unit.explanation||byId.get(unit.ids[0])?.explanation||''}/>:<>
+   <div className="chart-plot" ref={plotRef}>{empty||(figure&&<div className="chart-svg" onClick={event=>select(event.target)} onKeyDown={event=>{if((event.key==='Enter'||event.key===' ')&&(event.target as Element).closest('[data-pick]')){event.preventDefault();select(event.target);}else if(event.key==='Escape'&&picked!==null){event.preventDefault();event.stopPropagation();setPicked(null);}}} dangerouslySetInnerHTML={{__html:figure.svg}}/>)}</div>
+   {legend.length>0&&figure&&<ul className="chart-legend">{legend.map(item=><li key={item.label}><i style={{background:item.color}}/>{item.label}</li>)}</ul>}
+   {figure?.notes.map(note=><p key={note} className="chart-note">{note}</p>)}
+   {pick&&<div className="chart-matches" role="region" aria-label={`${pick.label}: matching ${noun}`}>
+    <div className="chart-matches-head"><strong>{pick.label} · {matchRows.length} {matchRows.length===1?noun.replace(/s$/,''):noun}</strong><button type="button" className="chart-link" onClick={()=>setPicked(null)}>Close</button></div>
+    {matchRows.slice(safePage*10,safePage*10+10).map(row=>{const unit=unitOf.get(row.id);return <div className="chart-match" key={row.id}><div><strong>{row.sourceId?`${row.sourceName||row.name} · chunk ${row.chunkIndex}`:row.name}{row.runNumber&&row.runNumber>1?` · Run ${row.runNumber}`:''}</strong><span>{field.label}: {unit?.values[unit.ids.indexOf(row.id)]??''}</span></div>{row.explanation&&<p>{excerpt(row.explanation,400)}</p>}<button type="button" className="chart-link" onClick={()=>onInspect(row.id)}>Open {noun==='texts'?'text':'result'} →</button></div>;})}
+    {pages>1&&<div className="chart-pages"><Button variant="outline" disabled={safePage===0} onClick={()=>setMatchPage(safePage-1)}>Previous</Button><span>{safePage+1} / {pages}</span><Button variant="outline" disabled={safePage===pages-1} onClick={()=>setMatchPage(safePage+1)}>Next</Button></div>}
+   </div>}
+   {read&&!empty&&<p className="chart-read"><strong>How to read this:</strong> {read}</p>}
+   {showTable&&figure&&<DataTable units={view==='groups'?grouped:view==='time'?dated:units} showYear={view==='time'} showGroup={view==='groups'} label={field.label} noun={noun}/>}
+  </>}
+  {view!=='list'&&<div className="chart-foot"><Button variant="outline" disabled={!figure} onClick={()=>setShowTable(v=>!v)}>{showTable?'Hide table':'Show as table'}</Button><Button className="chart-primary" disabled={!figure} onClick={()=>setExporting(true)}>Download figure</Button></div>}
  </>;
 }
 
-export default function ResultsChartDialog({rows,open,onOpenChange,onInspect,onSaveYears,subjectLabel='Document'}:ResultsChartDialogProps){
- const pending=useRef<string|null>(null),heading=useRef<HTMLHeadingElement>(null),[chosen,setChosen]=useState('');
- return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="results-chart-dialog" onOpenAutoFocus={event=>{event.preventDefault();heading.current?.focus();}} onCloseAutoFocus={event=>{if(pending.current){event.preventDefault();const id=pending.current;pending.current=null;requestAnimationFrame(()=>onInspect(id));}}}><DialogTitle ref={heading} tabIndex={-1}>Results chart</DialogTitle><DialogDescription className="sr-only">Explore completed annotations and open their original results.</DialogDescription><ChartBody rows={rows} onSaveYears={onSaveYears} subjectLabel={subjectLabel} chosen={chosen} onChoose={setChosen} onInspect={id=>{pending.current=id;onOpenChange(false);}}/></DialogContent></Dialog>;
+function RankedList({units,page,pages,onPage,query,onQuery,order,onOrder,scale,kind,noun,onInspect,explanation}:{units:Unit[];page:number;pages:number;onPage:(p:number)=>void;query:string;onQuery:(q:string)=>void;order:'highest'|'lowest';onOrder:(o:'highest'|'lowest')=>void;scale?:Scale;kind:string;noun:string;onInspect:(id:string)=>void;explanation:(u:Unit)=>string}){
+ return <div className="chart-list">
+  <div className="chart-list-controls"><input type="search" aria-label={`Find ${noun} by name`} placeholder={`Find a ${noun.replace(/s$/,'')}…`} value={query} maxLength={140} onChange={e=>onQuery(e.target.value)}/>{kind==='scale'&&<select aria-label="Order" value={order} onChange={e=>onOrder(e.target.value as 'highest'|'lowest')}><option value="highest">Highest first</option><option value="lowest">Lowest first</option></select>}</div>
+  {!units.length?<p className="chart-empty">No matching {noun}. Try another name.</p>:<ol className={'chart-list-rows'+(kind==='text'?' plain':'')} start={page*25+1}>{units.slice(page*25,page*25+25).map(unit=><li key={unit.key}>
+   {kind!=='text'&&<span className="chart-chip" style={scale&&unit.number!==null?{background:scaleColor(scale,Math.round(unit.number))}:undefined} data-dark={scale&&unit.number!==null?String(isDark(scaleColor(scale,Math.round(unit.number)))):undefined}>{unit.value}</span>}
+   <div><strong>{unit.name}</strong>{kind==='text'?<p>{excerpt(unit.value,300)}</p>:explanation(unit)&&<p>{excerpt(explanation(unit),180)}</p>}</div>
+   <button type="button" className="chart-link" onClick={()=>onInspect(unit.ids[0])}>Open →</button></li>)}</ol>}
+  {pages>1&&<div className="chart-pages"><Button variant="outline" disabled={page===0} onClick={()=>onPage(page-1)}>Previous</Button><span>{page*25+1}–{Math.min(units.length,page*25+25)} of {units.length}</span><Button variant="outline" disabled={page===pages-1} onClick={()=>onPage(page+1)}>Next</Button></div>}
+ </div>;
+}
+function isDark(hex:string){const v=parseInt(hex.slice(1),16),c=[v>>16,(v>>8)&255,v&255].map(x=>{x/=255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;});return .2126*c[0]+.7152*c[1]+.0722*c[2]<.3;}
+
+function DataTable({units,showYear,showGroup,label,noun}:{units:Unit[];showYear:boolean;showGroup:boolean;label:string;noun:string}){
+ const rows=[...units].sort((a,b)=>showYear?(a.year!-b.year!):showGroup?a.group!.localeCompare(b.group!):a.name.localeCompare(b.name));
+ return <div className="chart-table"><table><caption className="sr-only">Data behind the chart</caption><thead><tr><th scope="col">{noun==='texts'?'Text':'Subject'}</th>{showYear&&<th scope="col">Year</th>}{showGroup&&<th scope="col">Group</th>}<th scope="col">{label}</th></tr></thead>
+  <tbody>{rows.slice(0,500).map(u=><tr key={u.key}><td>{u.name}</td>{showYear&&<td>{u.year}</td>}{showGroup&&<td>{u.group}</td>}<td>{u.value}{u.values.length>1?<small> ({u.values.join(', ')})</small>:null}</td></tr>)}</tbody></table>
+  {rows.length>500&&<p className="chart-note">The first 500 rows are shown. Use Download Excel for all results.</p>}</div>;
+}
+
+function autoCaption({field,units,kind,scale,view,trend,rows,noun,period,groups}:{field:Field;units:Unit[];kind:string;scale?:Scale;view:Tab;trend:boolean;rows:ChartSourceRow[];noun:string;period:number;groups:string[]}){
+ const models=Array.from(new Set(rows.map(r=>r.model).filter(Boolean))) as string[];
+ const efforts=Array.from(new Set(rows.map(r=>r.effort).filter(Boolean))) as string[];
+ const days=rows.map(r=>(r.time||r.startedAt||'').slice(0,10)).filter(Boolean).sort();
+ const parts:string[]=[];
+ const count=view==='time'?units.filter(u=>u.year!==undefined).length:view==='groups'?units.filter(u=>u.group!==undefined).length:units.length;
+ parts.push(`${field.label} for ${count} ${noun}${view==='time'?', by year':view==='groups'?` in ${groups.length} groups (${groups.join(', ')})`:''}.`);
+ if(scale)parts.push(`Scale ${scaleLabel(scale,scale.min)}${scale.lowLabel?` (${scale.lowLabel})`:''} to ${scaleLabel(scale,scale.max)}${scale.highLabel?` (${scale.highLabel})`:''}.`);
+ if(models.length)parts.push(`Annotated by ${models.join(', ')}${efforts.length===1?` (${efforts[0]} reasoning effort)`:''}${days.length?`, ${days[0]===days[days.length-1]?days[0]:`${days[0]} to ${days[days.length-1]}`}`:''}.`);
+ if(view==='time'&&trend)parts.push('Line: smoothed average.');
+ if(view==='time'&&period)parts.push(`Periods of ${period} years.`);
+ if(view==='groups'&&kind==='scale')parts.push('Dots: group averages with 95% ranges.');
+ if(units.some(u=>u.values.length>1))parts.push('Repeated runs or chunks combined per text.');
+ return parts.join(' ');
+}
+
+function FigureExport({figure,caption,legend,defaultTitle,onBack}:{figure:Figure;caption:string;legend:{label:string;color:string}[];defaultTitle:string;onBack:()=>void}){
+ const [title,setTitle]=useState(defaultTitle),[text,setText]=useState(caption),[format,setFormat]=useState<'png'|'svg'>('png'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[copied,setCopied]=useState(false);
+ const id=useId();
+ const full=useMemo(()=>exportFigure({...figure,svg:figure.svg.replace(/ data-pick="\d+" role="button" tabindex="0" aria-label="[^"]*"/g,'').replace(/<rect class="pick-hit"[^>]*\/>/g,'').replace(/<title>[^<]*<\/title>/g,'')},title.trim(),text,legend),[figure,title,text,legend]);
+ async function download(){if(busy)return;setBusy(true);setError('');try{if(format==='svg')downloadSvg(full,title);else await downloadPng(full,title);}catch(e){setError(e instanceof Error?e.message:'Could not download the figure. Please try again.');}finally{setBusy(false);}}
+ return <div className="chart-export">
+  <label htmlFor={id+'t'}>Figure title</label><input id={id+'t'} value={title} maxLength={140} onChange={e=>setTitle(e.target.value)} placeholder="Say what the figure shows"/>
+  <p className="hint">A good title states what the reader should see, for example “Inaugural addresses became plainer after 1930.”</p>
+  <label htmlFor={id+'c'}>Caption</label><textarea id={id+'c'} value={text} maxLength={800} rows={3} onChange={e=>setText(e.target.value)}/>
+  <div className="chart-export-caption"><button type="button" className="chart-link" onClick={()=>{navigator.clipboard?.writeText(text).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}).catch(()=>{});}}>{copied?'Caption copied':'Copy caption'}</button></div>
+  <div className="chart-export-preview"><img src={'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(full.svg)} alt={`Preview: ${title}`} width={full.width} height={full.height}/></div>
+  {error&&<p role="alert" className="figure-error">{error}</p>}
+  <div className="chart-foot"><Button variant="outline" onClick={onBack} disabled={busy}>Back to chart</Button><div className="chart-download"><label htmlFor={id+'f'} className="sr-only">File format</label><select id={id+'f'} value={format} disabled={busy} onChange={e=>setFormat(e.target.value as 'png'|'svg')}><option value="png">PNG</option><option value="svg">SVG</option></select><Button className="chart-primary" onClick={download} disabled={busy}>{busy?'Preparing image…':`Download ${format.toUpperCase()}`}</Button></div></div>
+ </div>;
+}
+
+export {ChartBody};
+export default function ResultsChartDialog({rows,open,onOpenChange,onInspect,onSaveYears,onSaveGroups,subjectLabel='Document'}:ResultsChartDialogProps){
+ const pending=useRef<string|null>(null),heading=useRef<HTMLHeadingElement>(null);
+ return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="results-chart-dialog" onOpenAutoFocus={event=>{event.preventDefault();heading.current?.focus();}} onCloseAutoFocus={event=>{if(pending.current){event.preventDefault();const id=pending.current;pending.current=null;requestAnimationFrame(()=>onInspect(id));}}}>
+  <DialogTitle ref={heading} tabIndex={-1}>Results chart</DialogTitle><DialogDescription className="sr-only">Explore completed annotations as charts and open the results behind them.</DialogDescription>
+  <ChartBody rows={rows} onSaveYears={onSaveYears} onSaveGroups={onSaveGroups} subjectLabel={subjectLabel} onInspect={id=>{pending.current=id;onOpenChange(false);}}/>
+ </DialogContent></Dialog>;
 }
