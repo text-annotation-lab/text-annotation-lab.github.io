@@ -4,14 +4,14 @@ export function GetStarted() {
   return <TabsContent value="get-started" className="reading-panel panel">
     <p className="eyebrow">YOUR FIRST ANNOTATION</p>
     <h2 id="get-started" tabIndex={-1}>Get started</h2>
-    <p>Follow these steps to set up your account, try a small pilot, and save your results.</p>
+    <p>Watch this short introduction, then follow the steps below to set up your account, try a small pilot, and save your results.</p>
 
     <figure className="intro-video">
       <video controls preload="metadata" playsInline poster="/video/text-annotation-lab-walkthrough.jpg" aria-label="Introduction to the Text Annotation Lab (3.5 minutes)">
         <source src="/video/text-annotation-lab-walkthrough.mp4" type="video/mp4" />
         <a href="/video/text-annotation-lab-walkthrough.mp4">Download the introduction video (MP4)</a>
       </video>
-      <figcaption>New to the lab? This 3½-minute introduction shows how it works.</figcaption>
+      <figcaption>Introduction to the lab · 3½ minutes · The step-by-step guide continues below.</figcaption>
     </figure>
 
     <h2 className="mt-8">Set up your API key</h2>
