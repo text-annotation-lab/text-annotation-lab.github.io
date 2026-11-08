@@ -1,0 +1,63 @@
+<!-- Replace AU content element 95046 after publishing the matching app update. -->
+<style>
+html:has(#asca-annotation-shell),body:has(#asca-annotation-shell){margin:0!important;padding:0!important;overflow:hidden!important;width:100%;height:100%}
+#asca-annotation-shell{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;height:100dvh!important;margin:0!important;padding:0!important;z-index:100000!important;background:#faf9f6;color:#1b2942;font:16px/1.6 Arial,sans-serif}
+#asca-annotation-shell iframe{display:block!important;width:100%!important;height:100%!important;border:0!important;margin:0!important;opacity:0;pointer-events:none}
+#asca-annotation-shell[data-ready] iframe{opacity:1;pointer-events:auto}
+#asca-annotation-shell[data-ready] #asca-annotation-fallback{display:none}
+#asca-annotation-fallback{position:absolute;inset:0;overflow:auto;padding:clamp(24px,8vw,100px);max-width:800px;margin:auto}
+#asca-annotation-fallback h1{font:600 28px/1.3 Arial,sans-serif;margin:0 0 20px}
+#asca-annotation-fallback a{color:#003d73;text-decoration:underline}
+#asca-annotation-fallback a:focus-visible,#asca-annotation-cookies:focus-visible{outline:2px solid #003d73;outline-offset:4px}
+#asca-annotation-cookies{position:fixed;right:16px;bottom:16px;z-index:1;border:1px solid #52617c;border-radius:4px;background:#faf9f6;color:#003d73;padding:8px 12px;font:14px/1.4 Arial,sans-serif;cursor:pointer}
+#asca-annotation-fallback .saving-note{font-size:14px;color:#52617c}
+#c94867,#c94870,#c94873,#c94876,#c94879,#c94882{display:none!important}
+</style>
+<div id="asca-annotation-shell">
+  <section id="asca-annotation-fallback" aria-labelledby="asca-annotation-title">
+    <h1 id="asca-annotation-title">Text Annotation Lab</h1>
+    <p id="asca-annotation-status" role="status">Loading the Lab…</p>
+    <p>If the Lab does not appear, check whether functionality cookies are allowed in your AU cookie preferences, or <a href="https://text-annotation-lab.jenskc1987.chatgpt.site/">open the Lab directly</a>.</p>
+    <p><a href="https://international.au.dk/cookie-policy/">AU cookie information</a></p>
+    <p class="saving-note">The direct address may have a separate set of saved studies. To move work between addresses, download a study backup from Studies and import it at the other address.</p>
+    <noscript><p>JavaScript must be enabled to use the Lab.</p></noscript>
+  </section>
+  <iframe title="Text Annotation Lab" inert allow="clipboard-write" referrerpolicy="strict-origin-when-cross-origin" data-cookiescript="accepted" data-cookiecategory="functionality" data-src="https://text-annotation-lab.jenskc1987.chatgpt.site/"></iframe>
+  <button type="button" id="asca-annotation-cookies">AU cookie preferences</button>
+</div>
+<script>
+(() => {
+  const shell=document.getElementById('asca-annotation-shell');
+  const frame=shell.querySelector('iframe');
+  const status=document.getElementById('asca-annotation-status');
+  const origin='https://text-annotation-lab.jenskc1987.chatgpt.site';
+  let timer;
+  document.getElementById('asca-annotation-cookies').addEventListener('click',()=>{
+    if(window.CookieScript?.instance?.show)window.CookieScript.instance.show();
+    else status.textContent='AU cookie preferences are unavailable. Reload this page to try again, or open the Lab directly.';
+  });
+  function waiting(){
+    shell.removeAttribute('data-ready');
+    frame.inert=true;
+    status.textContent='Loading the Lab…';
+    clearTimeout(timer);
+    timer=setTimeout(()=>{status.textContent='The Lab has not finished loading. You can use the options below.';},15000);
+  }
+  window.addEventListener('message',event=>{
+    if(event.origin!==origin||event.source!==frame.contentWindow||event.data?.type!=='text-annotation-lab:ready')return;
+    clearTimeout(timer);frame.inert=false;shell.setAttribute('data-ready','');
+  });
+  frame.addEventListener('load',()=>frame.contentWindow?.postMessage({type:'text-annotation-lab:ping'},origin));
+  new MutationObserver(waiting).observe(frame,{attributes:true,attributeFilter:['src']});
+  waiting();
+  function hideCoveredRegions(){
+    // Specific AU template regions only; leave cookie UI and the Lab interactive.
+    document.querySelectorAll('body>header,body>footer,.row.breadcrumb,nav.pagenav,#au_content .pagetitle,#au_content .au_contentauthor').forEach(element=>{
+      if(element.contains(shell)||element.querySelector('[id^="cookiescript"]'))return;
+      element.inert=true;
+    });
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',hideCoveredRegions,{once:true});
+  else hideCoveredRegions();
+})();
+</script>

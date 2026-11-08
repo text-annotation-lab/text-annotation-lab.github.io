@@ -1,0 +1,12 @@
+[
+  "Define a focused task. Be clear about what you want the model to judge, such as a text’s positive or negative tone, political stance, or linguistic complexity. Ask for a small number of clearly defined judgments at a time.",
+  "Define every category or scale point. Explain what each label or score means. On a rating scale (for example, 1–5), describe all five scores, not just 1 and 5. What would distinguish a 2 from a 3? Numbers alone do not tell the model how to decide.",
+  "Make the categories distinct. Try to avoid categories that overlap heavily. If two labels mean almost the same thing, the model will have difficulty applying them consistently. Specify whether each text should receive one label or may receive several.",
+  "Use balanced wording. Describe opposing categories in roughly equal detail. Avoid wording that makes one outcome sound more natural, important, or expected than another.",
+  "Start without annotated examples. Begin with clear definitions rather than sample texts paired with suggested labels or scores. The model may copy patterns from those examples instead of following your definitions. If you include examples, use varied ones and check whether they help on new texts that other readers have judged without seeing the model’s answers.",
+  "Tell the model what evidence to use. Specify whether it should consider the whole text, the author’s claims, recurring themes, particular passages, or some other evidence. Say what the model should return when there is not enough evidence to assign a label or score.",
+  "Say what should not count. Explain what the model should leave out when making its judgment. For example: “Do not treat a quotation as the author’s own position unless the author endorses it.”",
+  "Choose model and reasoning settings deliberately. Start with Luna and the default settings. Check the results on a few texts before deciding whether to change them. Once you begin the full study, keep the settings fixed and record which ones you used.",
+  "Specify the output format. Tell the model exactly what to return, such as a category or score plus a short explanation. Consistent output makes the results easier to review and analyze.",
+  "Test first, then keep the procedure fixed. Try the prompt on a few varied texts. Judge them yourself before looking at the model’s answers, then compare and investigate disagreements. Revise the prompt if needed and check it on new texts. For the full study, use the same final prompt and settings for every text, and save them with your results."
+]

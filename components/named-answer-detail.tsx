@@ -1,0 +1,3 @@
+import {answerValues,resultAnswer,answerLabel,type NamedAnswers} from '@/lib/answer-fields';
+export function NamedAnswerDetail({row}:{row:NamedAnswers}){return row.answerFields?.length?<dl className="knowledge-fields">{row.answerFields.map(name=><div key={name}><dt>{name}</dt><dd>{answerLabel(resultAnswer(row,name))||'—'}</dd></div>)}</dl>:null;}
+export function collectedAnswers(result:any,names:string[]=[]):NamedAnswers{if(result.error)return {answerFields:names,answers:Object.fromEntries(Object.entries(result.answers||{}).filter(([key,value])=>/^f\d+$/.test(key)&&typeof value==='string')) as Record<string,string>};return {answerFields:names,answers:answerValues(result,names)};}

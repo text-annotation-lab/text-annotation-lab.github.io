@@ -1,0 +1,12 @@
+.study-example .study-closer-look{margin:24px 0;border:1px solid #cbd8e3;border-radius:8px;background:#f5f8fb;overflow:hidden}
+.study-example .study-closer-look summary{padding:14px 18px;cursor:pointer;color:#003d73;font-weight:600;line-height:1.5}
+.study-example .study-closer-look summary span{font-weight:400}
+.study-example .study-closer-look summary:hover{background:#edf3f8}
+.study-example .study-closer-look summary:focus-visible{outline:3px solid #003d73;outline-offset:-3px}
+.study-example .study-closer-look[open] summary{border-bottom:1px solid #cbd8e3}
+.study-example .study-closer-look-body{padding:18px;font-size:15px;line-height:1.75}
+.study-example .study-closer-look-body p{margin:0 0 16px}
+.study-example .study-closer-look-body p:last-child{margin-bottom:0}
+.study-example .study-closer-look-resources{font-size:14px}
+
+.study-example .study-optional-note{font-size:14px;color:#53677e}
