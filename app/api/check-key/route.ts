@@ -1,3 +1,4 @@
+import {allowedOrigin} from '@/lib/request-guards';
 import {GEMINI_ENABLED} from '@/lib/providers';
 import {canCheckKey} from '@/lib/workflow-safety';
 
@@ -12,7 +13,7 @@ function reply(status:'accepted'|'rejected'|'unverified', httpStatus=200) {
 }
 
 export async function POST(request:Request) {
- if (request.headers.get('origin') !== new URL(request.url).origin) return reply('unverified',403);
+ if (!allowedOrigin(request)) return reply('unverified',403);
  const provider = request.headers.get('X-Lab-Provider');
  if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'gemini') return reply('unverified',400);
  if (provider === 'gemini' && !GEMINI_ENABLED) return reply('unverified',400);
@@ -24,6 +25,7 @@ export async function POST(request:Request) {
  if (provider === 'anthropic') {
   headers.set('x-api-key',key);
   headers.set('anthropic-version','2023-06-01');
+  headers.set('anthropic-dangerous-direct-browser-access','true');
  }
  if (provider === 'gemini') headers.set('x-goog-api-key',key);
 

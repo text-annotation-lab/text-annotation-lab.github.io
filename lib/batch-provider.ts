@@ -7,7 +7,7 @@ import {MAX_BATCH_ITEMS,MAX_BATCH_PREPARED_BYTES,MAX_GEMINI_PREPARED_BYTES} from
 
 const MAX_RESULT_BYTES=32*1024*1024;
 export class BatchError extends Error{constructor(message:string,public status=400,public uncertain=false){super(message);}}
-function headers(provider:Provider,key:string):Record<string,string>{return provider==='openai'?{Authorization:`Bearer ${key}`} : provider==='anthropic'?{'x-api-key':key,'anthropic-version':'2023-06-01'}:{'x-goog-api-key':key};}
+function headers(provider:Provider,key:string):Record<string,string>{return provider==='openai'?{Authorization:`Bearer ${key}`} : provider==='anthropic'?{'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}:{'x-goog-api-key':key};}
 async function boundedText(response:Response){
  const reader=response.body?.getReader();if(!reader)return '';
  const decoder=new TextDecoder();let size=0,text='';

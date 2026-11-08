@@ -1,3 +1,4 @@
+import {allowedOrigin,requestBody} from '@/lib/request-guards';
 import {annotateOpenRouter,openRouterKey} from '@/lib/openrouter';
 import {annotationValidationError} from '@/lib/answer-validation';
 import {annotationFormatRecord,readAnswerFields,answerInstructions,annotationSchema,answerValues} from '@/lib/answer-fields';
@@ -14,14 +15,14 @@ const MAX_REQUEST_BYTES=22*1024*1024;
 export async function POST(request:Request){
  let research:KnowledgeResearch|undefined;
  try{
- if(request.headers.get('origin')!==new URL(request.url).origin)return json({error:'Request origin not allowed.'},403);
+ if(!allowedOrigin(request))return json({error:'Request origin not allowed.'},403);
  const auth=request.headers.get('authorization')||'';
  if(!auth.startsWith('Bearer ')||!auth.slice(7).trim())return json({error:'No API key reached the lab. Re-enter the key for your selected provider and try again.'},401);
  const tooLarge=()=>json({error:'The annotation request is too large. Use one file up to 20 MB and a prompt up to 100,000 characters.'},413);
  if(Number(request.headers.get('content-length')||0)>MAX_REQUEST_BYTES)return tooLarge();
  let f:FormData,bytes=0,bodyTooLarge=false;
  try{
-  const limited=request.body?.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,controller){bytes+=chunk.byteLength;if(bytes>MAX_REQUEST_BYTES){bodyTooLarge=true;throw Error('Request too large.');}controller.enqueue(chunk);}}));
+  const limited=(await requestBody(request))?.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,controller){bytes+=chunk.byteLength;if(bytes>MAX_REQUEST_BYTES){bodyTooLarge=true;throw Error('Request too large.');}controller.enqueue(chunk);}}));
   f=await new Response(limited,{headers:{'Content-Type':request.headers.get('content-type')||''}}).formData();
  }catch{return bodyTooLarge?tooLarge():json({error:'Could not read this annotation request. Select the document again and try again.'},400);}
  const model=f.get('model'),effort=f.get('effort');

@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),zlib=require('node:zlib'),
 const root='dist/client',manifest=JSON.parse(fs.readFileSync(path.join(root,'.vite/manifest.json'),'utf8'));
 const initial=new Set();
 function visit(key){assert(manifest[key],`Missing manifest entry: ${key}`);if(initial.has(key))return;initial.add(key);for(const dependency of manifest[key].imports||[])visit(dependency);}
-visit('app/page.tsx');visit('virtual:vinext-app-browser-entry');
+visit('index.html');
 for(const key of ['components/get-started.tsx','components/teaching-panels.tsx','components/study-example.tsx','components/about.tsx','lib/study-backup.ts','lib/export-results.ts','components/results-chart-dialog.tsx','node_modules/unpdf/dist/pdfjs.mjs']){
  assert(manifest[key]?.isDynamicEntry,`${key} must remain available on demand`);
  assert(!initial.has(key),`${key} must not block workspace startup`);

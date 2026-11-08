@@ -1,3 +1,4 @@
+import {allowedOrigin,requestBody} from '@/lib/request-guards';
 import {readAnswerFields} from '@/lib/answer-fields';
 import {providerError,providerJson} from '@/lib/provider-errors';
 import {PROVIDERS,GEMINI_ENABLED,reasoningOptions,type Provider} from '@/lib/providers';
@@ -9,11 +10,11 @@ const MAX_BYTES=22*1024*1024;
 // The destination and method are fixed here. This route cannot generate an
 // annotation, submit a batch, run a search, or upload a provider-side file.
 export async function POST(request:Request){try{
- if(request.headers.get('origin')!==new URL(request.url).origin)return reply({error:'Request origin not allowed.'},403);
+ if(!allowedOrigin(request))return reply({error:'Request origin not allowed.'},403);
  const auth=request.headers.get('authorization')||'',key=auth.startsWith('Bearer ')?auth.slice(7):'';
  if(!key||!/^[\x21-\x7e]+$/.test(key))return reply({error:'Enter your selected provider’s API key to count input tokens.'},401);
  if(Number(request.headers.get('content-length')||0)>MAX_BYTES)return reply({error:'The input is too large for token counting.'},413);
- let bytes=0;const limited=request.body?.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,controller){bytes+=chunk.byteLength;if(bytes>MAX_BYTES)throw Error('Input is too large.');controller.enqueue(chunk);}}));
+ let bytes=0;const limited=(await requestBody(request))?.pipeThrough(new TransformStream<Uint8Array,Uint8Array>({transform(chunk,controller){bytes+=chunk.byteLength;if(bytes>MAX_BYTES)throw Error('Input is too large.');controller.enqueue(chunk);}}));
  const f=await new Response(limited,{headers:{'Content-Type':request.headers.get('content-type')||''}}).formData();
  const provider=f.get('provider') as Provider,model=String(f.get('model')||''),effort=String(f.get('effort')||''),prompt=String(f.get('prompt')||'');
  if(provider==='openrouter')return reply({error:'This operation is not available through OpenRouter. Use Instant processing and the rough cost estimate.'},400);
@@ -31,7 +32,7 @@ export async function POST(request:Request){try{
  const body:any=await buildBatchBody(provider,file,prompt+(knowledge?'\n\n'+knowledgeInstructions(web):''),model,effort,knowledge,web,answerFields);
  let url:string,payload:any,headers:Record<string,string>={'Content-Type':'application/json'};
  if(provider==='openai'){url='https://api.openai.com/v1/responses/input_tokens';headers.Authorization=auth;payload={model, input:body.input,instructions:body.instructions,text:body.text,reasoning:body.reasoning};}
- else if(provider==='anthropic'){url='https://api.anthropic.com/v1/messages/count_tokens';headers['x-api-key']=key;headers['anthropic-version']='2023-06-01';payload={model,system:body.system,messages:body.messages,thinking:body.thinking,output_config:body.output_config};}
+ else if(provider==='anthropic'){url='https://api.anthropic.com/v1/messages/count_tokens';headers['x-api-key']=key;headers['anthropic-version']='2023-06-01';headers['anthropic-dangerous-direct-browser-access']='true';payload={model,system:body.system,messages:body.messages,thinking:body.thinking,output_config:body.output_config};}
  else{url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:countTokens`;headers['x-goog-api-key']=key;payload={generateContentRequest:{...body,model:'models/'+model}};}
  const r=await fetch(url,{method:'POST',headers,body:JSON.stringify(payload),signal:AbortSignal.any([request.signal,AbortSignal.timeout(90000)])});
  const out:any=await providerJson(r);
