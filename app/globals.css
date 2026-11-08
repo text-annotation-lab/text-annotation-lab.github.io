@@ -243,3 +243,9 @@ header{gap:24px}
 .corpus-card-size,.corpus-card-link,.corpus-detail>summary>span,.detail small{font-size:13px}
 .setup .run-guidance{margin-top:18px}
 :is(h1,h2,h3,h4)[tabindex="-1"]:focus{outline:none;box-shadow:none}
+/* Design review, Nov 2026: first-visit pointer, full study name, one-row tabs on phones. */
+.start-hint{display:inline-flex;align-items:center;gap:3px;margin-left:2px;padding:2px 8px 2px 5px;border-radius:999px;background:#f2b33d;color:#1b2942;font-size:12px;font-weight:600;line-height:1.3;white-space:nowrap;text-decoration:none}.start-hint svg{animation:start-hint-nudge 1.6s ease-in-out 3}@keyframes start-hint-nudge{50%{transform:translateX(-3px)}}@media(prefers-reduced-motion:reduce){.start-hint svg{animation:none}}
+.study-menu-trigger,.study-controls .study-menu-trigger{max-width:420px}.active-study-name{max-width:none;flex:0 1 auto;min-width:0}
+@media(max-width:780px){.study-tabs{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;gap:2px;padding-right:32px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent)}.study-tabs::-webkit-scrollbar{display:none}.study-tabs [data-slot=tabs-trigger]{flex:0 0 auto;white-space:nowrap}.study-tabs [data-slot=tabs-trigger].experimental-tab{flex-basis:auto;margin:0 0 0 12px;border-top:0;padding-top:10px}.experimental-tab::before{display:block;left:-7px}.experimental-nav-label{display:none}}
+@media(max-width:600px){.study-controls .study-menu-trigger{max-width:none}}
+@media(min-width:1350px) and (max-width:1439px){.study-tabs:has(.start-hint) [data-slot=tabs-trigger]{padding-left:13px;padding-right:13px}}
