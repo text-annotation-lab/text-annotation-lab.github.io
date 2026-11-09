@@ -13,7 +13,7 @@ export async function researchKnowledge(provider:Provider,model:string,effort:st
  let url:string,headers:Record<string,string>,body:Record<string,unknown>;
  if(provider==='openai'){
   url='https://api.openai.com/v1/responses';headers={Authorization:'Bearer '+key,'Content-Type':'application/json'};
-  body={model,instructions:KNOWLEDGE_RESEARCH_INSTRUCTIONS,input,reasoning:{effort},store:true,max_output_tokens:6000,tools:[{type:'web_search',search_context_size:'low'}],tool_choice:'required',include:['web_search_call.action.sources']};
+  body={model,instructions:KNOWLEDGE_RESEARCH_INSTRUCTIONS,input,reasoning:{effort},prompt_cache_options:{mode:'explicit'},store:true,max_output_tokens:6000,tools:[{type:'web_search',search_context_size:'low'}],tool_choice:'required',include:['web_search_call.action.sources']};
  }else if(provider==='anthropic'){
   url='https://api.anthropic.com/v1/messages';headers={'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true','Content-Type':'application/json'};
   body={model,max_tokens:6000,system:KNOWLEDGE_RESEARCH_INSTRUCTIONS,messages:[{role:'user',content:input}],tools:[{type:'web_search_20250305',name:'web_search',max_uses:3}]};
