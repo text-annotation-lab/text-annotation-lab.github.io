@@ -21,3 +21,7 @@ export function installLocalApi(){
   return POST(new Request(url,input instanceof Request?input:init));
  };
 }
+
+// Load the request handlers ahead of use, for the same reason as the reading
+// sections: a run started after a new publish must not need the old files.
+export function preloadLocalApi(){for(const load of Object.values(routes))load().catch(()=>{});}
