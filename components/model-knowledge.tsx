@@ -70,7 +70,7 @@ export function ModelKnowledge({draftRef,studyId='current',studyName,onStudyRead
  function loadExamples(){if(locked||input&&!confirm('Replace the unqueued input with example subjects? Queued subjects and results are kept.'))return;setMode('list');setInput(KNOWLEDGE_EXAMPLES);if(!prompt.trim())setPrompt(KNOWLEDGE_SAMPLE);setNotice('Example subjects loaded for preview. Review the prompt, then add them to the queue.');}
  async function run(all:boolean){
   if(lock.current||locked||keyRejected)return;
-  setSetupChecked(true);const errors=setupErrors(provider,apiKey,prompt,model,effort);const missingSetup=missingAnnotationSetup(apiKey,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(missingSetup);document.getElementById(errors.key?'knowledge-key':errors.prompt?'knowledge-prompt':'knowledge-setup')?.focus();return;}
+  setSetupChecked(true);const errors=setupErrors(provider,apiKey,prompt,model,effort);const missingSetup=missingAnnotationSetup(apiKey,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(errors.key||errors.prompt?'':missingSetup);document.getElementById(errors.key?'knowledge-key':errors.prompt?'knowledge-prompt':'knowledge-setup')?.focus();return;}
   lock.current=true;stop.current=false;setBusy(true);reportBusy(true);setNotice('');
   const runId=newId(),runStartedAt=new Date().toISOString(),runSize=all?latest.current.filter(r=>r.status==='pending').length:1;
   let claimed=0,failed=false;
@@ -101,7 +101,7 @@ export function ModelKnowledge({draftRef,studyId='current',studyName,onStudyRead
  }
  async function submitBatch(){
   if(lock.current||locked||webSearch||keyRejected)return;
-  setSetupChecked(true);const errors=setupErrors(provider,apiKey,prompt,model,effort);const missingSetup=missingAnnotationSetup(apiKey,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(missingSetup);document.getElementById(errors.key?'knowledge-key':errors.prompt?'knowledge-prompt':'knowledge-setup')?.focus();return;}
+  setSetupChecked(true);const errors=setupErrors(provider,apiKey,prompt,model,effort);const missingSetup=missingAnnotationSetup(apiKey,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(errors.key||errors.prompt?'':missingSetup);document.getElementById(errors.key?'knowledge-key':errors.prompt?'knowledge-prompt':'knowledge-setup')?.focus();return;}
   const pending=latest.current.filter(d=>d.status==='pending');if(!pending.length)return;
   if(pending.length>MAX_BATCH_ITEMS||new TextEncoder().encode(JSON.stringify(pending.map(d=>d.fields))).length>MAX_BATCH_SOURCE_BYTES){setNotice('Submit up to 10,000 subjects and 50 MB of fields together. Submit fewer subjects when this limit is exceeded.');return;}
   lock.current=true;setBatchBusy(true);setNotice('');
