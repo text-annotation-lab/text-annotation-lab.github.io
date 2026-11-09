@@ -23,7 +23,10 @@ export async function annotateOpenRouter(file:File,prompt:string,model:string,ef
   }
   const response=await fetch('https://openrouter.ai/api/v1/chat/completions',{
    method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},signal:AbortSignal.timeout(180000),
-   body:JSON.stringify({model,stream:false,max_tokens:12000,reasoning:{effort,exclude:true},provider:{require_parameters:true},
+   // OpenAI models (GPT-5.6 and later) cache automatically and bill cache
+   // writes at 1.25x input; each document is new input, so switch caching off
+   // as on the direct OpenAI path (explicit mode with no breakpoints).
+   body:JSON.stringify({model,stream:false,max_tokens:12000,reasoning:{effort,exclude:true},provider:{require_parameters:true},...(model.startsWith('openai/')?{prompt_cache_options:{mode:'explicit'}}:{}),
     messages:[{role:'system',content:prompt},{role:'user',content}],
     ...(pdfInput?{plugins:[{id:'file-parser',pdf:{engine:'native'}}]}:{}),
     response_format:{type:'json_schema',json_schema:{name:'annotation',strict:true,schema:annotationSchema(answerFields,false,schemaPrompt,knowledge)}}})
