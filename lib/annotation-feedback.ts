@@ -9,3 +9,9 @@ export function remainingEstimateNotice(rows: {status: string}[]): string | unde
  if (rows.some(row => row.status === 'running' || row.status === 'queued')) return 'Annotations are in progress or submitted as a batch. There are no additional queued items to estimate. Costs for the work already started are not included here.';
  return 'No annotations are currently queued. Some items need attention; review their errors and queue any you want to retry, then estimate again. Your completed results are kept.';
 }
+
+// Notices that only confirm what the student just did. They are shown in a neutral
+// color; anything carrying a caveat (skipped files, errors, next steps) stays a warning.
+export function isPlainConfirmation(notice: string): boolean {
+ return /^(\d+ documents? added\.|Checking selected documents…|Results cleared\. Your documents are ready to annotate again with the current settings\.)$/.test(notice.trim());
+}
