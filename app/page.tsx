@@ -176,7 +176,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  }
  async function run(all:boolean){
   if(lock.current||batchJob||!ready||storageConflict||keyRejected)return;
-  setSetupChecked(true);const errors=setupErrors(provider,key,prompt,model,effort);const missingSetup=missingAnnotationSetup(key,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(missingSetup);document.getElementById(errors.key?'key':errors.prompt?'prompt':'workspace')?.focus();return;}
+  setSetupChecked(true);const errors=setupErrors(provider,key,prompt,model,effort);const missingSetup=missingAnnotationSetup(key,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(errors.key||errors.prompt?'':missingSetup);document.getElementById(errors.key?'key':errors.prompt?'prompt':'workspace')?.focus();return;}
   lock.current=true;stop.current=false;setBusy(true);setNotice('');
   const runId=newId(),runStartedAt=new Date().toISOString(),runSize=all?latest.current.filter(r=>r.status==='pending').length:1;
   let claimed=0,failed=false;
@@ -224,7 +224,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  }
  async function submitBatch(){
   if(lock.current||batchJob||!ready||storageConflict||keyRejected)return;
-  setSetupChecked(true);const errors=setupErrors(provider,key,prompt,model,effort);const missingSetup=missingAnnotationSetup(key,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(missingSetup);document.getElementById(errors.key?'key':errors.prompt?'prompt':'workspace')?.focus();return;}
+  setSetupChecked(true);const errors=setupErrors(provider,key,prompt,model,effort);const missingSetup=missingAnnotationSetup(key,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(errors.key||errors.prompt?'':missingSetup);document.getElementById(errors.key?'key':errors.prompt?'prompt':'workspace')?.focus();return;}
   const pending=latest.current.filter(d=>d.status==='pending');if(!pending.length)return;
   if(pending.length>MAX_BATCH_ITEMS||pending.reduce((n,d)=>n+d.file.size,0)>MAX_BATCH_SOURCE_BYTES){setNotice('Submit up to 10,000 texts and 50 MB of files together. Submit fewer or smaller files when this limit is exceeded.');return;}
   lock.current=true;setBatchBusy(true);setNotice('');
