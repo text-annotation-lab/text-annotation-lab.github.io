@@ -154,7 +154,7 @@ export function timeDots(units:Unit[],scale:Scale|undefined,trend:boolean,o:View
  if(trend){
   const pts=smoothTrend(dated.map(u=>({year:u.year!,value:u.number!})),trendWindow(years));
   if(pts.length){const d='M'+pts.map(p=>`${n(X(p.year))},${n(Y(p.value))}`).join(' L');
-   s+=`<path d="${d}" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round" opacity=".9"/><path d="${d}" fill="none" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/>`;
+   s+=`<path d="${d}" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round" opacity=".9"/><path d="${d}" fill="none" stroke="${INK}" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="7 5"/>`;
    notes.push(`Trend line: a smoothed average that weighs ${o.noun} closest in time most heavily (window of about ${Math.round(trendWindow(years)*2)} years).${dated.length<12?` With only ${dated.length} ${o.noun}, read it as a rough guide.`:''}`);}
   else notes.push(`The trend line needs at least 5 ${o.noun} with years spread over time.`);
  }
