@@ -1,5 +1,9 @@
 import {TabsContent} from '@/components/ui/tabs';
 
+declare const __BUILD_DATE__:string|undefined;
+// Set when the site is built (vite.config.ts); absent in tests.
+const lastUpdated=typeof __BUILD_DATE__==='string'?new Date(__BUILD_DATE__+'T12:00:00Z').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric',timeZone:'UTC'}):'';
+
 export function About(){
  return <TabsContent value="about" className="reading-panel panel">
   <p className="eyebrow">BACKGROUND AND CREDITS</p>
@@ -20,6 +24,7 @@ export function About(){
    <p>If you use Text Annotation Lab in research or describe it in a publication, the suggested Chicago author-date citation is:</p>
    <p className="about-citation">Kjeldgaard-Christiansen, Jens. 2026. <em>Text Annotation Lab</em>. <a href="https://asca.au.dk/annotation-lab" target="_blank" rel="noreferrer">https://asca.au.dk/annotation-lab</a>.</p>
    <p className="reading-meta">Because the site evolves, include your access date where appropriate. Citation is appreciated and is not a condition of use.</p>
+   {lastUpdated&&<p className="reading-meta">Site last updated {lastUpdated}.</p>}
   </article>
  </TabsContent>;
 }
