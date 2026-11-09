@@ -11,6 +11,11 @@ function load(file){const exports={};new Function('exports','require',ts.transpi
  assert.equal(differentSettingsCount([{...row,status:'pending',prompt:'Earlier'}],current),0);assert.equal(differentSettingsCount([{status:'done'}],current),0);assert.equal(JSON.stringify(row),saved);
  const {SettingsNotice,SaveHelp}=load('components/student-guidance.tsx');assert.equal(renderToStaticMarkup(React.createElement(SettingsNotice,{rows:[row],current})), '');
  const html=renderToStaticMarkup(React.createElement(SettingsNotice,{rows:[{...row,prompt:'Pilot'}],current}));assert.match(html,/1 completed annotation uses different settings/);assert.match(html,/Save a version/);assert(!html.includes('open=""'));
+ const {settingsDifferences}=load('lib/student-guidance.ts');
+ const rows=[{...row,model:'openai/gpt-6-sol'},{...row,model:'openai/gpt-6-sol',prompt:'Pilot'},{...row}];
+ assert.deepEqual(settingsDifferences(rows,current),[{key:'model',earlier:[{value:'openai/gpt-6-sol',count:2}]},{key:'prompt',earlier:[{value:'Pilot',count:1}]}]);
+ const named=renderToStaticMarkup(React.createElement(SettingsNotice,{rows,current}));
+ assert.match(named,/2 completed annotations use different settings \(model, prompt\)/);assert.match(named,/OpenAI · GPT-6 Sol \(2 results\) in the results; OpenAI · GPT-6 Luna now/);assert.match(named,/1 result was made with a different prompt/);
  assert.match(renderToStaticMarkup(React.createElement(SaveHelp)),/cannot reopen a study/);
  const {createResultsWorkbook}=load('lib/export-results.ts');const book=new ExcelJS.Workbook();await book.xlsx.load(await createResultsWorkbook([{...row,name:'scan.pdf',inputMode:'pdf-native'},{...row,id:'b',name:'old.pdf',inputMode:undefined},{...row,id:'c',name:'error.txt',status:'error',rawResponse:'Unreadable response',error:'Invalid format'}],current));
  assert.equal(book.worksheets[0].name,'Results');assert(book.getWorksheet('Responses needing review'));

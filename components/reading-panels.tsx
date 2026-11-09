@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useState,type ComponentType} from 'react';
 import {TabsContent} from '@/components/ui/tabs';
+import {isStaleBuild} from '@/lib/stale-build';
 
 // Teaching content is fetched only when its section is opened. The two workspaces
 // stay mounted separately so background runs and storage safeguards are unchanged.
@@ -21,7 +22,7 @@ export function prepareReadingPanel(section:string):Promise<void>|undefined{
  let request=requests.get(key);
  if(!request){
   errors.delete(key);
-  request=loaders[key]().then(Panel=>{panels.set(key,Panel);}).catch(error=>{errors.set(key,'This section could not load. Please try again.');throw error;}).finally(()=>{requests.delete(key);});
+  request=loaders[key]().then(Panel=>{panels.set(key,Panel);}).catch(error=>{errors.set(key,isStaleBuild()?'This section could not load because the Lab was updated while this page was open. Reload the page to see it.':'This section could not load. Please try again.');throw error;}).finally(()=>{requests.delete(key);});
   requests.set(key,request);
  }
  return request;
@@ -38,5 +39,8 @@ export function ReadingPanels({section}:{section:string}){
  },[section,key,Panel,error,attempt]);
  if(!key)return null;
  if(Panel)return <Panel/>;
- return <TabsContent value={section} className="reading-panel panel"><p role="status">{error||'Loading section…'}</p>{error&&<button type="button" className="textbutton" onClick={()=>{errors.delete(key);setAttempt(value=>value+1);}}>Try again</button>}</TabsContent>;
+ return <TabsContent value={section} className="reading-panel panel"><p role="status">{error||'Loading section…'}</p>{error&&<button type="button" className="textbutton" onClick={()=>{if(isStaleBuild()){window.location.reload();return;}errors.delete(key);setAttempt(value=>value+1);}}>{isStaleBuild()?'Reload page':'Try again'}</button>}</TabsContent>;
 }
+// Fetch the reading sections once the workspace is idle, so a page left open
+// keeps working after a new version replaces the files it was built from.
+export function preloadReadingPanels(){for(const section of ['get-started','tips','study-example','about'])prepareReadingPanel(section)?.catch(()=>{});}

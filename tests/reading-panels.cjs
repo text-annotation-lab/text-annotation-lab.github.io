@@ -5,6 +5,7 @@ const imports=id=>{
  if(id==='react')return {useState:()=>[0,()=>{}],useEffect:()=>{}};
  if(id==='react/jsx-runtime')return {jsx,jsxs:jsx};
  if(id==='@/components/ui/tabs')return {TabsContent:'TabsContent'};
+ if(id==='@/lib/stale-build')return {isStaleBuild:()=>false};
  calls.push(id);return new Promise((resolve,reject)=>pending.set(id,{resolve,reject}));
 };
 const mod={};new Function('exports','require',ts.transpileModule(fs.readFileSync('components/reading-panels.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText)(mod,imports);

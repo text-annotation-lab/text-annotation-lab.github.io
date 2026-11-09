@@ -26,6 +26,16 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      # A page opened before this publish still asks for the previous version's
+      # files when it opens a section. Keep those files for one more version.
+      - name: Keep the previous version's files
+        run: |
+          ls dist/client/assets > dist/client/asset-files.txt
+          curl -fsS https://text-annotation-lab.github.io/asset-files.txt -o previous-assets.txt || exit 0
+          while read -r file; do
+            case "$file" in ''|*[!A-Za-z0-9._-]*) continue;; esac
+            [ -e "dist/client/assets/$file" ] || curl -fsS "https://text-annotation-lab.github.io/assets/$file" -o "dist/client/assets/$file" || echo "Skipped $file"
+          done < previous-assets.txt
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/client
