@@ -8,7 +8,6 @@ export function TeachingPanels(){return <>
   <TabsContent value="resources" className="reading-panel panel">
     <p className="eyebrow">FURTHER READING</p><h2 id="further-resources" tabIndex={-1}>Further resources</h2>
     <p>For those who want to explore the methods behind AI-assisted text annotation in more depth.</p>
-    <h3>Practical documentation</h3>
     <article><h3>Prompting guides</h3><p>General guidance on clear instructions, output formats, and using examples to communicate your task: <a href="https://developers.openai.com/api/docs/guides/prompt-engineering" target="_blank" rel="noreferrer">OpenAI ↗</a>, <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview" target="_blank" rel="noreferrer">Anthropic ↗</a>, <a href="https://aistudio.google.com/docs/prompting-strategies" target="_blank" rel="noreferrer">Google ↗</a>.</p></article>
     <article><h3>Model overviews</h3><p>Current model documentation for comparing capabilities, supported settings, and costs when choosing a model for your study: <a href="https://developers.openai.com/api/docs/models" target="_blank" rel="noreferrer">OpenAI ↗</a>, <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noreferrer">Anthropic ↗</a>, <a href="https://aistudio.google.com/docs/models" target="_blank" rel="noreferrer">Google ↗</a>, <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer">OpenRouter ↗</a>.</p></article>
     <h3>Research and methods</h3>
