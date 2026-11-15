@@ -27,6 +27,11 @@ const document=(file,status='pending')=>({id:crypto.randomUUID(),name:file.name,
  assert.equal((await Promise.all(docs.map(d=>d.file.text()))).join(''),await source.file.text());
  assert.deepEqual(restoreWholeDocuments(docs),[source]);assert.equal((await chunkDocuments(docs,500)).docs.length,3,'Never resplit an existing chunk');
  assert.equal(restoreWholeDocuments([{...docs[0],status:'done'},...docs.slice(1)]).length,3,'Keep completed results');
+ // Labels and metadata (research mode) go with every chunk and back to the whole document; chunks whose values differ stay chunks.
+ const labelled=(await chunkDocuments([{...source,cells:['positive','1961']}],1000)).docs;assert(labelled.every(d=>JSON.stringify(d.cells)==='["positive","1961"]'),'Chunks keep their document’s labels and metadata');
+ assert.deepEqual(restoreWholeDocuments(labelled),[{...source,cells:['positive','1961']}]);
+ assert.equal(restoreWholeDocuments([{...labelled[0],cells:['negative','1961']},...labelled.slice(1)]).length,3,'Never merge away differing labels');
+ assert.equal(restoreWholeDocuments([{...labelled[0],cells:['positive','1961','']},...labelled.slice(1)]).length,1,'A blank added column is no difference');
  const complete=document(new File(['a b c'],'done.txt'),'done');assert.equal((await chunkDocuments([complete],1)).docs[0],complete);
  const html=await chunkDocuments([document(new File(['<p>one two three</p><script>ignore me</script>'],'web.html'))],2);assert.equal(html.docs.length,2);assert.equal(await html.docs[1].file.text(),'three');
  const rtf=await chunkDocuments([document(new File(['{\\rtf1\\ansi one two three}'],'word.rtf'))],2);assert.equal(rtf.docs.length,2);

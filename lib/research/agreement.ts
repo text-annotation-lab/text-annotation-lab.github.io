@@ -16,7 +16,9 @@ export function sourceValues(rows:Row[],columns:Column[],source:CompareSource,fi
  return rows.map(row=>{const result=rowForRun(row,source.run);return result.status==='done'?valueOf(result,field).trim():'';});
 }
 const isNumber=(value:string)=>value!==''&&!Number.isNaN(Number(value));
-export type Pairing={ids:string[];names:string[];a:string[];b:string[];rawA:string[];rawB:string[];onlyA:number;onlyB:number;numeric:boolean;range?:[number,number]};
+// Codes that only ever mean “no label” (unlike words such as “none”, which may be a category).
+const MISSING_CODE=/^(na|n\/a|#n\/a|n\.a\.?|nan|missing|-|–|—|\.|\?)$/i;
+export type Pairing={ids:string[];names:string[];a:string[];b:string[];rawA:string[];rawB:string[];onlyA:number;onlyB:number;numeric:boolean;range?:[number,number];known?:string[]};
 export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:string,b:CompareSource,fieldB:string):Pairing{
  const va=sourceValues(rows,columns,a,fieldA),vb=sourceValues(rows,columns,b,fieldB);
  const p:Pairing={ids:[],names:[],a:[],b:[],rawA:[],rawB:[],onlyA:0,onlyB:0,numeric:false};
@@ -32,16 +34,23 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
   // The scale is read from every answer of the run, not only the paired ones.
   const all=(answers===p.a?va:vb).map(value=>normalizeLabel(value)).filter(isNumber).map(Number);
   p.range=[Math.min(...all),Math.max(...all)];
+ }else{
+  // Categories: the values a run gives anywhere are real categories (a run that answers "none" keeps it); with two
+  // columns, the words both use ("none", "unknown"), but never a code such as "NA" or "-". Any other missing-value
+  // marker ("NA" in a coder's column) is left out of the comparison.
+  const values=(list:string[])=>new Set(list.filter(Boolean).map(value=>normalizeLabel(value)));
+  const setA=values(va),setB=values(vb);
+  p.known=a.kind==='run'||b.kind==='run'?[...(a.kind==='run'?setA:[]),...(b.kind==='run'?setB:[])]:[...setA].filter(value=>setB.has(value)&&!MISSING_CODE.test(value));
  }
  return p;
 }
 export type LevelChoice='auto'|Level;
 export const autoLevel=(p:Pairing):Level=>p.numeric?'ordinal':'nominal';
-export type AgreementJob={a:string[];b:string[];level:Level;allowed:string[];tolerance:number;scaleSeen?:boolean;range?:[number,number]};
+export type AgreementJob={a:string[];b:string[];level:Level;allowed:string[];tolerance:number;scaleSeen?:boolean;range?:[number,number];known?:string[]};
 export function agreementJob(p:Pairing,level:LevelChoice,tolerance:number):AgreementJob{
- return {a:p.a,b:p.b,level:level==='auto'?autoLevel(p):level,allowed:[],tolerance,scaleSeen:p.numeric||undefined,range:p.numeric?p.range:undefined};
+ return {a:p.a,b:p.b,level:level==='auto'?autoLevel(p):level,allowed:[],tolerance,scaleSeen:p.numeric||undefined,range:p.numeric?p.range:undefined,known:p.known};
 }
-export const runJob=(job:AgreementJob,withIntervals:boolean)=>agreement(job.a,job.b,job.level,job.allowed,job.tolerance,{withIntervals,scaleSeen:job.scaleSeen,range:job.range});
+export const runJob=(job:AgreementJob,withIntervals:boolean)=>agreement(job.a,job.b,job.level,job.allowed,job.tolerance,{withIntervals,scaleSeen:job.scaleSeen,range:job.range,known:job.known});
 
 export type StatLine={key:string;label:string;value:string;ci?:[number,number]|null;ciText?:string;help?:string};
 const interval=(ci:[number,number]|null|undefined,format:(x:number)=>string)=>ci?`${format(ci[0])} to ${format(ci[1])}`:'';

@@ -38,6 +38,24 @@ for(const key of ['cohenKappa','krippendorffAlpha','weightedKappa','percentAgree
 assert(!metrics.agreement(X.slice(0,9),Y.slice(0,9),'ordinal',[],1,{withIntervals:true}).ci.cohenKappa,'No bootstrap interval below ten texts');
 const streamA=metrics.seeded(42),streamB=sample.seeded(42);for(let i=0;i<5;i++)assert.equal(streamA(),streamB(),'One random stream for statistics and sampling');
 
+// Categories with no codebook: a coder's "NA" is left out and reported, unless the run itself gives it as an answer.
+{
+ const rowsNA=['a','b','c','d','e','f'].map((id,i)=>({id,name:id,status:'done',runNo:1,score:['pos','neg','pos','neg','none','neg'][i],cells:[['pos','neg','pos','NA','n/a','neg'][i]]}));
+ const cols=[{name:'human',role:'label'}],pairNA=agree.pairSources(rowsNA,cols,{kind:'run',run:1},'',{kind:'column',name:'human'},'');
+ const s1=agree.runJob(agree.agreementJob(pairNA,'auto',1),false);
+ assert.equal(s1.n,4);near(s1.cohenKappa,1,'kappa without NA');assert.equal(s1.leftOut.n,2);assert.deepEqual(s1.leftOut.values,['na','n/a']);
+ assert.match(agree.leftOutNote(s1),/2 texts were left out because a value was a missing-value marker/);
+ const rowsNone=rowsNA.map((row,i)=>({...row,cells:[['pos','neg','pos','neg','none','neg'][i]]}));
+ const s2=agree.runJob(agree.agreementJob(agree.pairSources(rowsNone,cols,{kind:'run',run:1},'',{kind:'column',name:'human'},''),'auto',1),false);
+ assert.equal(s2.n,6,'“none” is a category when the run gives it');assert.equal(s2.leftOut.n,0);
+ const twoCoders=['a','b','c','d'].map((id,i)=>({id,name:id,status:'pending',cells:[['x','y','NA','x'][i],['x','y','x','NA'][i]]}));
+ const s3=agree.runJob(agree.agreementJob(agree.pairSources(twoCoders,[{name:'c1',role:'label'},{name:'c2',role:'label'}],{kind:'column',name:'c1'},'',{kind:'column',name:'c2'},''),'auto',1),false);
+ assert.equal(s3.n,2,'Two coders: NA in either column is left out');
+ const coders2=['a','b','c'].map((id,i)=>({id,name:id,status:'pending',cells:[['x','none','none'][i],['x','none','x'][i]]}));
+ assert.equal(agree.runJob(agree.agreementJob(agree.pairSources(coders2,[{name:'c1',role:'label'},{name:'c2',role:'label'}],{kind:'column',name:'c1'},'',{kind:'column',name:'c2'},''),'auto',1),false).n,3,'Two coders: a word both use, such as “none”, is a category');
+ assert.equal(metrics.agreement(['x','na'],['x','y'],'nominal',[],1,{withIntervals:false}).n,2,'Without known categories the statistics are unchanged');
+}
+
 // --- Runs ----------------------------------------------------------------------
 const setup={provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'Classify tone',answerFields:[]};
 const fresh=()=>[{id:'a',name:'a.txt',status:'pending'},{id:'b',name:'b.txt',status:'pending'}];
