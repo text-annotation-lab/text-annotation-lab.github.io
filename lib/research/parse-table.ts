@@ -1,0 +1,81 @@
+// Reading and writing tables: CSV or TSV text, and Excel workbooks.
+import type {Sheet} from './columns';
+
+// The delimiter that splits the first line into the most cells (comma, semicolon, or tab).
+function sniff(text:string):string{
+ let line='',quoted=false;
+ for(const ch of text){if(ch==='"')quoted=!quoted;else if((ch==='\n'||ch==='\r')&&!quoted)break;line+=quoted&&ch!=='"'?' ':ch;}
+ const count=(d:string)=>line.split(d).length-1;
+ return [',',';','\t'].reduce((best,d)=>count(d)>count(best)?d:best,',');
+}
+// RFC 4180: quoted cells may hold delimiters, line breaks, and doubled quotes.
+export function parseDelimited(input:string):Sheet{
+ const text=input.replace(/^﻿/,''),delimiter=sniff(text);
+ const rows:string[][]=[];let row:string[]=[],cell='',quoted=false,i=0;
+ const endCell=()=>{row.push(cell);cell='';};
+ const endRow=()=>{endCell();if(row.some(value=>value.trim()!==''))rows.push(row);row=[];};
+ while(i<text.length){
+  const ch=text[i];
+  if(quoted){
+   if(ch==='"'){if(text[i+1]==='"'){cell+='"';i+=2;continue;}quoted=false;i++;continue;}
+   cell+=ch;i++;continue;
+  }
+  if(ch==='"'&&cell.trim()===''){cell='';quoted=true;i++;continue;}
+  if(ch===delimiter){endCell();i++;continue;}
+  if(ch==='\r'){if(text[i+1]==='\n')i++;endRow();i++;continue;}
+  if(ch==='\n'){endRow();i++;continue;}
+  cell+=ch;i++;
+ }
+ if(cell!==''||row.length)endRow();
+ return toSheet(rows);
+}
+function toSheet(rows:string[][]):Sheet{
+ if(!rows.length)return {header:[],rows:[]};
+ const width=Math.max(...rows.map(row=>row.length));
+ const seen=new Map<string,number>();
+ const header=Array.from({length:width},(_,i)=>{
+  const base=String(rows[0][i]??'').normalize('NFC').trim()||'Column '+(i+1);
+  const n=(seen.get(base.toLowerCase())||0)+1;seen.set(base.toLowerCase(),n);
+  return n>1?`${base} (${n})`:base;
+ });
+ return {header,rows:rows.slice(1).map(row=>Array.from({length:width},(_,i)=>String(row[i]??'').trim()))};
+}
+// An Excel cell as the text a reader sees: formulas give their result, dates an ISO date.
+function cellText(value:any):string{
+ if(value===null||value===undefined)return '';
+ if(value instanceof Date)return Number.isNaN(value.getTime())?'':value.toISOString().slice(0,value.getUTCHours()||value.getUTCMinutes()||value.getUTCSeconds()?19:10).replace('T',' ');
+ if(typeof value==='object'){
+  if('result' in value)return cellText(value.result);
+  if(Array.isArray(value.richText))return value.richText.map((part:any)=>String(part?.text??'')).join('');
+  if('text' in value)return cellText(value.text);
+  if('error' in value)return '';
+  return '';
+ }
+ return String(value);
+}
+export const SPREADSHEET_ACCEPT='.csv,.tsv,.txt,.xlsx';
+export async function parseSpreadsheet(file:File):Promise<Sheet>{
+ if(file.size>20*1024*1024)throw new Error('Choose a spreadsheet of up to 20 MB.');
+ if(/\.xls$/i.test(file.name))throw new Error('Save this workbook as .xlsx or .csv first; the older .xls format cannot be read.');
+ if(/\.xlsx$/i.test(file.name)){
+  const ExcelJS=(await import('exceljs')).default,workbook=new ExcelJS.Workbook();
+  await workbook.xlsx.load(await file.arrayBuffer());
+  const sheet=workbook.worksheets.find(candidate=>candidate.actualRowCount>1)||workbook.worksheets[0];
+  if(!sheet)return {header:[],rows:[]};
+  const rows:string[][]=[];
+  sheet.eachRow({includeEmpty:false},row=>{
+   const values:string[]=[];
+   row.eachCell({includeEmpty:true},(cell,column)=>{values[column-1]=cellText(cell.value);});
+   const filled=Array.from(values,value=>value??'');
+   if(filled.some(value=>value.trim()!==''))rows.push(filled);
+  });
+  return toSheet(rows);
+ }
+ return parseDelimited(await file.text());
+}
+
+// CSV for analysis software: every value exactly as it is, quoted where needed.
+export function toCsv(rows:(string|number|null|undefined)[][]):string{
+ const cell=(value:string|number|null|undefined)=>{const text=value===null||value===undefined?'':String(value);return /[",\r\n]/.test(text)||/^\s|\s$/.test(text)?'"'+text.replace(/"/g,'""')+'"':text;};
+ return '﻿'+rows.map(row=>row.map(cell).join(',')).join('\r\n')+'\r\n';
+}

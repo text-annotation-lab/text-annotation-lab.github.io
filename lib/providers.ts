@@ -81,6 +81,11 @@ export function modelHint(provider:Provider,model:string):string {
  return hints[model]||'Test this model on a small, varied sample before running your study.';
 }
 
+// The same description without advice to the reader (shown in research mode).
+export function modelFacts(provider:Provider,model:string):string{
+ return modelHint(provider,model).split(/(?<=[.!?])\s+/).filter(sentence=>!/^(Test|Compare|Try)\b/.test(sentence)).join(' ');
+}
+
 // Standard-request eligibility, verified against first-party pricing. This does
 // not inspect an API key or promise quota for a particular account.
 export const MODEL_ACCESS_CHECKED='November 15, 2026';
