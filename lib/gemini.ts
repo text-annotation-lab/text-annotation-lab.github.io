@@ -1,5 +1,5 @@
 import {annotationSchema,answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
-import {providerError,providerJson,incompleteAnnotation} from './provider-errors';
+import {providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 import {annotationOutputLimit,isGemini4} from './providers';
 import {extractText,TextEncodingError} from './extract-text';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
@@ -17,7 +17,7 @@ export async function annotateGemini(file:File,prompt:string,model:string,effort
  const thinkingConfig=model.startsWith('gemini-2.5-')?{thinkingBudget:effort==='off'?0:effort==='dynamic'?-1:Number(effort)}:{thinkingLevel:effort.toUpperCase()};
  const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',headers:{'x-goog-api-key':key,'Content-Type':'application/json'},signal:AbortSignal.timeout(isGemini4(model)?900000:180000),body:JSON.stringify({systemInstruction:{parts:[{text:prompt}]},contents:[{role:'user',parts}],generationConfig:{maxOutputTokens:annotationOutputLimit('gemini',model),thinkingConfig,...(settings?.plain?{}:{responseMimeType:'application/json',responseSchema:annotationSchema(answerFields,true,schemaPrompt,knowledge,settings)})}})});
  const out:any=await providerJson(r);
- if(!r.ok)return reply({error:providerError('gemini',r.status,out,r.headers)},r.status);
+ if(!r.ok)return reply(providerFailure('gemini',r.status,out,r.headers),r.status);
  if(!out)return reply({error:'Gemini returned an unreadable response. Check Google AI Studio usage before retrying; the request may have completed.'},502);
  const candidate=out.candidates?.[0];
  if(out.promptFeedback?.blockReason||candidate?.finishReason!=='STOP')return reply({error:incompleteAnnotation('gemini',out.promptFeedback?.blockReason||candidate?.finishReason)},422);

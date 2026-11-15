@@ -203,6 +203,66 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.deepEqual(typed.latest().answerFields,['Notes']);assert.deepEqual(typed.latest().answerSettings,{rationale:false,fields:[{name:'Notes',type:'text',values:[],description:''}]});
  }
 
+ // More annotations at once, and a run that paces itself on rate limits: research mode only.
+ {
+  const limited=(wait=1)=>Response.json({error:'OpenAI reports a rate limit.',retryAfterMs:wait},{status:429}),fine=()=>Response.json({score:'POSITIVE',explanation:'Evidence'});
+  const study=()=>({docs:documents(),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:128});
+  // The waits are real time here: a quarter of a second after the provider's own.
+  const until=async(h,ready)=>{for(let n=0;n<200&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
+  const controls=h=>({select:()=>h.find(n=>n.props?.id==='annotation-concurrency').props,choices:()=>h.find(n=>n.props?.id==='annotation-concurrency').props.children.map(option=>option.props.value),summary:()=>h.text(h.button('Processing options')),help:()=>h.text(h.find(n=>n.props?.id==='parallel-help')),statuses:()=>h.latest().docs.map(doc=>doc.status)});
+  // The standard Lab: 1, 2, and 4; a study set to more runs one at a time, and a rate limit stops the run as before.
+  let replies=[limited];
+  const plain=harness(study(),async()=>{},async()=>(replies.shift()||fine)());await plain.flush();await plain.configure();
+  let c=controls(plain);plain.button('Processing options').props.onClick();await plain.flush();
+  assert.deepEqual(c.choices(),[1,2,4]);assert.equal(c.select().value,1);assert(c.summary().includes('Instant · one at a time'));assert(c.help().startsWith('Run all can annotate several texts at once.'));assert(!c.help().includes('128'));
+  await plain.button('Run all').props.onClick();await plain.flush();
+  assert.equal(plain.calls.length,1,'The standard Lab does not send a refused request again');assert.deepEqual(c.statuses(),['error','pending','pending']);assert.equal(plain.latest().docs[0].concurrency,1);
+  assert.equal(plain.latest().concurrency,128,'The study keeps its own setting');
+  // Research mode: up to 128, and the study's setting applies.
+  plain.find(n=>n.type==='ModeSwitch').props.onChange(true);await plain.flush();
+  assert.deepEqual(c.choices(),[1,2,4,8,16,32,64,128]);assert.equal(c.select().value,128);assert(c.summary().includes('Instant · 128 at a time'));
+  assert.equal(c.help(),'A run can annotate up to 128 texts at once. Each text gets a separate request; token prices are unchanged. When the provider reports a rate limit, the run waits and goes on with fewer at a time. Annotate next always runs one text.');
+  c.select().onChange({target:{value:'16'}});await plain.flush();assert.equal(plain.latest().concurrency,16);assert.equal(c.select().value,16);
+  c.select().onChange({target:{value:'100'}});await plain.flush();assert.equal(plain.latest().concurrency,1,'Only the offered numbers are taken');
+  c.select().onChange({target:{value:'64'}});await plain.flush();
+  plain.find(n=>n.type==='ModeSwitch').props.onChange(false);await plain.flush();
+  assert.deepEqual(c.choices(),[1,2,4]);assert.equal(c.select().value,1);assert.equal(plain.latest().concurrency,64);
+  c.select().onChange({target:{value:'2'}});await plain.flush();assert.equal(plain.latest().concurrency,2);assert.equal(c.select().value,2);
+
+  // A refused request is sent again after the wait, and the run goes on.
+  replies=[limited];
+  const paced=harness(study(),async()=>{},async()=>(replies.shift()||fine)());await paced.flush();
+  paced.find(n=>n.type==='ModeSwitch').props.onChange(true);await paced.flush();paced.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-paced'},false);await paced.flush();
+  c=controls(paced);
+  paced.button('Remaining').props.onClick();await paced.flush();
+  assert.deepEqual(c.statuses(),['running','done','done'],'The refused text waits while the others finish');assert.equal(paced.calls.length,3);
+  await until(paced,()=>c.statuses().every(status=>status==='done'));assert.equal(paced.calls.length,4,'Three texts and one request sent again');
+  assert(paced.latest().docs.every(doc=>doc.concurrency===128&&doc.error===undefined&&doc.runNo===1));
+  const notice=paced.all(n=>n.props?.role==='status'&&String(n.props.className).startsWith('message')).map(n=>paced.text(n)).join(' ');
+  assert.match(notice,/the provider reported a rate limit: a pause of about 1 second, then up to one text at a time, rising again as requests get through\./);
+  assert(paced.all(n=>n.props?.role==='status'&&n.props.className==='message info').length===1,'The note is information, not a warning');
+
+  // Paused during the wait: the refused text was not annotated and waits as before; the others finish.
+  replies=[()=>limited(600)];
+  const held=harness(study(),async()=>{},async()=>(replies.shift()||fine)());await held.flush();
+  held.find(n=>n.type==='ModeSwitch').props.onChange(true);await held.flush();held.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-paced'},false);await held.flush();
+  c=controls(held);
+  held.button('Remaining').props.onClick();await held.flush();
+  assert.deepEqual(c.statuses(),['running','done','done']);
+  held.button('Pause').props.onClick();await until(held,()=>c.statuses()[0]==='pending');
+  assert.deepEqual(c.statuses(),['pending','done','done']);assert.equal(held.calls.length,3,'Nothing is sent after a pause');
+  const waiting=held.latest().docs[0];assert.equal(waiting.error,undefined);assert.equal(waiting.startedAt,undefined);assert.equal(waiting.concurrency,undefined);
+  assert(held.all(n=>n.props?.role==='status').some(n=>held.text(n).includes('Paused. Active annotations have finished; completed results are kept.')));
+  assert(held.text(held.button('Remaining')).includes('Remaining (1)'));held.button('Remaining').props.onClick();await until(held,()=>c.statuses().every(status=>status==='done'));
+  assert.equal(held.calls.length,4);
+
+  // A limit that does not pass: after eight sends the text fails with the provider's message, and the run stops.
+  const stuck=harness({...study(),docs:documents().slice(0,1)},async()=>{},async()=>limited(1));await stuck.flush();
+  stuck.find(n=>n.type==='ModeSwitch').props.onChange(true);await stuck.flush();stuck.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-paced'},false);await stuck.flush();
+  stuck.button('Remaining').props.onClick();await until(stuck,()=>stuck.latest()?.docs[0].status==='error');
+  assert.equal(stuck.calls.length,8);assert.equal(stuck.latest().docs[0].status,'error');assert.equal(stuck.latest().docs[0].error,'OpenAI reports a rate limit.');
+ }
+
  // The mode is remembered in this browser. Keys are remembered only when asked, and only for research mode.
  const storage=fakeStorage();globalThis.window={localStorage:storage};
  const first=start();await first.flush();
