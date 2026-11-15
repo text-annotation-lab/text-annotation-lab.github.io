@@ -2,7 +2,7 @@
 // Research tools for the queue: add human labels or metadata from a
 // spreadsheet, and draw a reproducible random sample. Used by the Workspace
 // (texts) and by Model knowledge (subjects).
-import {useMemo,useState} from 'react';
+import {useMemo,useState,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {applySheet,columnIndex,columnValues,guessKeyColumn,guessRole,markColumn,matchRows,removeColumn,setRole,validColumnName,type Column,type Role,type Sheet} from '@/lib/research/columns';
@@ -11,15 +11,17 @@ import {allocationNote,drawStratifiedSample,orderStrata,recordSample,sampleRecor
 import type {Row} from '@/lib/research/runs';
 
 type Apply=(rows:Row[],columns:Column[],samples:SampleRecord[],notice:string,filter?:{column:string;value:string})=>void;
-type Props={rows:Row[];columns:Column[];samples:SampleRecord[];unit:'text'|'subject';disabled?:boolean;onApply:Apply};
+// `lead` is shown first in the row of tools (the cost calculator).
+type Props={rows:Row[];columns:Column[];samples:SampleRecord[];unit:'text'|'subject';disabled?:boolean;onApply:Apply;lead?:ReactNode};
 const plural=(n:number,unit:string)=>`${n.toLocaleString('en-US')} ${unit}${n===1?'':'s'}`;
 const list=(names:string[],limit=5)=>names.slice(0,limit).join(', ')+(names.length>limit?`, and ${names.length-limit} more`:'');
 
-export function ResearchTools({rows,columns,samples,unit,disabled,onApply}:Props){
+export function ResearchTools({rows,columns,samples,unit,disabled,onApply,lead}:Props){
  const [dialog,setDialog]=useState<''|'labels'|'sample'>('');
  const labels=columns.filter(c=>c.role==='label'),meta=columns.filter(c=>c.role==='meta');
  return <div className="research-tools">
   <div className="research-tools-actions">
+   {lead}
    <button type="button" className="textbutton" disabled={disabled||!rows.length} onClick={()=>setDialog('labels')}>Add labels or metadata from a spreadsheet…</button>
    <button type="button" className="textbutton" disabled={disabled||rows.length<2} onClick={()=>setDialog('sample')}>Draw a sample…</button>
   </div>

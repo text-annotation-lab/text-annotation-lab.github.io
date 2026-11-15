@@ -97,6 +97,16 @@ export function completedResults(doc:Row):Earlier[]{
  return doc.status==='done'?[...results,{...doc,runNo:doc.runNo??0} as Earlier]:results;
 }
 
+// What "Remaining" annotates: the texts that are waiting or failed, and the
+// completed texts that have no result made with this setup in any run. Texts
+// being annotated or waiting in a batch are left out.
+export function remainingFor<T extends Row>(docs:T[],setup:Setup):T[]{
+ const fields=fieldsKey(setup.answerFields),prompts=new Map<string,boolean>();
+ const samePrompt=(prompt:string)=>{let same=prompts.get(prompt);if(same===undefined){same=prompt===setup.prompt;prompts.set(prompt,same);}return same;};
+ const made=(result:ResultFields)=>{const s=setupOf(result);return s.provider===setup.provider&&s.model===setup.model&&s.effort===setup.effort&&fieldsKey(s.answerFields)===fields&&samePrompt(s.prompt);};
+ return docs.filter(doc=>doc.status==='pending'||doc.status==='error'||(doc.status==='done'&&!completedResults(doc).some(made)));
+}
+
 export type RunSummary=RunRecord&{done:number;failed:number;active:number;promptVersion:number;recorded:boolean};
 // One line per run that has results (or is in progress). Settings come from
 // the run's record; a run from an older study without one reads its results.

@@ -22,9 +22,9 @@ export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,sh
    <select aria-label="Filter by column" value={filterIndex>=0?columns[filterIndex].name:''} onChange={event=>set({column:event.target.value,value:''})}><option value="">Any label or metadata</option>{columns.map(c=><option key={c.name} value={c.name}>{c.name} is…</option>)}</select>
    {filterIndex>=0&&<select aria-label={`Value of ${view.column}`} value={view.value} onChange={event=>set({value:event.target.value})}><option value="">Choose a value…</option>{columnValues(rows,filterIndex).map(v=><option key={v}>{v}</option>)}</select>}
   </>}
-  {runs.length>1&&<select aria-label="Results shown" value={String(view.run)} onChange={event=>{const run=event.target.value==='latest'?'latest':Number(event.target.value);set({run,compare:view.compare==='run:'+run?'':view.compare});}}>
+  <select aria-label="Results shown" value={String(view.run)} onChange={event=>{const run=event.target.value==='latest'?'latest':Number(event.target.value);set({run,compare:view.compare==='run:'+run?'':view.compare});}}>
    <option value="latest">Latest result per text</option>{runs.map(run=><option key={run.number} value={run.number}>Run #{run.number} · {modelLabel(run.model)}</option>)}
-  </select>}
+  </select>
   {(labels.length>0||runs.length>1)&&<label className="research-pick"><span>Compare with</span><select aria-label="Compare with" value={view.compare} onChange={event=>set({compare:event.target.value,show:event.target.value?view.show:['disagree','agree'].includes(view.show)?'all':view.show})}>
    <option value="">Nothing</option>
    {labels.length>0&&<optgroup label="Human labels">{labels.map(c=><option key={c.name} value={'col:'+c.name}>{c.name}</option>)}</optgroup>}

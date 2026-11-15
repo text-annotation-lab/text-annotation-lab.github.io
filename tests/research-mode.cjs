@@ -46,7 +46,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  // The standard Lab: its eight tabs, its key field, and nothing of research mode but the switch.
  assert.deepEqual(tabs(),STUDENT_TABS);assert.equal(toggle().on,false);assert.deepEqual(parts(),[]);
  assert.equal(h.find(n=>n.props?.id==='key').props.value,'sk-workflow-test');assert.equal(h.find(n=>n.type==='header').props.className,undefined);
- assert.throws(()=>h.button('Run again'));assert.throws(()=>h.button('Random sample of'));
+ assert.throws(()=>h.button('Remaining'));assert.throws(()=>h.button('All ('));assert.throws(()=>h.button('Random sample of'));assert.equal(h.all(n=>n.props?.role==='radio').length,0);
  await h.button('Run all').props.onClick();await h.flush();
  assert.deepEqual(h.latest().docs.map(doc=>doc.status),['done','done','done']);assert.equal(h.calls.length,3);
  assert.deepEqual(heads(),['Document','Status','Score / category'],'The standard results table has no research columns');
@@ -70,9 +70,16 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  const main=()=>h.text(h.find(n=>n.type==='main'));
  for(const coaching of ['Test it on a varied sample','Select a row to compare','Add a few documents, then annotate'])assert(!main().includes(coaching),coaching);
 
- // Run again: a second run; the first results are kept.
- assert(h.text(h.button('Run again')).includes('Run again (3)'));
- await h.button('Run again').props.onClick();await h.flush();
+ // The standard Lab's run buttons give way to All and Remaining, and Now or Batch sits beside them instead of under Processing options.
+ assert.throws(()=>h.button('Run all'));assert.throws(()=>h.button('Submit batch'));assert(!main().includes('TRY')&&!main().includes('RUN'));
+ const modes=()=>h.all(n=>n.type==='button'&&n.props.role==='radio');
+ assert.deepEqual(modes().map(n=>[h.text(n),n.props['aria-checked']]),[['Now',true],['Batch · ½ price',false]]);
+ modes()[1].props.onClick();await h.flush();assert.equal(h.latest().processing,'batch');assert.equal(modes()[1].props['aria-checked'],true);assert(main().includes('Results arrive later'));
+ modes()[0].props.onClick();await h.flush();assert.equal(h.latest().processing,'instant');assert(!main().includes('Results arrive later'));
+ h.button('Processing options').props.onClick();await h.flush();assert.throws(()=>h.find(n=>n.props?.id==='processing-mode'));h.find(n=>n.props?.id==='annotation-concurrency');h.button('Processing options').props.onClick();await h.flush();
+ // All: a second run; the first results are kept. Nothing remains, since every text has a result from these settings.
+ assert(h.text(h.button('All (')).includes('All (3)'));assert(h.text(h.button('Remaining')).includes('Remaining (0)'));assert.equal(h.button('Remaining').props.disabled,true);
+ await h.button('All (').props.onClick();await h.flush();
  assert.equal(h.calls.length,6);assert.deepEqual(h.latest().docs.map(doc=>[doc.status,doc.runNo,doc.earlier.length,doc.earlier[0].runNo,doc.earlier[0].score]),Array(3).fill(['done',2,1,1,'POSITIVE']));
  assert.deepEqual(h.latest().runs.map(run=>run.number),[1,2]);
  // Labels and a sample from the tools are stored with the study.
@@ -86,18 +93,31 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  assert.deepEqual(h.all(n=>n.type==='span'&&String(n.props.className).startsWith('research-compare')).map(n=>n.props.className.trim()),['research-compare match','research-compare differ','research-compare differ']);
  filters().onChange({...filters().view,show:'disagree'});await h.flush();assert.equal(filters().shown,2);assert.equal(filters().total,3);
  // With a filter on, the run buttons apply to the shown texts only.
- assert(h.text(h.button('Run again')).includes('Run again (2)'));assert(main().includes('The run buttons apply to the 2 shown texts.'));
+ assert(h.text(h.button('All (')).includes('All (2)'));assert(main().includes('The run buttons apply to the 2 shown texts.'));
  filters().onChange({...filters().view,show:'all',compare:''});await h.flush();
 
  // Deleting run 2 brings back the results of run 1.
  runsPanel().onDeleteRun(2);await h.flush();
  assert.deepEqual(h.latest().docs.map(doc=>[doc.status,doc.runNo,doc.earlier]),Array(3).fill(['done',1,undefined]));assert.deepEqual(h.latest().docs.map(doc=>doc.cells),[['POSITIVE'],['NEGATIVE'],['NEGATIVE']],'Labels stay');
 
+ // Remaining: the texts with no result from the current settings. A changed prompt leaves all three; they become a new run and the old results are kept.
+ const setPrompt=async value=>{h.find(n=>n.props?.id==='prompt').props.onChange({target:{value}});await h.flush();};
+ await setPrompt('Classify tone again');
+ // The cost calculator sits first in the row of tools, and its estimate covers what Remaining would annotate.
+ const estimate=()=>h.find(n=>n.type==='ResearchTools').props.lead.props;
+ assert.equal(h.all(n=>n.props?.revision).length,0);assert.equal(estimate().research,true);assert.deepEqual(JSON.parse(estimate().revision).at(-1),['0','1','2']);
+ assert(h.text(h.button('Remaining')).includes('Remaining (3)'));assert(h.text(h.button('All (')).includes('All (3)'));
+ const callsBefore=h.calls.length;await h.button('Remaining').props.onClick();await h.flush();
+ assert.equal(h.calls.length,callsBefore+3);assert.deepEqual(h.latest().docs.map(doc=>[doc.status,doc.runNo,doc.prompt,doc.earlier.map(entry=>entry.runNo)]),Array(3).fill(['done',3,'Classify tone again',[1]]));
+ assert(h.text(h.button('Remaining')).includes('Remaining (0)'));
+ // Back at the first prompt nothing remains either: each text has a result from it in an earlier run.
+ await setPrompt('Classify tone');assert(h.text(h.button('Remaining')).includes('Remaining (0)'));
+
  // Switching off from a research tab returns to the Workspace; nothing is lost and nothing research shows.
  page().onValueChange('runs');await h.flush();assert.equal(page().value,'runs');
  const kept=JSON.stringify(h.latest().docs.map(({file,...doc})=>doc));
  toggle().onChange(false);await h.flush();
- assert.equal(page().value,'workspace');assert.deepEqual(tabs(),STUDENT_TABS);assert.deepEqual(parts(),[]);assert.deepEqual(heads(),['Document','Status','Score / category']);
+ assert.equal(page().value,'workspace');assert.deepEqual(tabs(),STUDENT_TABS);assert.deepEqual(parts(),[]);assert.equal(h.all(n=>n.props?.revision).length,1,'The standard Lab keeps its cost calculator under the run buttons');assert.equal(JSON.parse(h.find(n=>n.props?.revision).props.revision).at(-1),0);assert.deepEqual(heads(),['Document','Status','Score / category']);
  assert.equal(JSON.stringify(h.latest().docs.map(({file,...doc})=>doc)),kept);assert.deepEqual(h.latest().columns,[{name:'tone_human',role:'label'}],'Labels wait for the next visit to research mode');
  // No key is ever part of what is saved.
  assert(!JSON.stringify(h.writes.map(write=>({...write,docs:write.docs?.map(({file,...doc})=>doc)}))).includes('sk-workflow-test'));assert(h.writes.every(write=>!Object.hasOwn(write,'key')&&!Object.hasOwn(write,'keyring')));
@@ -106,7 +126,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  const empty=harness({docs:documents(),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium'});await empty.flush();
  empty.find(n=>n.type==='ModeSwitch').props.onChange(true);await empty.flush();
  assert.equal(empty.find(n=>n.type==='ResearchKeys').props.open,false);
- await empty.button('Run all').props.onClick();await empty.flush();
+ assert(empty.text(empty.button('Remaining')).includes('Remaining (3)'));await empty.button('Remaining').props.onClick();await empty.flush();
  assert.equal(empty.calls.length,0);assert.equal(empty.find(n=>n.type==='ResearchKeys').props.open,true);
  empty.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-tab-only'},false);await empty.flush();
  await empty.button('Annotate next').props.onClick();await empty.flush();
