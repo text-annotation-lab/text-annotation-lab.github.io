@@ -28,7 +28,7 @@ export async function chunkDocuments<T extends ChunkableDocument>(docs:T[],words
    split++;created+=chunks.length;
    chunks.forEach((chunk,index)=>{
     const name=`${doc.name}.chunk-${String(index+1).padStart(3,'0')}-of-${String(chunks.length).padStart(3,'0')}.txt`;
-    result.push({id:newId(),name,file:new File([chunk.text],name,{type:'text/plain;charset=utf-8'}),status:'pending',sourceId:doc.id,sourceName:doc.name,sourceFile:doc.file,chunkIndex:index+1,chunkCount:chunks.length,wordsPerChunk,chunkMethod:method,segmenter:method==='sentences'?SENTENCE_SEGMENTER:undefined,wordStart:chunk.wordStart,wordEnd:chunk.wordEnd});
+    result.push({id:newId(),name,file:new File([chunk.text],name,{type:'text/plain;charset=utf-8'}),status:'pending',sourceId:doc.id,sourceName:doc.name,sourceFile:doc.file,chunkIndex:index+1,chunkCount:chunks.length,wordsPerChunk,chunkMethod:method,segmenter:method==='sentences'?SENTENCE_SEGMENTER:undefined,wordStart:chunk.wordStart,wordEnd:chunk.wordEnd,...(doc.cells?.length?{cells:[...doc.cells]}:{})});
    });
   }catch(error){throw new Error(`${doc.name}: ${error instanceof Error?error.message:'Could not read this document.'} No documents were changed.`);}
  }

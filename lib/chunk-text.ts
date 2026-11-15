@@ -31,12 +31,17 @@ export function splitTextByWords(text:string,wordsPerChunk:number){
 }
 
 // `earlier` holds the results of earlier runs (research mode); a text with any is never split or merged away.
-export type ChunkableDocument = {id:string;name:string;file:File;status:string;history?:import('./workflow-safety').Attempt[];earlier?:any[]}&Partial<ChunkInfo>;
+// `cells` holds labels and metadata (research mode): chunks inherit their document's, and a whole document is
+// restored only when its chunks still hold the same values, so no label is merged away.
+export type ChunkableDocument = {id:string;name:string;file:File;status:string;history?:import('./workflow-safety').Attempt[];earlier?:any[];cells?:string[]}&Partial<ChunkInfo>;
 
+const cellsKey=(cells?:string[])=>{const values=[...(cells||[])];while(values.length&&!values[values.length-1])values.pop();return JSON.stringify(values);};
 export function restorableSourceIds(docs:ChunkableDocument[]){
- const groups=new Map<string,boolean>();
+ const groups=new Map<string,boolean>(),cells=new Map<string,string>();
  for(const doc of docs){
-  if(doc.sourceId)groups.set(doc.sourceId,(groups.get(doc.sourceId)??true)&&doc.status==='pending'&&!doc.history?.length&&!doc.earlier?.length);
+  if(!doc.sourceId)continue;
+  const key=cellsKey(doc.cells),same=(cells.get(doc.sourceId)??key)===key;cells.set(doc.sourceId,key);
+  groups.set(doc.sourceId,(groups.get(doc.sourceId)??true)&&same&&doc.status==='pending'&&!doc.history?.length&&!doc.earlier?.length);
  }
  return new Set([...groups].filter(([,pending])=>pending).map(([id])=>id));
 }
@@ -49,7 +54,7 @@ export function restoreWholeDocuments<T extends ChunkableDocument>(docs:T[]):(T|
   if(!d.sourceId||!eligible.has(d.sourceId))return [d];
   if(seen.has(d.sourceId))return [];
   seen.add(d.sourceId);
-  return [{id:d.sourceId,name:d.sourceName!,file:d.sourceFile!,status:'pending'}];
+  return [{id:d.sourceId,name:d.sourceName!,file:d.sourceFile!,status:'pending',...(d.cells?.some(Boolean)?{cells:[...d.cells]}:{})}];
  });
 }
 

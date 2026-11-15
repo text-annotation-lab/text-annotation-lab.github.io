@@ -516,6 +516,8 @@ export function grownScale([lo, hi]: [number, number], values: number[]): [numbe
 
 /**
  * `tolerance`: for numbers, how many scale points apart still count as agreeing in `withinTolerance`.
+ * `known`: categories with no codebook (nominal, not numbers): the values that are real categories, so that a
+ * missing-value marker such as "NA" that is none of them is left out (and reported) instead of compared.
  * `withIntervals` false: leave out the bootstrap intervals (the slow part), e.g. to show the figures first.
  * `scaleSeen`: plain-text scores, with no codebook. `range`: the lowest and highest of the model's answers (else the
  * lowest and highest number in `allowed`, which is then every whole number of that range). The scale is that range
@@ -531,7 +533,7 @@ export function agreement(
   level: Level,
   allowed: string[] = [],
   tolerance = 1,
-  { withIntervals = true, scaleSeen = false, range }: { withIntervals?: boolean; scaleSeen?: boolean; range?: [number, number] } = {},
+  { withIntervals = true, scaleSeen = false, range, known }: { withIntervals?: boolean; scaleSeen?: boolean; range?: [number, number]; known?: string[] } = {},
 ): Agreement {
   let pairs: [string, string][] = [];
   for (let i = 0; i < Math.min(a.length, b.length); i++) {
@@ -583,6 +585,17 @@ export function agreement(
   } else if (new Set(allowed).size >= 2) {
     const cats = new Set(allowed);
     fits = (v: string) => cats.has(v) || (v.includes(' | ') && v.split(' | ').every((x) => cats.has(x)));
+  } else if (known) {
+    // Categories with no codebook: a missing-value marker ("NA", "n/a", "-") that is not one of the `known` categories
+    // (e.g. a run's answers) is left out and reported, not compared as a category of its own.
+    const cats = new Set(known);
+    const missing = (v: string) => isMissingLabel(v) && !cats.has(v);
+    const use = pairs.filter(([x, y]) => !missing(x) && !missing(y));
+    if (use.length < pairs.length) {
+      leftOut.n = pairs.length - use.length;
+      leftOut.values = [...new Set(pairs.flat().filter(missing))].slice(0, 5);
+      pairs = use;
+    }
   }
   let compareAsWords = false;
   if (fits) {
