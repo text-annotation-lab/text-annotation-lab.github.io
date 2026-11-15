@@ -51,6 +51,14 @@
 .research-file input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .research-file:focus-within{outline:2px solid #003d73;outline-offset:2px}
 .research-field-row{display:grid;gap:0}
+/* Importing texts from a table or pasted text */
+.research-paste{font:inherit;font-size:15px;line-height:1.55;width:100%;min-height:200px;padding:10px 12px;border:1px solid #cad5e1;border-radius:6px;background:#fff;color:#1b2942;resize:vertical}
+.research-paste:focus-visible{outline:2px solid #003d73;outline-offset:2px}
+.research-notice{display:grid;gap:10px;justify-items:start}
+.research-notice p{margin:0}
+.research-preview td{vertical-align:top}
+.research-preview th .research-tag{margin-left:6px}
+.research-snippet{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:280px;overflow-wrap:break-word}
 
 /* Tables used by the research screens */
 .research-table-scroll{position:relative;overflow-x:auto;max-width:100%}
