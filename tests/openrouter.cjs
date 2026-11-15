@@ -43,7 +43,7 @@ const good=(extra={})=>({id:'test-response',choices:[{finish_reason:'stop',messa
  }
  calls.length=0;
  assert.equal(providers.availableProvider('openrouter'),'openrouter');
- assert.deepEqual(providers.PROVIDERS.openrouter.models,['openai/gpt-6-luna','anthropic/claude-haiku-5.5','google/gemini-3.1-flash-lite','openai/gpt-6-sol','anthropic/claude-sonnet-5.5','google/gemini-3.8-flash']);
+ assert.deepEqual(providers.PROVIDERS.openrouter.models,['openai/gpt-6-luna','anthropic/claude-haiku-5.5','google/gemini-3.1-flash-lite','openai/gpt-6.1-sol','anthropic/claude-sonnet-5.5','google/gemini-4-hydrogen']);
  assert.equal(safety.setupErrors('openrouter',key,'prompt','openai/gpt-6-luna','medium').key,'');
  assert.match(safety.setupErrors('openai',key,'prompt','gpt-6-luna','medium').key,/OpenRouter/);
  for(const model of providers.PROVIDERS.openrouter.models){
