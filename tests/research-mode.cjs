@@ -95,6 +95,10 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  // With a filter on, the run buttons apply to the shown texts only.
  assert(h.text(h.button('All (')).includes('All (2)'));assert(main().includes('The run buttons apply to the 2 shown texts.'));
  filters().onChange({...filters().view,show:'all',compare:''});await h.flush();
+ // Research mode keeps one row of run buttons: the clearing actions are in the menu of the row above the table.
+ assert.equal(h.all(n=>n.type==='div'&&n.props.className==='clear-actions').length,0);
+ assert.deepEqual(filters().menu.map(item=>[item.label,Boolean(item.danger),Boolean(item.disabled)]),[['Clear results…',false,false],['Clear workspace…',true,false]]);
+ assert(filters().actions,'the chart and Excel buttons belong to the row above the table');
 
  // Deleting run 2 brings back the results of run 1.
  runsPanel().onDeleteRun(2);await h.flush();

@@ -1,13 +1,28 @@
 'use client';
 // The row of controls above the research results table (search, filters, which
 // run to show, and what to compare with), and the extra detail of one text.
-import {Search} from 'lucide-react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {ChevronDown,Search} from 'lucide-react';
+import {Button} from '@/components/ui/button';
 import {columnValues,columnIndex,type Column} from '@/lib/research/columns';
 import {DEFAULT_VIEW,fieldLabel,valueOf,viewNarrowed,type View} from '@/lib/research/view';
 import type {Row,RunSummary} from '@/lib/research/runs';
 import {modelLabel} from '@/lib/providers';
 
-export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,shown,total,checked,onClearChecked}:{view:View;onChange:(view:View)=>void;columns:Column[];rows:Row[];runs:RunSummary[];fields:string[];field:string;shown:number;total:number;checked:number;onClearChecked:()=>void}){
+export type MenuItem={label:string;onSelect:()=>void;disabled?:boolean;danger?:boolean};
+// A small menu for the actions that are used rarely (clearing results or the workspace).
+function MoreMenu({items}:{items:MenuItem[]}){
+ const [open,setOpen]=useState(false),box=useRef<HTMLSpanElement>(null);
+ useEffect(()=>{
+  if(!open)return;
+  const away=(event:MouseEvent)=>{if(!box.current?.contains(event.target as Node))setOpen(false);},escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){setOpen(false);box.current?.querySelector('button')?.focus();}};
+  document.addEventListener('mousedown',away);document.addEventListener('keydown',escape);
+  return()=>{document.removeEventListener('mousedown',away);document.removeEventListener('keydown',escape);};
+ },[open]);
+ return <span className="research-menu" ref={box}><Button type="button" variant="outline" className="research-menu-button" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>More<ChevronDown size={15} aria-hidden="true"/></Button>{open&&<span className="research-menu-list" role="menu">{items.map(item=><button key={item.label} type="button" role="menuitem" className={item.danger?'danger':undefined} disabled={item.disabled} onClick={()=>{setOpen(false);item.onSelect();}}>{item.label}</button>)}</span>}</span>;
+}
+
+export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,shown,total,checked,onClearChecked,actions,menu}:{view:View;onChange:(view:View)=>void;columns:Column[];rows:Row[];runs:RunSummary[];fields:string[];field:string;shown:number;total:number;checked:number;onClearChecked:()=>void;actions?:ReactNode;menu?:MenuItem[]}){
  const set=(changes:Partial<View>)=>onChange({...view,...changes});
  const comparing=Boolean(view.compare),labels=columns.filter(c=>c.role==='label'),others=columns.filter(c=>c.role!=='label');
  const filterIndex=view.column?columnIndex(columns,view.column):-1;
@@ -33,6 +48,7 @@ export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,sh
   </select></label>}
   {comparing&&fields.length>1&&<select aria-label="Answer field to compare" value={field} onChange={event=>set({field:event.target.value})}>{fields.map(f=><option key={f} value={f}>{fieldLabel(f)}</option>)}</select>}
   <span className="research-filter-count" role="status">{viewNarrowed(view)?`${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} shown`:''}{viewNarrowed(view)&&<button type="button" className="textbutton" onClick={()=>onChange({...DEFAULT_VIEW,compare:view.compare,field:view.field})}>Clear filters</button>}{checked>0&&<>{checked.toLocaleString('en-US')} selected<button type="button" className="textbutton" onClick={onClearChecked}>Clear selection</button></>}</span>
+  {(actions||menu?.length)&&<span className="research-result-actions">{actions}{menu&&menu.length>0&&<MoreMenu items={menu}/>}</span>}
  </div>;
 }
 
