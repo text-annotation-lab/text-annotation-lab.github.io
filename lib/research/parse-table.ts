@@ -54,8 +54,8 @@ function cellText(value:any):string{
  return String(value);
 }
 export const SPREADSHEET_ACCEPT='.csv,.tsv,.txt,.xlsx';
-export async function parseSpreadsheet(file:File):Promise<Sheet>{
- if(file.size>20*1024*1024)throw new Error('Choose a spreadsheet of up to 20 MB.');
+export async function parseSpreadsheet(file:File,maxMegabytes=20):Promise<Sheet>{
+ if(file.size>maxMegabytes*1024*1024)throw new Error(`Choose a spreadsheet of up to ${maxMegabytes} MB.`);
  if(/\.xls$/i.test(file.name))throw new Error('Save this workbook as .xlsx or .csv first; the older .xls format cannot be read.');
  if(/\.xlsx$/i.test(file.name)){
   const ExcelJS=(await import('exceljs')).default,workbook=new ExcelJS.Workbook();

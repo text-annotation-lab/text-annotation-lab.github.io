@@ -122,6 +122,30 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  // No key is ever part of what is saved.
  assert(!JSON.stringify(h.writes.map(write=>({...write,docs:write.docs?.map(({file,...doc})=>doc)}))).includes('sk-workflow-test'));assert(h.writes.every(write=>!Object.hasOwn(write,'key')&&!Object.hasOwn(write,'keyring')));
 
+ // A whole corpus as a table, and pasted text: research mode only.
+ const corpus=start();await corpus.flush();await corpus.configure();
+ const dropzone=()=>corpus.find(n=>n.type==='input'&&n.props.type==='file').props,corpusMain=()=>corpus.text(corpus.find(n=>n.type==='main'));
+ assert.equal(dropzone().accept,'.txt,.md,.pdf,.docx,.html,.htm,.rtf');assert(corpusMain().includes('Upload one file per text you want to annotate.'));
+ await corpus.add([new File(['id,text\na,Hello'],'corpus.csv')]);
+ assert.equal(corpus.latest().docs.length,3,'The standard Lab does not take tables');
+ corpus.find(n=>n.type==='ModeSwitch').props.onChange(true);await corpus.flush();
+ const corpusTools=()=>corpus.find(n=>n.type==='ResearchTools').props;
+ assert(dropzone().accept.endsWith('.rtf,.csv,.tsv,.xlsx,.json,.jsonl'));assert(corpusMain().includes('or a whole corpus as a table (CSV, TSV, XLSX, JSON, JSONL)'));
+ assert.equal(corpusTools().tableFile,undefined);
+ // A table waits for the import dialog; a file chosen with it is added as a document as usual.
+ await corpus.add([new File(['id,text\na,Hello'],'corpus.csv'),new File(['Plain'],'plain.txt')]);
+ assert.equal(corpusTools().tableFile.name,'corpus.csv');assert.deepEqual(corpus.latest().docs.map(doc=>doc.name),['text-0.txt','text-1.txt','text-2.txt','plain.txt']);
+ // Its rows join the study as plain-text documents, with the other columns as labels or metadata.
+ assert.equal(corpusTools().onAddTexts([{name:'a.txt',text:'Hello',values:['1961','POSITIVE']}],['year','tone_human'],'1 text added from corpus.csv.'),true);corpusTools().onTableDone();await corpus.flush();
+ assert.equal(corpusTools().tableFile,undefined);
+ const fromTable=corpus.latest().docs.at(-1);
+ assert.deepEqual([corpus.latest().docs.length,fromTable.name,fromTable.status,fromTable.file.name,fromTable.file.type,fromTable.cells],[5,'a.txt','pending','a.txt','text/plain',['1961','POSITIVE']]);assert.equal(await fromTable.file.text(),'Hello');
+ assert.deepEqual(corpus.latest().columns,[{name:'year',role:'meta'},{name:'tone_human',role:'label'}]);assert(corpusMain().includes('1 text added from corpus.csv.'));
+ assert.equal(corpusTools().onAddTexts([],[],''),false);
+ // The new text is annotated like any other.
+ const callsWith=corpus.calls.length;await corpus.button('Remaining').props.onClick();await corpus.flush();
+ assert.equal(corpus.calls.length,callsWith+5);assert.equal(corpus.calls.at(-1).options.body.get('file').name,'a.txt');assert.deepEqual(corpus.latest().docs.map(doc=>doc.status),Array(5).fill('done'));
+
  // Without a key, a run in research mode opens the keys dialog instead of calling a provider.
  const empty=harness({docs:documents(),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium'});await empty.flush();
  empty.find(n=>n.type==='ModeSwitch').props.onChange(true);await empty.flush();

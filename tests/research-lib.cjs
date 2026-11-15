@@ -244,5 +244,50 @@ assert.equal(exporting.sourceOf(knowledgeSet),'model knowledge (no texts supplie
  assert.deepEqual(restored.texts.docs.map(doc=>[doc.runNo,doc.cells,doc.earlier]),study.texts.docs.map(doc=>[doc.runNo,doc.cells,doc.earlier]));
  assert.deepEqual(restored.knowledge.columns,study.knowledge.columns);assert.deepEqual(restored.knowledge.items.map(item=>item.cells),study.knowledge.items.map(item=>item.cells));
  assert.deepEqual(exporting.wideTable({kind:'texts',rows:restored.texts.docs,runs:runs.cleanRuns(restored.texts.runs),columns:columns.cleanColumns(restored.texts.columns),samples:[]}).slice(1).map(row=>row.slice(3)),[['MIXED','Both.','POSITIVE','Hopeful.'],['NEGATIVE','Grim.','','']],'The restored study exports the same results');
+ // --- Texts from a table or pasted text -----------------------------------------
+ const texts=load('lib/research/import-texts.ts');
+ const corpus={header:['id','text','year','tone_human','note'],rows:[['a','First speech.','1961','POSITIVE',''],['b','Second speech.','1965','NEGATIVE',''],['b','Another second speech.','1969','',''],['c','','1973','',''],['a','First speech.','1961','POSITIVE',''],['','No ID here.','1977','','']]};
+ assert.equal(texts.guessTextColumn(corpus),1);assert.equal(texts.guessIdColumn(corpus),0);
+ assert.equal(texts.guessTextColumn({header:['title','abstract'],rows:[['Short','A much longer piece of writing than the title.']]}),1,'Without a telling name, the longest column holds the texts');
+ assert.equal(texts.guessIdColumn({header:['title','abstract'],rows:[]}),-1);
+ assert.equal(texts.guessIdColumn({header:['content','post_id'],rows:[['A','p1'],['B','p2']]}),1,'A column named like an ID, with a different value in every row');assert.equal(texts.guessIdColumn({header:['content','author_id'],rows:[['A','u1'],['B','u1']]}),-1,'Not when its values repeat');
+ let plan=texts.planTable(corpus,1,0,'speeches.csv');
+ assert.deepEqual(plan.texts.map(text=>text.name),['a.txt','b.txt','b_2.txt','speeches_6.txt'],'A repeated ID gets _2; a row without an ID is named after the table and its row');
+ assert.deepEqual([plan.empty,plan.twice,plan.repeated],[1,1,['b']],'An empty text and a row repeated in every column are left out');
+ assert.deepEqual(plan.names,['year','tone_human'],'A column with no values is not kept');assert.deepEqual(plan.texts[0],{name:'a.txt',text:'First speech.',values:['1961','POSITIVE']});
+ plan=texts.planTable(corpus,1,-1,'C:\\data\\speeches.xlsx');
+ assert.deepEqual(plan.texts.map(text=>text.name),['speeches_1.txt','speeches_2.txt','speeches_3.txt','speeches_6.txt']);assert.deepEqual(plan.names,['id','year','tone_human']);
+ assert.deepEqual(texts.planTable({header:['file','text','x'.repeat(61)],rows:[['one.txt','Body','v']]},1,0,'t.csv'),{texts:[{name:'one.txt',text:'Body',values:[]}],names:[],empty:0,twice:0,repeated:[],tooLong:['x'.repeat(61)]},'An ID that is a .txt file name is kept as it is');
+ // Tables as files: CSV, JSON, and JSON Lines give the same sheet.
+ const asFile=(content,name)=>new File([content],name);
+ const expected={header:['id','text','year'],rows:[['a','Hello, world.','1961'],['b','Line one\nLine two','1965']]};
+ assert.deepEqual(await texts.parseCorpusTable(asFile('id,text,year\na,"Hello, world.",1961\nb,"Line one\nLine two",1965\n','corpus.csv')),expected);
+ assert.deepEqual(await texts.parseCorpusTable(asFile('id\ttext\tyear\na\tHello, world.\t1961\nb\t"Line one\nLine two"\t1965\n','corpus.tsv')),expected);
+ assert.deepEqual(await texts.parseCorpusTable(asFile(JSON.stringify([{id:'a',text:'Hello, world.',year:1961},{id:'b',text:'Line one\nLine two',year:1965}]),'corpus.json')),expected);
+ assert.deepEqual(await texts.parseCorpusTable(asFile(JSON.stringify({data:[{id:'a',text:'Hello, world.',year:1961},{id:'b',text:'Line one\nLine two',year:1965}]}),'corpus.json')),expected,'An array under "data" is read too');
+ assert.deepEqual(await texts.parseCorpusTable(asFile('{"id":"a","text":"Hello, world.","year":1961}\n\n{"id":"b","text":"Line one\\nLine two","year":1965}\n','corpus.jsonl')),expected);
+ assert.deepEqual(await texts.parseCorpusTable(asFile('[{"id":"a","text":"T","tags":["x","y"],"extra":null},{"id":"b","text":"U","Text":"V"}]','c.json')),{header:['id','text','tags','extra','Text (2)'],rows:[['a','T','["x","y"]','',''],['b','U','','','V']]},'Lists are kept as JSON; keys that differ only in case are numbered');
+ await assert.rejects(texts.parseCorpusTable(asFile('{"id":"a"}\nnot json\n','c.jsonl')),/Line 2 is not valid JSON/);
+ await assert.rejects(texts.parseCorpusTable(asFile('{"id":"a"}','c.json')),/Expected a JSON array/);
+ await assert.rejects(texts.parseCorpusTable(asFile('x','old.xls')),/\.xlsx or \.csv/);
+ // Pasted text.
+ assert.deepEqual(texts.splitPasted('  \n\nOne\nstill one\n\n \nTwo\n\n','blank'),['One\nstill one','Two']);
+ assert.deepEqual(texts.splitPasted('One\n\nTwo\nThree','line'),['One','Two','Three']);
+ assert.deepEqual(texts.splitPasted(' One\n\nTwo ','none'),[' One\n\nTwo '],'One text is kept exactly as pasted');assert.deepEqual(texts.splitPasted(' \n ','blank'),[]);
+ assert.deepEqual(texts.pastedTexts(['A','B'],'my notes').map(text=>text.name),['my_notes_1.txt','my_notes_2.txt']);assert.deepEqual(texts.pastedTexts(['A'],''),[{name:'pasted.txt',text:'A',values:[]}]);
+ assert.equal(texts.countWords('One two\n three'),3);
+ // Fitting into the study: the same name and text is left out; a name taken by another text gets a number.
+ const held=[{name:'a.txt',file:asFile('First speech.','a.txt')},{name:'B.TXT',file:asFile('Something else.','B.TXT')},{name:'report.pdf',file:asFile('%PDF','report.pdf')}];
+ const fitted=await texts.fitIntoStudy(texts.planTable(corpus,1,0,'speeches.csv').texts,held);
+ assert.deepEqual([fitted.already,fitted.renamed,fitted.texts.map(text=>text.name)],[1,1,['b_3.txt','b_2.txt','speeches_6.txt']],'Names are compared without regard to case');
+ assert.equal(fitted.texts[0].text,'Second speech.');
+ // Joining the study: other columns become labels or metadata, a column with the same name is reused, and earlier texts are untouched.
+ const before=[{id:'old',name:'old.txt',status:'done',cells:['2001']}];
+ const joined=columns.appendTexts(before,[{name:'Year',role:'meta'}],fitted.texts,['year','tone_human'],text=>({id:text.name,name:text.name,status:'pending'}));
+ assert.deepEqual(joined.columns,[{name:'Year',role:'meta'},{name:'tone_human',role:'label'}],'A column named for human labels is taken as labels');
+ assert.equal(joined.docs[0],before[0]);assert.deepEqual(joined.docs.slice(1).map(doc=>[doc.name,doc.cells]),[['b_3.txt',['1965','NEGATIVE']],['b_2.txt',['1969','']],['speeches_6.txt',['1977','']]]);
+ assert.deepEqual(columns.appendTexts([],[],[{name:'p.txt',text:'P',values:[]}],[],text=>({id:'p',name:text.name,status:'pending'})),{docs:[{id:'p',name:'p.txt',status:'pending'}],columns:[]});
+ assert(columns.CORPUS_TABLE.test('Corpus.XLSX')&&columns.CORPUS_TABLE.test('a.jsonl')&&!columns.CORPUS_TABLE.test('speech.txt')&&!columns.CORPUS_TABLE.test('speech.pdf'));
+
  console.log('Research library checks passed.');
 })().catch(error=>{console.error(error);process.exit(1);});

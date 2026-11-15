@@ -2,27 +2,30 @@
 // Research tools for the queue: add human labels or metadata from a
 // spreadsheet, and draw a reproducible random sample. Used by the Workspace
 // (texts) and by Model knowledge (subjects).
-import {useMemo,useState,type ReactNode} from 'react';
+import {useEffect,useMemo,useState,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {applySheet,columnIndex,columnValues,guessKeyColumn,guessRole,markColumn,matchRows,removeColumn,setRole,validColumnName,type Column,type Role,type Sheet} from '@/lib/research/columns';
 import {SPREADSHEET_ACCEPT,parseSpreadsheet} from '@/lib/research/parse-table';
 import {allocationNote,drawStratifiedSample,orderStrata,recordSample,sampleRecord,type SampleRecord} from '@/lib/research/sample';
 import type {Row} from '@/lib/research/runs';
+import {PasteTextDialog,TableImportDialog,type AddTexts} from './import-texts';
 
 type Apply=(rows:Row[],columns:Column[],samples:SampleRecord[],notice:string,filter?:{column:string;value:string})=>void;
-// `lead` is shown first in the row of tools (the cost calculator).
-type Props={rows:Row[];columns:Column[];samples:SampleRecord[];unit:'text'|'subject';disabled?:boolean;onApply:Apply;lead?:ReactNode};
+// `lead` is shown first in the row of tools (the cost calculator). With `onAddTexts` (the Workspace), texts can be
+// pasted, and `tableFile` is a table chosen in the drop zone whose rows are to become texts.
+type Props={rows:Row[];columns:Column[];samples:SampleRecord[];unit:'text'|'subject';disabled?:boolean;onApply:Apply;lead?:ReactNode;onAddTexts?:AddTexts;tableFile?:File;onTableDone?:()=>void};
 const plural=(n:number,unit:string)=>`${n.toLocaleString('en-US')} ${unit}${n===1?'':'s'}`;
 const list=(names:string[],limit=5)=>names.slice(0,limit).join(', ')+(names.length>limit?`, and ${names.length-limit} more`:'');
 
-export function ResearchTools({rows,columns,samples,unit,disabled,onApply,lead}:Props){
- const [dialog,setDialog]=useState<''|'labels'|'sample'>('');
+export function ResearchTools({rows,columns,samples,unit,disabled,onApply,lead,onAddTexts,tableFile,onTableDone}:Props){
+ const [dialog,setDialog]=useState<''|'labels'|'sample'|'paste'>(''),[labelSheet,setLabelSheet]=useState<{sheet:Sheet;fileName:string}>();
  const labels=columns.filter(c=>c.role==='label'),meta=columns.filter(c=>c.role==='meta');
  return <div className="research-tools">
   <div className="research-tools-actions">
    {lead}
-   <button type="button" className="textbutton" disabled={disabled||!rows.length} onClick={()=>setDialog('labels')}>Add labels or metadata from a spreadsheet…</button>
+   {onAddTexts&&<button type="button" className="textbutton" disabled={disabled} onClick={()=>setDialog('paste')}>Paste text…</button>}
+   <button type="button" className="textbutton" disabled={disabled||!rows.length} onClick={()=>{setLabelSheet(undefined);setDialog('labels');}}>Add labels or metadata from a spreadsheet…</button>
    <button type="button" className="textbutton" disabled={disabled||rows.length<2} onClick={()=>setDialog('sample')}>Draw a sample…</button>
   </div>
   {columns.length>0&&<details className="research-columns">
@@ -33,23 +36,30 @@ export function ResearchTools({rows,columns,samples,unit,disabled,onApply,lead}:
     <button type="button" className="textbutton" disabled={disabled} onClick={()=>{if(!confirm(`Remove the column “${column.name}” and its values from every ${unit}?`))return;const next=removeColumn(rows,columns,column.name);onApply(next.docs,next.columns,samples.filter(s=>s.column.toLowerCase()!==column.name.toLowerCase()),`Column “${column.name}” removed.`);}}>Remove</button>
    </li>)}</ul>
   </details>}
-  {dialog==='labels'&&<LabelsDialog rows={rows} columns={columns} samples={samples} unit={unit} onApply={onApply} onClose={()=>setDialog('')}/>}
+  {dialog==='labels'&&<LabelsDialog rows={rows} columns={columns} samples={samples} unit={unit} onApply={onApply} initial={labelSheet} onClose={()=>{setDialog('');setLabelSheet(undefined);}}/>}
+  {dialog==='paste'&&onAddTexts&&<PasteTextDialog rows={rows} onAdd={onAddTexts} onClose={()=>setDialog('')}/>}
+  {tableFile&&onAddTexts&&!dialog&&<TableImportDialog key={tableFile.name+'/'+tableFile.size+'/'+tableFile.lastModified} file={tableFile} rows={rows} onAdd={onAddTexts} onClose={()=>onTableDone?.()} onUseAsLabels={(sheet,fileName)=>{setLabelSheet({sheet,fileName});setDialog('labels');onTableDone?.();}}/>}
   {dialog==='sample'&&<SampleDialog rows={rows} columns={columns} samples={samples} unit={unit} onApply={onApply} onClose={()=>setDialog('')}/>}
  </div>;
 }
 
-function LabelsDialog({rows,columns,samples,unit,onApply,onClose}:Props&{onClose:()=>void}){
+// `initial` is a table handed over from the import of texts (its rows match texts already in the study).
+function LabelsDialog({rows,columns,samples,unit,onApply,onClose,initial}:Props&{onClose:()=>void;initial?:{sheet:Sheet;fileName:string}}){
  const [sheet,setSheet]=useState<Sheet>(),[fileName,setFileName]=useState(''),[error,setError]=useState(''),[reading,setReading]=useState(false);
  const [keyIndex,setKeyIndex]=useState(0),[roles,setRoles]=useState<Role[]>([]);
+ function use(parsed:Sheet,name:string){
+  const key=guessKeyColumn(rows,parsed);
+  setSheet(parsed);setFileName(name);setKeyIndex(key);
+  setRoles(parsed.header.map((header,i)=>i===key||!validColumnName(header)?'':columnIndex(columns,header)>=0?columns[columnIndex(columns,header)].role:guessRole(header)));
+ }
+ useEffect(()=>{if(initial)use(initial.sheet,initial.fileName);},[]);
  async function choose(file:File|undefined){
   if(!file)return;
   setReading(true);setError('');
   try{
    const parsed=await parseSpreadsheet(file);
    if(!parsed.header.length||!parsed.rows.length)throw new Error('This file has no rows below its header row.');
-   const key=guessKeyColumn(rows,parsed);
-   setSheet(parsed);setFileName(file.name);setKeyIndex(key);
-   setRoles(parsed.header.map((name,i)=>i===key||!validColumnName(name)?'':columnIndex(columns,name)>=0?columns[columnIndex(columns,name)].role:guessRole(name)));
+   use(parsed,file.name);
   }catch(problem){setSheet(undefined);setError(problem instanceof Error?problem.message:'This file could not be read.');}
   finally{setReading(false);}
  }

@@ -13,6 +13,8 @@ const fold=(value:unknown)=>tidy(value).toLowerCase();
 // A file name without its extension: "1961-Kennedy.txt" and "1961-Kennedy" match.
 export const stem=(name:string)=>name.replace(/\.(txt|md|markdown|pdf|docx?|html?|rtf|odt|csv|tsv|xlsx?|ods|jsonl?)$/i,'');
 export const validColumnName=(name:string)=>{const n=tidy(name);return n.length>0&&n.length<=60;};
+// A table that holds a whole corpus, one text per row (research mode's drop zone).
+export const CORPUS_TABLE=/\.(csv|tsv|xlsx?|jsonl?)$/i;
 
 export function cleanColumns(value:unknown):Column[]{
  if(!Array.isArray(value))return [];
@@ -91,6 +93,22 @@ export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sh
  });
  const name=(rows:number[])=>rows.map(row=>keys[row]);
  return {docs:result,columns:next,matched:match.rowOf.size,unmatched:name(match.unmatched),ambiguous:name(match.ambiguous),repeated:name(match.repeated),changed,added};
+}
+
+// Texts added from a table or from pasted text. `values` holds what the table's
+// other columns say about each text, in the order of `names`; those columns
+// join the study's columns (a column with the same name is reused).
+export type NewText={name:string;text:string;values:string[]};
+export function appendTexts<T extends CellRow>(docs:T[],columns:Column[],texts:NewText[],names:string[],make:(text:NewText)=>T):{docs:T[];columns:Column[]}{
+ const next=columns.map(c=>({...c}));
+ const to=names.map(name=>{let index=columnIndex(next,name);if(index<0){next.push({name:tidy(name),role:guessRole(name)==='label'?'label':'meta'});index=next.length-1;}return index;});
+ const added=texts.map(text=>{
+  const doc=make(text);if(!to.length)return doc;
+  const cells=Array.from({length:next.length},()=>'');
+  to.forEach((index,from)=>{const value=tidy(text.values[from]);if(value)cells[index]=value;});
+  return cells.some(Boolean)?{...doc,cells}:doc;
+ });
+ return {docs:[...docs,...added],columns:next};
 }
 
 // Write one value in one column for the chosen texts (used to mark a sample).
