@@ -76,6 +76,21 @@ assert.equal(state.number,2,'A text already annotated in the latest run starts a
 docs=finish(state.docs,2,'NEGATIVE');
 assert.equal(runs.rowForRun(docs[0],1).score,'POSITIVE');assert.equal(runs.rowForRun(docs[0],2).score,'NEGATIVE');assert.equal(runs.rowForRun(docs[0],3).status,'absent');
 assert.deepEqual(runs.completedResults(docs[0]).map(result=>[result.runNo,result.score]),[[1,'POSITIVE'],[2,'NEGATIVE']]);
+// "Remaining": waiting and failed texts, and completed texts with no result from the current settings in any run.
+{
+ const other={...setup,prompt:'Classify stance'},ids=(rows,settings)=>runs.remainingFor(rows,settings).map(doc=>doc.id);
+ assert.deepEqual(ids(docs,setup),[],'Every text has a result from these settings');
+ assert.deepEqual(ids(docs,other),['a','b'],'A changed prompt leaves every text');
+ assert.deepEqual(ids(docs,{...setup,answerFields:['Tone']}),['a','b'],'So do changed answer fields');
+ const mixed=[docs[0],{id:'c',name:'c.txt',status:'pending'},{id:'d',name:'d.txt',status:'error'},{id:'e',name:'e.txt',status:'running'},{id:'f',name:'f.txt',status:'queued'}];
+ assert.deepEqual(ids(mixed,setup),['c','d'],'Waiting and failed texts remain; texts being annotated or in a batch are left out');
+ // A text annotated again with other settings still has its earlier result from the first settings.
+ const again=finish(runs.requeue(docs,state.runs,new Set(['a'])).docs,3,'MIXED',other);
+ assert.deepEqual(ids(again,setup),[]);assert.deepEqual(ids(again,other),['b']);
+ // A run that was stopped midway: its waiting texts remain, even when an earlier run with the same settings annotated them.
+ const stopped=runs.requeue(docs,state.runs,new Set(['a','b'])).docs;
+ assert.deepEqual(ids(stopped,setup),['a','b']);
+}
 let summary=runs.runSummaries(docs,state.runs);
 assert.deepEqual(summary.map(run=>[run.number,run.done,run.failed,run.promptVersion]),[[1,2,0,1],[2,2,0,1]]);assert.equal(runs.earlierCount(docs),2);
 // Deleting the latest run brings back each text's earlier result; its number is not reused.
