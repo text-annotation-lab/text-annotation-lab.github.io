@@ -18,7 +18,7 @@ async function textForChunking(file:File){
 export async function chunkDocuments<T extends ChunkableDocument>(docs:T[],wordsPerChunk:number,method:ChunkMethod='exact-words'){
  const result:(T|(ChunkableDocument&ChunkInfo))[]=[];let split=0,created=0;
  for(const doc of docs){
-  if(doc.status!=='pending'||doc.sourceId||doc.history?.length){result.push(doc);continue;}
+  if(doc.status!=='pending'||doc.sourceId||doc.history?.length||doc.earlier?.length){result.push(doc);continue;}
   try{
    const text=await textForChunking(doc.file);
    if(text.length>2000000)throw new Error('The extracted text is too large. Divide the source into smaller files first.');

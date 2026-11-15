@@ -30,12 +30,13 @@ export function splitTextByWords(text:string,wordsPerChunk:number){
  return chunks;
 }
 
-export type ChunkableDocument = {id:string;name:string;file:File;status:string;history?:import('./workflow-safety').Attempt[]}&Partial<ChunkInfo>;
+// `earlier` holds the results of earlier runs (research mode); a text with any is never split or merged away.
+export type ChunkableDocument = {id:string;name:string;file:File;status:string;history?:import('./workflow-safety').Attempt[];earlier?:any[]}&Partial<ChunkInfo>;
 
 export function restorableSourceIds(docs:ChunkableDocument[]){
  const groups=new Map<string,boolean>();
  for(const doc of docs){
-  if(doc.sourceId)groups.set(doc.sourceId,(groups.get(doc.sourceId)??true)&&doc.status==='pending'&&!doc.history?.length);
+  if(doc.sourceId)groups.set(doc.sourceId,(groups.get(doc.sourceId)??true)&&doc.status==='pending'&&!doc.history?.length&&!doc.earlier?.length);
  }
  return new Set([...groups].filter(([,pending])=>pending).map(([id])=>id));
 }

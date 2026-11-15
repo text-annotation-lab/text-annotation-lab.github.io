@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {studyWorkspaceKey,WORKING_STUDY_ID,type Study} from './studies';
 const FORMAT='text-annotation-lab-study',VERSION=1;
 export const MAX_BACKUP_BYTES=250*1024*1024;
-const secret=/^(?:api[-_]?key|key|authorization|credentials?|secret|access[-_]?token|refresh[-_]?token|password)$/i;
+const secret=/^(?:api[-_]?key|key|keyring|authorization|credentials?|secret|access[-_]?token|refresh[-_]?token|password)$/i;
 const unsafe=new Set(['__proto__','prototype','constructor']);
 const text=z.string().max(1000000),short=z.string().max(1000),optionalText=text.optional();
 const file=z.custom<File>(value=>value instanceof File&&value.size>0&&value.size<=20*1024*1024,'Missing or invalid retained file (limit 20 MB).');

@@ -10,6 +10,20 @@ The Lab is a static site published with GitHub Pages. Everything runs in the vis
 - Studies, prompts, and results are saved in the visitor's browser for this address.
 - The former server routes in `app/api/*/route.ts` are now plain modules. `lib/local-api.ts` routes the interface's `/api/...` requests to them inside the browser.
 
+## Research mode
+
+The switch in the header turns the Lab into a tool for research. It is a view of the same study: switching either way never changes texts, prompts, or results, and the standard Lab looks and works as before apart from the switch.
+
+- Tabs: Workspace, Runs & agreement, Export, About, and Model knowledge. The teaching pages and the guidance text written for students are not shown.
+- API keys are entered in the header, one per provider. They are kept until the tab closes unless the visitor ticks "Remember keys in this browser," which stores them in that browser's local storage (research mode only). Keys are never part of a study, a backup, or an export.
+- Runs: every annotation belongs to a numbered run that records its provider, model, reasoning effort, prompt, and answer fields. "Run again" adds a run and keeps the earlier results.
+- Labels and metadata: a CSV or Excel file is matched to the texts by file name. Each column is either human labels or metadata; both can be used to filter, compare, and stratify a sample.
+- Samples: "Draw a sample" marks a random sample, optionally stratified, with a recorded seed so the draw can be repeated.
+- Runs & agreement compares a run with human labels or with another run: percent agreement, Cohen's κ, weighted κ, Krippendorff's α, Gwet's AC1 and AC2, with 95% intervals, a confusion matrix, and the list of disagreements.
+- Export: results as CSV (one row per text, or one row per text, run, and answer field), the runs with their settings and prompts, the samples drawn, and the standard Excel workbook.
+
+The code is in `lib/research/` (logic and statistics, covered by `tests/research-lib.cjs`) and `components/research/` (interface, loaded only when research mode is on). `tests/research-mode.cjs` checks the switch, the keys, and that the standard Lab shows nothing of research mode. Code that both modes need, such as the model lists and provider calls, is shared, not copied.
+
 ## Working on it
 
 Requires Node.js 22 or later.
