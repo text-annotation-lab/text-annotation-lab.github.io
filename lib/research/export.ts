@@ -5,6 +5,7 @@ import {rowForRun,runSummaries,setupOf,sameSetup,type Row,type RunRecord,type Ru
 import type {Column} from './columns';
 import {fieldLabel,fieldsOf,valueOf} from './view';
 import {sampleNote,type SampleRecord} from './sample';
+import {answersLabel} from '../answer-types';
 
 export type Dataset={kind:'texts'|'knowledge';rows:Row[];runs:RunRecord[];columns:Column[];samples:SampleRecord[]};
 export const unitOf=(dataset:{kind:string})=>dataset.kind==='knowledge'?'subject':'text';
@@ -72,8 +73,8 @@ export function longTable(dataset:Dataset):(string|number)[][]{
 }
 // One row per run, with its full prompt: the settings record of the study.
 export function runsTable(dataset:Dataset):(string|number)[][]{
- const header=['run','data','started_at','provider','model','reasoning_effort','prompt_version','answer_fields',...(dataset.kind==='knowledge'?['web_search']:[]),unitOf(dataset)+'s_completed',unitOf(dataset)+'s_failed','cost_usd','cost_known_for','settings','prompt'];
- return [header,...runLines(dataset).map(run=>[run.number,sourceOf(dataset),run.startedAt,run.provider,run.model,run.effort,run.promptVersion,run.answerFields.join(' | '),...(dataset.kind==='knowledge'?[run.webSearch?'yes':'no']:[]),run.done,run.failed,run.costKnown?Number(run.cost.toFixed(6)):'',`${run.costKnown} of ${run.costCount}`,run.mixed?'vary within this run; see the long results table':run.recorded?'recorded when the run started':'read from the run’s results',run.prompt])];
+ const header=['run','data','started_at','provider','model','reasoning_effort','prompt_version','answer_fields','answer_format',...(dataset.kind==='knowledge'?['web_search']:[]),unitOf(dataset)+'s_completed',unitOf(dataset)+'s_failed','cost_usd','cost_known_for','settings','prompt'];
+ return [header,...runLines(dataset).map(run=>[run.number,sourceOf(dataset),run.startedAt,run.provider,run.model,run.effort,run.promptVersion,run.answerFields.join(' | '),answersLabel(run.answerFields,run.answerSettings,true),...(dataset.kind==='knowledge'?[run.webSearch?'yes':'no']:[]),run.done,run.failed,run.costKnown?Number(run.cost.toFixed(6)):'',`${run.costKnown} of ${run.costCount}`,run.mixed?'vary within this run; see the long results table':run.recorded?'recorded when the run started':'read from the run’s results',run.prompt])];
 }
 export function samplesTable(samples:SampleRecord[]):(string|number)[][]{
  return [['column','value','drawn_on','size','eligible','seed','stratified_by','allocation','excluded','method','note'],...samples.map(s=>[s.column,s.value,s.date,s.size,s.eligible,s.seed,s.strata.join(' × '),s.allocation.map(a=>`${a.stratum}: ${a.drawn} of ${a.available}`).join('; '),s.exclude?`${s.exclude.column} = ${s.exclude.value}`:'',s.method,sampleNote(s)])];

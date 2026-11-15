@@ -160,6 +160,49 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  await empty.button('Annotate next').props.onClick();await empty.flush();
  assert.equal(empty.calls.length,1);assert.deepEqual(empty.latest().docs.map(doc=>doc.status),['done','pending','pending']);
 
+ // Typed answer fields: research mode's editor, what a request carries, what a result records, and the standard Lab's view.
+ {
+  const replies=[];
+  const typed=harness({docs:documents(),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1},async()=>{},async()=>Response.json(replies.shift()||{score:'',explanation:'',answers:{f0:'positive',f1:'Dry.'}}));
+  await typed.flush();await typed.configure();
+  const mode=()=>typed.find(n=>n.type==='ModeSwitch').props,editor=()=>typed.find(n=>n.type==='ResearchAnswerFields').props,standard=()=>typed.find(n=>n.type==='AnswerFields').props,notes=()=>typed.all(n=>n.type==='p'&&n.props.role==='note').map(n=>typed.text(n));
+  assert.equal(typed.all(n=>n.type==='ResearchAnswerFields').length,0,'The standard Lab keeps its own answer fields');assert.deepEqual(standard().names,[]);assert.deepEqual(notes(),[]);
+  mode().onChange(true);await typed.flush();
+  assert.equal(typed.all(n=>n.type==='AnswerFields').length,0);assert.deepEqual(editor().names,[]);assert.equal(editor().settings,undefined);
+  const tone={name:'Tone',type:'category',values:['positive','negative'],description:'Overall tone.'},asked={rationale:false,fields:[tone,{name:'Notes',type:'text',values:[],description:''}]},sentForm={rationale:false,fields:[tone]};
+  editor().onChange(['Tone','Notes'],asked);await typed.flush();
+  assert.deepEqual(typed.latest().answerFields,['Tone','Notes']);assert.deepEqual(typed.latest().answerSettings,asked,'The study keeps the fields as they were entered');assert.deepEqual(editor().settings,asked);
+  await typed.button('All (').props.onClick();await typed.flush();
+  assert.equal(typed.calls.length,3);const form=typed.calls.at(-1).options.body;
+  assert.equal(form.get('answerFields'),JSON.stringify(['Tone','Notes']));assert.equal(form.get('answerSettings'),JSON.stringify(sentForm),'A request carries only what differs from the standard format');
+  assert.deepEqual(typed.latest().docs.map(doc=>[doc.status,doc.runNo,doc.answers.f0,JSON.stringify(doc.answerSettings)]),Array(3).fill(['done',1,'positive',JSON.stringify(sentForm)]));
+  assert.deepEqual(typed.latest().runs.map(run=>[run.number,JSON.stringify(run.answerSettings)]),[[1,JSON.stringify(sentForm)]]);
+  assert(typed.text(typed.button('Remaining')).includes('Remaining (0)'));
+  // Asking for an explanation again is another setup: every text remains, and they form a new run.
+  editor().onChange(['Tone','Notes'],{fields:asked.fields});await typed.flush();
+  assert(typed.text(typed.button('Remaining')).includes('Remaining (3)'));
+  replies.push(...Array(3).fill({score:'',explanation:'Hopeful wording.',answers:{f0:'negative',f1:'Dry.'}}));
+  await typed.button('Remaining').props.onClick();await typed.flush();
+  assert.deepEqual(typed.latest().docs.map(doc=>[doc.runNo,doc.answers.f0,JSON.stringify(doc.answerSettings),doc.earlier.map(entry=>[entry.runNo,JSON.stringify(entry.answerSettings)])]),Array(3).fill([2,'negative',JSON.stringify({fields:[tone]}),[[1,JSON.stringify(sentForm)]]]));
+  assert.deepEqual(typed.latest().runs.map(run=>run.number),[1,2]);
+  // Plain text: one field named “response”, and no settings of the fields are sent.
+  editor().onChange(['Tone','Notes'],{...asked,plain:true});await typed.flush();
+  assert.deepEqual(typed.latest().answerSettings,{...asked,plain:true},'The fields are kept while plain text is on');
+  replies.push(...Array(3).fill({score:'',explanation:'',answers:{f0:'The tone is hopeful.'}}));
+  await typed.button('Remaining').props.onClick();await typed.flush();
+  const plainForm=typed.calls.at(-1).options.body;assert.equal(plainForm.get('answerFields'),JSON.stringify(['response']));assert.equal(plainForm.get('answerSettings'),JSON.stringify({plain:true}));
+  assert.deepEqual(typed.latest().docs.map(doc=>[doc.runNo,doc.answerFields,doc.answers]),Array(3).fill([3,['response'],{f0:'The tone is hopeful.'}]));
+  assert(typed.all(n=>n.type==='TableHead').map(n=>typed.text(n)).includes('response'),'The reply is the table’s one answer column');
+  // The standard Lab says that the settings still apply, and keeps them.
+  mode().onChange(false);await typed.flush();
+  assert.deepEqual(notes(),['This study asks for plain-text replies, set in research mode; the answer fields above are not used. Switch to research mode to change this.']);
+  mode().onChange(true);await typed.flush();editor().onChange(['Tone','Notes'],asked);await typed.flush();mode().onChange(false);await typed.flush();
+  assert.deepEqual(notes(),['These answer fields have types or other settings from research mode, which still apply here. Switch to research mode to change this.']);assert.deepEqual(standard().names,['Tone','Notes']);
+  // Removing a field there removes its settings, so a later field of that name starts plain.
+  standard().onChange(['Notes']);await typed.flush();
+  assert.deepEqual(typed.latest().answerFields,['Notes']);assert.deepEqual(typed.latest().answerSettings,{rationale:false,fields:[{name:'Notes',type:'text',values:[],description:''}]});
+ }
+
  // The mode is remembered in this browser. Keys are remembered only when asked, and only for research mode.
  const storage=fakeStorage();globalThis.window={localStorage:storage};
  const first=start();await first.flush();

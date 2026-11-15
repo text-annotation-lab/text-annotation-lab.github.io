@@ -30,5 +30,11 @@ async function records(values){const db=await new Promise((resolve,reject)=>{con
  assert.equal((await listSavedPrompts()).length,3,'Deleting a library entry leaves study prompts intact');
  await records({'study:other:texts':{prompt:'Changed again',answerFields:[]}});
  assert.equal((await library()).find(p=>p.id==='study:other:texts').prompt,'Updated saved rubric','Saved library entries are independent of study changes');
+ // Research mode's field settings (types, allowed values, descriptions) travel with a saved prompt; a prompt saved without them gains none.
+ assert((await library()).every(p=>!('answerSettings' in p)));
+ const settings={rationale:false,fields:[{name:'Tone',type:'category',values:['positive','negative'],description:'Overall tone.'}]};
+ assert.deepEqual((await savePrompt('Typed rubric','Typed prompt',['Tone'],settings)).at(-1).answerSettings,settings);
+ assert.deepEqual((await library()).find(p=>p.name==='Typed rubric').answerSettings,settings);
+ assert.deepEqual((await savePrompt('Plain rubric','Plain prompt',[],{plain:true,fields:'unreadable'})).at(-1).answerSettings,{plain:true},'Unreadable settings are dropped, not stored');
  console.log('PASS: independent save/delete, duplicate names, concurrent saves, one-time migration, study preservation; legacy and all-study prompt discovery, both workspaces, answer fields, empty/deleted filtering, refresh, and read-only preservation.');
 })().catch(error=>{console.error(error);process.exit(1);});

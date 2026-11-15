@@ -11,6 +11,7 @@ import {fileStem,runLines,sourceOf,unitOf,type Dataset} from '@/lib/research/exp
 import {toCsv} from '@/lib/research/parse-table';
 import {fieldLabel,parseSource,pickField,sourceKey,type CompareSource} from '@/lib/research/view';
 import type {Agreement} from '@/lib/research/metrics';
+import {answersLabel} from '@/lib/answer-types';
 import {downloadText} from './download';
 
 const when=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(date.getTime())?'—':date.toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});};
@@ -56,7 +57,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
 
  function downloadComparison(){
   if(!stats||!a||!b)return;
-  downloadText(`${fileStem(studyName,dataset)}-agreement.csv`,toCsv(agreementTable({a:sourceLabel(a)+(fieldA?` (${fieldLabel(fieldA)})`:''),b:sourceLabel(b)+(fieldB?` (${fieldLabel(fieldB)})`:''),field,dataset:sourceOf(dataset)},stats,ci,unit)),'text/csv');
+  downloadText(`${fileStem(studyName,dataset)}-agreement.csv`,toCsv(agreementTable({a:sourceLabel(a)+(fieldA?` (${fieldLabel(fieldA)})`:''),b:sourceLabel(b)+(fieldB?` (${fieldLabel(fieldB)})`:''),field,dataset:sourceOf(dataset),basis:pairing?.basis},stats,ci,unit)),'text/csv');
  }
  const option=(source:CompareSource)=><option key={sourceKey(source)} value={sourceKey(source)}>{source.kind==='run'?`Run #${source.run} · ${modelLabel(lines.find(run=>run.number===source.run)?.model||'')}`:source.name}</option>;
  const group=(list:CompareSource[])=><>{list.some(s=>s.kind==='run')&&<optgroup label="Runs">{list.filter(s=>s.kind==='run').map(option)}</optgroup>}{list.some(s=>s.kind==='column')&&<optgroup label="Labels and metadata">{list.filter(s=>s.kind==='column').map(option)}</optgroup>}</>;
@@ -76,7 +77,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
     <td>{when(run.startedAt)}</td>
     <td>{modelLabel(run.model)}{run.effort&&<span className="research-muted"> · {reasoningOptionLabel(run.effort)}</span>}{run.webSearch&&<span className="research-tag">web search</span>}{run.mixed&&<span className="research-tag warn" title={`Results in this run were made with different settings. The long results table lists the settings of every ${unit}.`}>settings vary</span>}</td>
     <td><details className="research-prompt"><summary>v{run.promptVersion}</summary><pre>{run.prompt||'(no prompt recorded)'}</pre></details></td>
-    <td>{run.answerFields.length?run.answerFields.join(', '):'Score / category'}</td>
+    <td>{answersLabel(run.answerFields,run.answerSettings)}</td>
     <td>{run.done.toLocaleString('en-US')}{run.active>0&&<span className="research-muted"> · {run.active} in progress</span>}</td>
     <td>{run.failed||'—'}</td>
     <td title={run.costKnown<run.costCount?`Known for ${run.costKnown} of ${run.costCount} annotations`:undefined}>{run.costKnown?money(run.cost)+(run.costKnown<run.costCount?'+':''):'—'}</td>
@@ -99,7 +100,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
       <span className="research-stat-label">{line.label}</span><strong>{line.value}</strong>
       {line.key!=='n'&&line.key!=='spearman'&&<span className="research-stat-ci">{line.ciText?`95% CI ${line.ciText}`:stats.n<10?'':BOOTSTRAPPED.has(line.key)&&!ci?'95% CI: computing…':''}</span>}
      </div>)}</div>
-     <p className="hint">{[pairing.onlyA?`${pairing.onlyA.toLocaleString('en-US')} ${unit}${pairing.onlyA===1?' has':'s have'} a value only in ${sourceLabel(a)}`:'',pairing.onlyB?`${pairing.onlyB.toLocaleString('en-US')} only in ${sourceLabel(b)}`:''].filter(Boolean).join('; ')}{pairing.onlyA||pairing.onlyB?'; these are not compared. ':''}{leftOutNote(stats,unit)} {stats.n<10?`Intervals need at least 10 compared ${unit}s.`:`Intervals for the coefficients are bootstrap percentile intervals (10,000 resamples of the ${unit}s, fixed seed); those for shares are Wilson intervals.`} Values are compared after trimming and ignoring case.</p>
+     <p className="hint">{[pairing.onlyA?`${pairing.onlyA.toLocaleString('en-US')} ${unit}${pairing.onlyA===1?' has':'s have'} a value only in ${sourceLabel(a)}`:'',pairing.onlyB?`${pairing.onlyB.toLocaleString('en-US')} only in ${sourceLabel(b)}`:''].filter(Boolean).join('; ')}{pairing.onlyA||pairing.onlyB?'; these are not compared. ':''}{leftOutNote(stats,unit,pairing.leftOut)} {pairing.basis} {stats.n<10?`Intervals need at least 10 compared ${unit}s.`:`Intervals for the coefficients are bootstrap percentile intervals (10,000 resamples of the ${unit}s, fixed seed); those for shares are Wilson intervals.`} Values are compared after trimming and ignoring case.</p>
      {categories.length>0&&(categories.length<=25?<div className="research-table-scroll"><table className="research-table research-confusion"><caption>Rows: {sourceLabel(a)}. Columns: {sourceLabel(b)}.</caption><thead><tr><th/>{categories.map(c=><th key={c} scope="col">{c}</th>)}</tr></thead><tbody>{categories.map(row=><tr key={row}><th scope="row">{row}</th>{categories.map(column=>{const n=stats.confusion[row]?.[column]??0;return <td key={column} className={n?row===column?'agree':'disagree':''}>{n||''}</td>;})}</tr>)}</tbody></table></div>:<p className="hint">{categories.length} distinct values: too many to show as a table. The downloaded comparison includes the full table.</p>)}
      <div className="research-page-actions"><Button type="button" variant="outline" onClick={downloadComparison}><Download size={16}/>Download this comparison (CSV)</Button></div>
      <h4>Disagreements ({differing.length.toLocaleString('en-US')})</h4>

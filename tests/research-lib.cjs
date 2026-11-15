@@ -189,6 +189,62 @@ const runToRun=agree.pairSources(viewDocs,viewColumns,{kind:'run',run:2},'',{kin
 const numbers=agree.pairSources([{id:'1',name:'1',status:'done',score:'4',runNo:1,cells:['5']},{id:'2',name:'2',status:'done',score:'2',runNo:1,cells:['2']},{id:'3',name:'3',status:'done',score:'1',runNo:1,cells:['3']}],[{name:'rating',role:'label'}],{kind:'run',run:1},'',{kind:'column',name:'rating'},'');
 assert.equal(agree.autoLevel(numbers),'ordinal');assert.deepEqual(agree.disagreements(numbers).map(d=>d.gap),[2,1],'Largest differences first on a scale');
 
+// --- Typed answer fields: the statistics use the field's own scale or categories ---------
+{
+ const typedRows=(type,values,answers,labels,run=1)=>answers.map((answer,i)=>({id:String(i),name:'t'+i,status:'done',runNo:run,score:'',explanation:'',answerFields:['Rating'],answerSettings:{fields:[{name:'Rating',type,values,description:''}]},answers:{f0:answer},cells:[labels[i]]}));
+ const cols=[{name:'human',role:'label'}],run1={kind:'run',run:1},human={kind:'column',name:'human'},pair=rows=>agree.pairSources(rows,cols,run1,'Rating',human,'');
+ const stat=(p,level='auto')=>agree.runJob(agree.agreementJob(p,level,1),false);
+ // A scale of −3 to 3 on which the model used only −1 to 2: the weights and Gwet's coefficients are those of the
+ // whole declared scale, not of the answers that happened to occur.
+ const scale=['-3','-2','-1','0','1','2','3'],ans=['-1','0','1','2','0','1','-1','2','0','1'],lab=['-1','0','2','2','1','1','0','2','0','0'];
+ const declared=pair(typedRows('ordinal',scale,ans,lab));
+ assert.deepEqual([declared.numeric,declared.level,declared.scaleSeen,declared.range],[true,'ordinal',false,undefined]);assert.deepEqual(declared.allowed,scale);assert.equal(declared.basis,'Scale: the field’s allowed values, -3 to 3.');
+ const onScale=stat(declared),direct=metrics.agreement(ans,lab,'ordinal',scale,1,{withIntervals:false});
+ near(onScale.gwetAC1,direct.gwetAC1,'AC1 on the declared scale');near(onScale.gwetAC2Linear,direct.gwetAC2Linear,'AC2 on the declared scale');near(onScale.weightedKappa,direct.weightedKappa,'weighted kappa');
+ // Gwet's AC1 by hand for q = 7: chance agreement is the sum of pi(1 − pi) over all seven points, divided by q − 1.
+ const share=value=>(ans.filter(x=>x===value).length+lab.filter(x=>x===value).length)/20,pe=scale.reduce((sum,value)=>sum+share(value)*(1-share(value)),0)/6;
+ near(onScale.gwetAC1,(0.6-pe)/(1-pe),'AC1 worked out separately');
+ const untyped=agree.pairSources(ans.map((answer,i)=>({id:String(i),name:'t'+i,status:'done',runNo:1,score:answer,cells:[lab[i]]})),cols,run1,'',human,'');
+ assert.deepEqual([untyped.scaleSeen,untyped.range,untyped.allowed],[true,[-1,2],[]]);assert.match(untyped.basis,/read from the run’s answers, -1 to 2; no allowed values are declared/);
+ assert(Math.abs(stat(untyped).gwetAC1-onScale.gwetAC1)>0.01,'Without a declared scale, q is the range that was seen');
+ // A label off the declared scale (a 9 for “cannot tell”) is left out and reported.
+ const off=stat(pair(typedRows('ordinal',scale,['1','2','0'],['1','9','0'])));assert.equal(off.n,2);assert.match(agree.leftOutNote(off,'text','marker'),/1 text was left out because a value was not a number on the scale -3 to 3: “9”/);
+ // A scale with no listed values behaves as before: read from the answers.
+ const open=pair(typedRows('ordinal',[],['1','2','3'],['1','2','2']));assert.deepEqual([open.scaleSeen,open.range,open.level],[true,[1,3],'ordinal']);
+ // Model knowledge may abstain: the abstention is left out, and the field stays a scale.
+ const abstained=pair(typedRows('ordinal',['1','2','3'],['1','INSUFFICIENT_KNOWLEDGE','3','2'],['1','2','3','2']));
+ assert.equal(abstained.numeric,true);const abstainStats=stat(abstained);assert.equal(abstainStats.n,3);assert.equal(abstainStats.level,'ordinal');assert.deepEqual(abstainStats.leftOut.values,['insufficient_knowledge']);
+ // Categories: a label that is none of the field's values is left out and named as such.
+ const cats=pair(typedRows('category',['positive','neutral','negative'],['positive','neutral','negative','positive'],['Positive','neutral','mixed','negative']));
+ assert.deepEqual([cats.numeric,cats.level,cats.leftOut],[false,'nominal','value']);assert.deepEqual(cats.allowed,['positive','neutral','negative']);assert.equal(cats.basis,'Categories: the field’s 3 allowed values.');
+ const catStats=stat(cats);assert.equal(catStats.n,3);assert.deepEqual(catStats.categories.sort(),['negative','neutral','positive'],'A category nobody used still counts');
+ assert.match(agree.leftOutNote(catStats,'text',cats.leftOut),/1 text was left out because a value was not one of the field’s allowed values: “mixed”/);
+ near(catStats.gwetAC1,metrics.agreement(['positive','neutral','positive'],['positive','neutral','negative'],'nominal',['positive','neutral','negative'],1,{withIntervals:false}).gwetAC1,'AC1 over the three declared categories');
+ // Yes / no: a coder's 1 and 0, y and n, or ja and nej are the same answers.
+ const yesNo=pair(typedRows('boolean',['yes','no'],['yes','no','yes','no','yes'],['1','0','ja','Y','maybe']));
+ assert.deepEqual(yesNo.allowed,['false','true']);assert.deepEqual(yesNo.a,['true','false','true','false','true']);assert.deepEqual(yesNo.b,['true','false','true','true','maybe']);
+ const yesNoStats=stat(yesNo);assert.equal(yesNoStats.n,4);near(yesNoStats.percentAgreement,0.75);assert.deepEqual(yesNoStats.leftOut.values,['maybe']);
+ assert.deepEqual(agree.disagreements(yesNo).map(d=>[d.a,d.b]),[['no','Y'],['yes','maybe']]);
+ // A number field has no scale: interval level, and no Gwet coefficients.
+ const free=pair(typedRows('number',[],['10','25.5','40','7'],['12','25.5','38','n.d.']));
+ assert.deepEqual([free.numeric,free.level,free.scaleSeen,free.leftOut],[true,'interval',false,'number']);const freeStats=stat(free);
+ assert.equal(freeStats.n,3);assert.equal(freeStats.gwetAC1,null);assert.equal(freeStats.gwetAC2Linear,null);assert.notEqual(freeStats.krippendorffAlpha,null);assert.match(agree.leftOutNote(freeStats,'text',free.leftOut),/was not a number: “n\.d\.”/);
+ // Two runs: both typed, the scales are joined; one typed, the scale is extended by the other run's answers and keeps its own ends.
+ const both=[...typedRows('ordinal',['1','2','3'],['1','2','3'],['','','']).map((row,i)=>({...row,runNo:2,answerSettings:{fields:[{name:'Rating',type:'ordinal',values:['0','1','2','3','4'],description:''}]},answers:{f0:['1','2','4'][i]},earlier:[{runNo:1,status:'done',answerFields:['Rating'],answerSettings:row.answerSettings,answers:row.answers,score:'',explanation:''}]}))];
+ const joined=agree.pairSources(both,[],{kind:'run',run:2},'Rating',run1,'Rating');assert.deepEqual(joined.allowed,['0','1','2','3','4']);assert.equal(joined.range,undefined);
+ const mixed=both.map((row,i)=>({...row,answerFields:[],answerSettings:undefined,answers:undefined,score:['1','2','5'][i]}));
+ const extended=agree.pairSources(mixed,[],{kind:'run',run:2},'',run1,'Rating');assert.deepEqual(extended.allowed,['1','2','3','4','5']);assert.deepEqual(extended.range,[1,3]);assert.match(extended.basis,/extended to 1 to 5 because the run without allowed values answered beyond them/);
+ assert.equal(stat(extended).n,3,'No answer of either run is left out');
+ // A typed category run against an untyped run has no shared list of categories: read from the answers, as before.
+ const loose=agree.pairSources(both.map((row,i)=>({...row,answerSettings:{fields:[{name:'Rating',type:'category',values:['a','b'],description:''}]},answers:{f0:['a','b','a'][i]},earlier:[{runNo:1,status:'done',score:['a','b','c'][i]}]})),[],{kind:'run',run:2},'Rating',run1,'');
+ assert.deepEqual(loose.allowed,[]);assert.deepEqual([...new Set(loose.known)].sort(),['a','b','c']);
+ // The comparison file says what the scale rests on.
+ assert.deepEqual(agree.agreementTable({a:'Run #1',b:'human',field:'Rating',dataset:'uploaded texts',basis:declared.basis},onScale,undefined)[6],['scale_or_categories','Scale: the field’s allowed values, -3 to 3.','','']);
+ // The Workspace's “disagree with” reads a yes / no field the same way.
+ const shown=view.researchRows(typedRows('boolean',['yes','no'],['yes','no'],['1','1']),cols,{...view.DEFAULT_VIEW,compare:'col:human'}).rows.map(row=>row.compared.match);
+ assert.deepEqual(shown,[true,false]);assert.equal(view.sameLabel('yes','1'),false);assert.equal(view.sameLabel('yes','1',true),true);
+}
+
 // --- Export tables -----------------------------------------------------------------------
 const runRecords=[{...setup,number:1,startedAt:'2026-11-15T10:00:00Z'},{...setup,model:'gpt-6.1-terra',number:2,startedAt:'2026-11-15T11:00:00Z'}];
 const exportDocs=[
@@ -203,6 +259,8 @@ assert.deepEqual(longRows[0].slice(0,7),['document','tone_human','year','run','f
 assert.deepEqual(longRows.slice(1).map(row=>[row[0],row[3],row[5],row[longRows[0].indexOf('model')]]),[['a.txt',1,'MIXED','gpt-6-luna'],['a.txt',2,'POSITIVE','gpt-6.1-terra'],['b.txt',1,'NEGATIVE','gpt-6-luna']]);
 const runRows=exporting.runsTable(dataset);
 assert.deepEqual(runRows.slice(1).map(row=>[row[0],row[1],row[runRows[0].indexOf('model')],row[runRows[0].indexOf('texts_completed')],row[runRows[0].indexOf('prompt')]]),[[1,'uploaded texts','gpt-6-luna',2,'Classify tone'],[2,'uploaded texts','gpt-6.1-terra',1,'Classify tone']]);
+assert.deepEqual(runRows[0].slice(7,9),['answer_fields','answer_format']);assert.equal(runRows[1][8],'Score / category');
+assert.equal(exporting.runsTable({...dataset,runs:[{...runRecords[0],answerFields:['Tone'],answerSettings:{rationale:false,fields:[{name:'Tone',type:'category',values:['positive','mixed'],description:'Overall tone.'}]}},runRecords[1]]})[1][8],'Tone (category: positive, mixed; description: Overall tone.) | no explanation requested','The record of runs names each field’s type, values, and description');
 assert.equal(exporting.samplesTable([record]).length,2);
 assert.deepEqual(exporting.uniqueNames(['document','Year','year','run','year']),['document','Year','year_2','run','year_3']);
 assert.equal(exporting.wideTable({...dataset,columns:[{name:'Document',role:'meta'},{name:'year',role:'meta'}]})[0][1],'Document_2','An imported column never repeats a column name of the Lab’s own');

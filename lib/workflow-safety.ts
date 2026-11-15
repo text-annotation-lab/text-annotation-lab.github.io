@@ -19,7 +19,7 @@ export function setupErrors(provider:Provider,apiKey:string,prompt:string,model:
 }
 export type Attempt = {status:string;[key:string]:any};
 export type RetryRecord={id:string;status:string;history?:Attempt[];[key:string]:any};
-const attemptKeys=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answers','status','error','provider','model','effort','prompt','processing','concurrency','batchId','instructions','webSearch','webUsed','research','score','explanation','tokens','usage','responseId','time','startedAt'];
+const attemptKeys=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','answers','status','error','provider','model','effort','prompt','processing','concurrency','batchId','instructions','webSearch','webUsed','research','score','explanation','tokens','usage','responseId','time','startedAt'];
 // Preserve failed attempts before requeuing; successful records never change.
 export function queueRetries<T extends RetryRecord>(records:T[],id?:string):T[]{
  return records.map(record=>{
