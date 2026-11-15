@@ -6,6 +6,7 @@ import {normalizeLabel} from './normalize';
 import {rowForRun,type Row} from './runs';
 import {cellOf,columnIndex,type Column} from './columns';
 import {fieldLabel,fieldsOf,pickField,valueOf,type CompareSource} from './view';
+import {fieldSpec,type FieldType} from '../answer-types';
 
 export const sourceLabel=(source:CompareSource)=>source.kind==='run'?'Run #'+source.run:source.name;
 // The answer fields a run recorded; a column has none.
@@ -18,22 +19,73 @@ export function sourceValues(rows:Row[],columns:Column[],source:CompareSource,fi
 const isNumber=(value:string)=>value!==''&&!Number.isNaN(Number(value));
 // Codes that only ever mean “no label” (unlike words such as “none”, which may be a category).
 const MISSING_CODE=/^(na|n\/a|#n\/a|n\.a\.?|nan|missing|-|–|—|\.|\?)$/i;
-export type Pairing={ids:string[];names:string[];a:string[];b:string[];rawA:string[];rawB:string[];onlyA:number;onlyB:number;numeric:boolean;range?:[number,number];known?:string[]};
+// The type a run gave the field (research mode's answer fields) and the values it allowed, when every
+// completed result of the run was made with the same ones.
+type Typed={type:FieldType;values:string[]};
+function runSpec(rows:Row[],run:number,field:string):Typed|undefined{
+ if(!field)return undefined;
+ let found:Typed|undefined,key='';
+ for(const row of rows){
+  const result=rowForRun(row,run);if(result.status!=='done')continue;
+  const spec=fieldSpec(result.answerSettings,field),own=spec?JSON.stringify([spec.type,spec.values]):'-';
+  if(!key){key=own;found=spec&&{type:spec.type,values:spec.values};}else if(own!==key)return undefined;
+ }
+ return found;
+}
+const numbersOf=(values:string[])=>values.map(value=>normalizeLabel(value)).filter(isNumber).map(Number);
+const byNumber=(values:string[])=>[...new Set(values)].sort((x,y)=>Number(x)-Number(y));
+// `allowed`: the field's own values (a scale's points or its categories), when a run declared them. `scaleSeen`:
+// numbers with no declared scale, whose scale is read from the answers (`range`). `known`: categories with none
+// declared. `basis` says in words what the scale or the categories rest on.
+export type Pairing={ids:string[];names:string[];a:string[];b:string[];rawA:string[];rawB:string[];onlyA:number;onlyB:number;numeric:boolean;level:Level;allowed:string[];scaleSeen:boolean;range?:[number,number];known?:string[];leftOut:'marker'|'number'|'value';basis:string};
 export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:string,b:CompareSource,fieldB:string):Pairing{
  const va=sourceValues(rows,columns,a,fieldA),vb=sourceValues(rows,columns,b,fieldB);
- const p:Pairing={ids:[],names:[],a:[],b:[],rawA:[],rawB:[],onlyA:0,onlyB:0,numeric:false};
+ const specA=a.kind==='run'?runSpec(rows,a.run,fieldA):undefined,specB=b.kind==='run'?runSpec(rows,b.run,fieldB):undefined;
+ const typed=[specA,specB].filter((spec):spec is Typed=>Boolean(spec)&&spec!.type!=='text'),twoRuns=a.kind==='run'&&b.kind==='run';
+ // One type for the comparison: a single typed run, or two runs that gave the field the same type.
+ const type=typed.length&&typed.every(spec=>spec.type===typed[0].type)?typed[0].type:undefined;
+ // A yes / no field also reads 1 and 0, y and n, and ja and nej (in a coder's column, or in a run without the type).
+ const yesNo=type==='boolean',read=(value:string)=>normalizeLabel(value,yesNo);
+ const p:Pairing={ids:[],names:[],a:[],b:[],rawA:[],rawB:[],onlyA:0,onlyB:0,numeric:false,level:'nominal',allowed:[],scaleSeen:false,leftOut:'marker',basis:''};
  rows.forEach((row,i)=>{
   if(va[i]&&!vb[i])p.onlyA++;else if(vb[i]&&!va[i])p.onlyB++;
   if(!va[i]||!vb[i])return;
-  p.ids.push(row.id);p.names.push(String(row.name??''));p.rawA.push(va[i]);p.rawB.push(vb[i]);p.a.push(normalizeLabel(va[i]));p.b.push(normalizeLabel(vb[i]));
+  p.ids.push(row.id);p.names.push(String(row.name??''));p.rawA.push(va[i]);p.rawB.push(vb[i]);p.a.push(read(va[i]));p.b.push(read(vb[i]));
  });
- // Numbers: every answer of the run is a number, and so are most of the labels it is compared with.
- const answers=a.kind==='run'||b.kind!=='run'?p.a:p.b,labels=answers===p.a?p.b:p.a;
- p.numeric=answers.length>0&&answers.every(isNumber)&&labels.filter(isNumber).length*2>labels.length;
+ const answers=a.kind==='run'||b.kind!=='run'?p.a:p.b,labels=answers===p.a?p.b:p.a,answersAll=answers===p.a?va:vb;
+ // The values every typed run allowed; none when a typed run named none, so the scale or the categories are then read from the answers.
+ const lists=typed.map(spec=>spec.values.map(value=>normalizeLabel(value)).filter(Boolean)),declared=type&&lists.every(list=>list.length>=2)?[...new Set(lists.flat())]:[];
+ if(type==='boolean'){
+  p.allowed=['false','true'];p.leftOut='value';p.basis='A yes / no field: 1 and 0, y and n, and ja and nej are read as yes and no.';
+  return p;
+ }
+ if(type==='number'){
+  // Numbers with no scale: compared at the interval level; Gwet's coefficients need a fixed scale and are not given.
+  p.numeric=true;p.level='interval';p.leftOut='number';p.basis='A number field has no fixed scale, so Gwet’s AC1 and AC2 are not given.';
+  return p;
+ }
+ if(type==='category'&&declared.length&&(!twoRuns||typed.length===2)){
+  p.allowed=declared;p.leftOut='value';p.basis=`Categories: the field’s ${declared.length} allowed values.`;
+  return p;
+ }
+ // Numbers: a declared scale, or every answer of the run is a number, and so are most of the labels it is compared with.
+ p.numeric=type==='ordinal'||(type!=='category'&&answers.length>0&&answers.every(isNumber)&&labels.filter(isNumber).length*2>labels.length);
  if(p.numeric){
-  // The scale is read from every answer of the run, not only the paired ones.
-  const all=(answers===p.a?va:vb).map(value=>normalizeLabel(value)).filter(isNumber).map(Number);
-  p.range=[Math.min(...all),Math.max(...all)];
+  p.level='ordinal';
+  // The range of the answers is read from every answer of the run, not only the paired ones.
+  const seen=numbersOf(answersAll),seenRange:[number,number]|undefined=seen.length?[Math.min(...seen),Math.max(...seen)]:undefined;
+  if(type==='ordinal'&&declared.length){
+   const points=declared.map(Number),lo=Math.min(...points),hi=Math.max(...points);
+   // A second run without the type may answer beyond the scale: it is widened by those whole numbers so that no
+   // answer is left out, and keeps its own ends as the range (which sets its midpoint).
+   const other=twoRuns&&typed.length===1?numbersOf(specA?vb:va):[],extra:string[]=[];
+   if(other.length){const from=Math.floor(Math.min(...other)),to=Math.ceil(Math.max(...other));if(Math.max(hi,to)-Math.min(lo,from)<=100){for(let x=from;x<lo;x++)extra.push(String(x));for(let x=hi+1;x<=to;x++)extra.push(String(x));}}
+   p.allowed=byNumber([...declared,...extra]);if(extra.length)p.range=[lo,hi];
+   p.basis=`Scale: the field’s allowed values, ${lo} to ${hi}${extra.length?`, extended to ${p.allowed[0]} to ${p.allowed.at(-1)} because the run without allowed values answered beyond them`:''}.`;
+  }else{
+   p.scaleSeen=true;p.range=seenRange;
+   p.basis=seenRange?`Scale: read from the run’s answers, ${seenRange[0]} to ${seenRange[1]}; no allowed values are declared for this field.`:'';
+  }
  }else{
   // Categories: the values a run gives anywhere are real categories (a run that answers "none" keeps it); with two
   // columns, the words both use ("none", "unknown"), but never a code such as "NA" or "-". Any other missing-value
@@ -45,10 +97,10 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
  return p;
 }
 export type LevelChoice='auto'|Level;
-export const autoLevel=(p:Pairing):Level=>p.numeric?'ordinal':'nominal';
+export const autoLevel=(p:Pairing):Level=>p.level;
 export type AgreementJob={a:string[];b:string[];level:Level;allowed:string[];tolerance:number;scaleSeen?:boolean;range?:[number,number];known?:string[]};
 export function agreementJob(p:Pairing,level:LevelChoice,tolerance:number):AgreementJob{
- return {a:p.a,b:p.b,level:level==='auto'?autoLevel(p):level,allowed:[],tolerance,scaleSeen:p.numeric||undefined,range:p.numeric?p.range:undefined,known:p.known};
+ return {a:p.a,b:p.b,level:level==='auto'?p.level:level,allowed:p.allowed,tolerance,scaleSeen:p.scaleSeen||undefined,range:p.range,known:p.known};
 }
 export const runJob=(job:AgreementJob,withIntervals:boolean)=>agreement(job.a,job.b,job.level,job.allowed,job.tolerance,{withIntervals,scaleSeen:job.scaleSeen,range:job.range,known:job.known});
 
@@ -88,15 +140,15 @@ export function disagreements(p:Pairing):Disagreement[]{
  return out.some(d=>d.gap!==null)?out.sort((x,y)=>(y.gap??0)-(x.gap??0)):out;
 }
 // What was left out of the comparison, in words (empty when nothing was).
-export function leftOutNote(stats:Agreement,unit='text'):string{
+export function leftOutNote(stats:Agreement,unit='text',kind:Pairing['leftOut']='marker'):string{
  if(!stats.leftOut.n)return '';
  const values=stats.leftOut.values.map(v=>`“${v}”`).join(', ')+(stats.leftOut.values.length===5?', …':'');
- const why=stats.leftOut.range?`not a number on the scale ${stats.leftOut.range[0]} to ${stats.leftOut.range[1]}`:'a missing-value marker';
+ const why=stats.leftOut.range?`not a number on the scale ${stats.leftOut.range[0]} to ${stats.leftOut.range[1]}`:kind==='value'?'not one of the field’s allowed values':kind==='number'?'not a number':'a missing-value marker';
  return `${stats.leftOut.n} ${unit}${stats.leftOut.n===1?' was':'s were'} left out because a value was ${why}: ${values}.`;
 }
 // The comparison as a table for a CSV file.
-export function agreementTable(title:{a:string;b:string;field:string;dataset:string},stats:Agreement,ci:Agreement['ci']|undefined,unit='text'):(string|number)[][]{
- const rows:(string|number)[][]=[['statistic','value','ci95_low','ci95_high'],['data',title.dataset,'',''],['first_source',title.a,'',''],['second_source',title.b,'',''],['field',fieldLabel(title.field),'',''],['level',stats.level,'','']];
+export function agreementTable(title:{a:string;b:string;field:string;dataset:string;basis?:string},stats:Agreement,ci:Agreement['ci']|undefined,unit='text'):(string|number)[][]{
+ const rows:(string|number)[][]=[['statistic','value','ci95_low','ci95_high'],['data',title.dataset,'',''],['first_source',title.a,'',''],['second_source',title.b,'',''],['field',fieldLabel(title.field),'',''],['level',stats.level,'',''],...(title.basis?[['scale_or_categories',title.basis,'','']]:[])];
  const raw:[string,number|null,CiStat|undefined][]=[[unit+'s_compared',stats.n,undefined],['percent_agreement',stats.percentAgreement,'percentAgreement'],['within_tolerance_'+stats.tolerance,stats.withinTolerance,'withinTolerance'],['cohen_kappa',stats.cohenKappa,'cohenKappa'],['weighted_kappa_linear',stats.weightedKappaLinear,'weightedKappaLinear'],['weighted_kappa_quadratic',stats.weightedKappa,'weightedKappa'],['krippendorff_alpha',stats.krippendorffAlpha,'krippendorffAlpha'],['gwet_ac1',stats.gwetAC1,'gwetAC1'],['gwet_ac2_linear',stats.gwetAC2Linear,'gwetAC2Linear'],['spearman_rho',stats.spearman,undefined],['pearson_r',stats.pearson,undefined],['mean_difference',stats.meanDifference,'meanDifference'],['mean_absolute_error',stats.mae,'mae']];
  for(const [name,value,key] of raw){if(value===null)continue;const range=key?ci?.[key]:undefined;rows.push([name,value,range?range[0]:'',range?range[1]:'']);}
  rows.push([unit+'s_left_out',stats.leftOut.n,'','']);

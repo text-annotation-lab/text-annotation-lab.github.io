@@ -1,5 +1,5 @@
 import {allowedOrigin,requestBody} from '@/lib/request-guards';
-import {readAnswerFields} from '@/lib/answer-fields';
+import {readAnswerFields,readAnswerSettings} from '@/lib/answer-fields';
 import {providerError,providerJson} from '@/lib/provider-errors';
 import {PROVIDERS,GEMINI_ENABLED,reasoningOptions,type Provider} from '@/lib/providers';
 import {buildBatchBody} from '@/lib/batch-provider';
@@ -28,8 +28,8 @@ export async function POST(request:Request){try{
  let file=f.get('file');
  if(knowledge){const raw=f.get('fields');if(typeof raw!=='string'||raw.length>1000000)return reply({error:'Provide one subject’s labeled fields.'},400);const fields=JSON.parse(raw);if(!validKnowledgeFields(fields))return reply({error:'Invalid subject fields.'},400);file=new File([knowledgeItemText(fields)],'subject.txt',{type:'text/plain'});}
  if(!(file instanceof File)||!file.size||file.size>20*1024*1024||!supportedFile.test(file.name))return reply({error:'Choose a supported file up to 20 MB.'},400);
- const answerFields=readAnswerFields(f.get('answerFields'));
- const body:any=await buildBatchBody(provider,file,prompt+(knowledge?'\n\n'+knowledgeInstructions(web):''),model,effort,knowledge,web,answerFields);
+ const answerFields=readAnswerFields(f.get('answerFields')),answerSettings=readAnswerSettings(f.get('answerSettings'),answerFields);
+ const body:any=await buildBatchBody(provider,file,prompt+(knowledge?'\n\n'+knowledgeInstructions(web):''),model,effort,knowledge,web,answerFields,answerSettings);
  let url:string,payload:any,headers:Record<string,string>={'Content-Type':'application/json'};
  if(provider==='openai'){url='https://api.openai.com/v1/responses/input_tokens';headers.Authorization=auth;payload={model, input:body.input,instructions:body.instructions,text:body.text,reasoning:body.reasoning};}
  else if(provider==='anthropic'){url='https://api.anthropic.com/v1/messages/count_tokens';headers['x-api-key']=key;headers['anthropic-version']='2023-06-01';headers['anthropic-dangerous-direct-browser-access']='true';payload={model,system:body.system,messages:body.messages,thinking:body.thinking,output_config:body.output_config};}

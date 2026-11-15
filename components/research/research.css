@@ -71,6 +71,26 @@
 .research-tag{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:4px;background:#eef1f6;color:#53657a;font-size:11px;font-weight:400;white-space:nowrap;vertical-align:middle}
 .research-tag.warn{background:#fff3da;color:#805719}
 
+/* Setup: answer fields with types (a codebook), or plain text */
+.research-segment.research-output-mode{display:flex;margin:10px 0 2px}
+.research-segment.research-output-mode button{flex:1;padding:7px 8px;font-size:13px;white-space:nowrap}
+.research-field{display:grid;gap:6px;margin:10px 0;padding:10px;border:1px solid #dce2ec;border-radius:8px;background:#f8faff}
+.research-field input:not([type=checkbox]),.research-field select{font:inherit;font-size:13px;min-height:34px;padding:6px 9px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#1b2942;min-width:0}
+.research-field select{padding-right:4px;flex:0 0 auto;max-width:128px}
+.research-field input:focus-visible,.research-field select:focus-visible{outline:2px solid #003d73;outline-offset:1px}
+.research-field-top,.research-field-row{display:flex;align-items:center;gap:6px}
+.research-field .research-field-top input:not([type=checkbox]){flex:1;font-weight:600}
+.research-field-row input{flex:1}
+.research-icon-button{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;width:28px;height:28px;border:0;border-radius:6px;background:none;color:#52617c;padding:0}
+.research-icon-button:not(:disabled):hover{background:#e8eef6;color:#003d73}
+.research-icon-button:disabled{color:#c0c9d6}
+.research-icon-button:focus-visible{outline:2px solid #003d73;outline-offset:1px}
+.research-field-problem{margin:0!important;color:#8a4b12!important}
+.research-add-field{display:inline-flex;align-items:center;gap:5px;margin:2px 0 6px}
+.research-output-check{align-items:flex-start!important;margin:10px 0 4px!important}
+.research-output-check input[type=checkbox]{margin-top:2px}
+.research-output-check small{display:block;font-size:12.5px;line-height:1.5;color:#64728b}
+
 /* Workspace: tools under the upload box */
 .research-tools{margin-top:12px}
 .research-tools-actions{display:flex;flex-wrap:wrap;align-items:center;gap:4px 22px}
@@ -156,7 +176,8 @@
 .research-segment{display:inline-flex;border:1px solid #cfd9e5;border-radius:8px;overflow:hidden}
 .research-segment button{border:0;background:#fff;color:#29445e;font:inherit;font-size:14px;padding:8px 14px}
 .research-segment button+button{border-left:1px solid #cfd9e5}
-.research-segment button[aria-pressed=true]{background:#e8f1f8;color:#003d73;font-weight:600}
+.research-segment button[aria-pressed=true],.research-segment button[aria-checked=true]{background:#e8f1f8;color:#003d73;font-weight:600}
+.research-segment button:disabled:not([aria-checked=true]):not([aria-pressed=true]){color:#9aa6b8}
 .research-segment button:focus-visible{outline:2px solid #003d73;outline-offset:-2px}
 .research-runs td{white-space:nowrap}
 .research-runs td:nth-child(3),.research-runs td:nth-child(5){white-space:normal;min-width:150px}

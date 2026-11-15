@@ -6,26 +6,29 @@
 // results of earlier runs in `earlier`, so nothing is overwritten. The run is
 // stored as `runNo`; `runNumber` belongs to the Model knowledge workspace,
 // where charts and the Excel workbook read it.
+import {cleanAnswerSettings,type AnswerSettings} from '../answer-types';
 
-export type Setup={provider:string;model:string;effort:string;prompt:string;answerFields:string[]};
+// answerSettings: the types of the answer fields, plain text, or no explanation (absent: the standard format).
+export type Setup={provider:string;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings};
 // A deleted run keeps its record (marked), so its number is never used again.
 export type RunRecord=Setup&{number:number;startedAt:string;deleted?:boolean};
 // The fields of a result the research views read by name; a result may hold more.
-type ResultFields={provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[];answers?:Record<string,string>;score?:string;explanation?:string;[key:string]:any};
+type ResultFields={provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[];answerSettings?:AnswerSettings;answers?:Record<string,string>;score?:string;explanation?:string;[key:string]:any};
 export type Earlier=ResultFields&{runNo:number;status:string};
 export type Row=ResultFields&{id:string;status:string;name:string;runNo?:number;earlier?:Earlier[];cells?:string[]};
 
 // Everything a single annotation writes on a text (the same list Clear results removes).
-export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answers','history','startedAt','concurrency','provider','score','explanation','error','model','prompt','effort','tokens','usage','time','responseId','processing','batchId','runNo'] as const;
+export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','answers','history','startedAt','concurrency','provider','score','explanation','error','model','prompt','effort','tokens','usage','time','responseId','processing','batchId','runNo'] as const;
 
-const fieldsKey=(names:string[]|undefined)=>JSON.stringify(names||[]);
+// Field names and their settings together: the same answers are asked for exactly when this is the same.
+const fieldsKey=(setup:{answerFields?:string[];answerSettings?:AnswerSettings})=>JSON.stringify([setup.answerFields||[],setup.answerSettings||null]);
 export function sameSetup(a:Setup,b:Setup){
- return a.provider===b.provider&&a.model===b.model&&a.effort===b.effort&&a.prompt===b.prompt&&fieldsKey(a.answerFields)===fieldsKey(b.answerFields);
+ return a.provider===b.provider&&a.model===b.model&&a.effort===b.effort&&a.prompt===b.prompt&&fieldsKey(a)===fieldsKey(b);
 }
 // Results from before providers were recorded name their provider by the model.
 const providerOf=(row:{provider?:string;model?:string})=>row.provider||(row.model?.startsWith('gemini-')?'gemini':row.model?.startsWith('claude-')?'anthropic':'openai');
-export function setupOf(row:{provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[]}):Setup{
- return {provider:providerOf(row),model:row.model||'',effort:row.effort||'',prompt:row.prompt||'',answerFields:row.answerFields||[]};
+export function setupOf(row:{provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[];answerSettings?:AnswerSettings}):Setup{
+ return {provider:providerOf(row),model:row.model||'',effort:row.effort||'',prompt:row.prompt||'',answerFields:row.answerFields||[],...(row.answerSettings?{answerSettings:row.answerSettings}:{})};
 }
 const hasSettings=(row:Row)=>row.prompt!==undefined&&Boolean(row.model)&&row.status!=='pending';
 const needsNumber=(row:Row)=>row.runNo===undefined&&hasSettings(row);
@@ -60,7 +63,7 @@ export function beginRun<T extends Row>(docs:T[],runs:RunRecord[]|undefined,setu
 export function cleanRuns(value:unknown):RunRecord[]{
  if(!Array.isArray(value))return [];
  const seen=new Set<number>();
- return value.filter((r):r is RunRecord=>Boolean(r)&&typeof r==='object'&&Number.isInteger(r.number)&&r.number>0&&!seen.has(r.number)&&Boolean(seen.add(r.number))&&typeof r.model==='string'&&typeof r.prompt==='string').map(r=>({provider:String(r.provider||''),model:r.model,effort:String(r.effort||''),prompt:r.prompt,answerFields:Array.isArray(r.answerFields)?r.answerFields.filter((n:unknown)=>typeof n==='string'):[],number:r.number,startedAt:String(r.startedAt||''),...(r.deleted?{deleted:true}:{})})).sort((a,b)=>a.number-b.number);
+ return value.filter((r):r is RunRecord=>Boolean(r)&&typeof r==='object'&&Number.isInteger(r.number)&&r.number>0&&!seen.has(r.number)&&Boolean(seen.add(r.number))&&typeof r.model==='string'&&typeof r.prompt==='string').map(r=>({provider:String(r.provider||''),model:r.model,effort:String(r.effort||''),prompt:r.prompt,answerFields:Array.isArray(r.answerFields)?r.answerFields.filter((n:unknown)=>typeof n==='string'):[],...(cleanAnswerSettings(r.answerSettings)?{answerSettings:cleanAnswerSettings(r.answerSettings)}:{}),number:r.number,startedAt:String(r.startedAt||''),...(r.deleted?{deleted:true}:{})})).sort((a,b)=>a.number-b.number);
 }
 
 function withoutResult<T extends Row>(doc:T):T{
@@ -101,9 +104,9 @@ export function completedResults(doc:Row):Earlier[]{
 // completed texts that have no result made with this setup in any run. Texts
 // being annotated or waiting in a batch are left out.
 export function remainingFor<T extends Row>(docs:T[],setup:Setup):T[]{
- const fields=fieldsKey(setup.answerFields),prompts=new Map<string,boolean>();
+ const fields=fieldsKey(setup),prompts=new Map<string,boolean>();
  const samePrompt=(prompt:string)=>{let same=prompts.get(prompt);if(same===undefined){same=prompt===setup.prompt;prompts.set(prompt,same);}return same;};
- const made=(result:ResultFields)=>{const s=setupOf(result);return s.provider===setup.provider&&s.model===setup.model&&s.effort===setup.effort&&fieldsKey(s.answerFields)===fields&&samePrompt(s.prompt);};
+ const made=(result:ResultFields)=>{const s=setupOf(result);return s.provider===setup.provider&&s.model===setup.model&&s.effort===setup.effort&&fieldsKey(s)===fields&&samePrompt(s.prompt);};
  return docs.filter(doc=>doc.status==='pending'||doc.status==='error'||(doc.status==='done'&&!completedResults(doc).some(made)));
 }
 

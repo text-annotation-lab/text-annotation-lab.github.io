@@ -1,6 +1,7 @@
 import {newId} from './identifier';
 import {ORIGINAL_STUDY, studyWorkspaceKey, type Study} from './studies';
 import {validAnswerFields} from './answer-fields';
+import {cleanAnswerSettings,type AnswerSettings} from './answer-types';
 
 export type SavedPrompt = {id:string; studyName:string; workspace:'Texts'|'Model knowledge'; prompt:string; answerFields:string[]};
 
@@ -34,7 +35,7 @@ async function studyPrompts(store:IDBObjectStore):Promise<SavedPrompt[]>{
 }
 export function readStudyPrompts(){return withPromptStore('readonly',studyPrompts);}
 
-export type LibraryPrompt = {id:string; name:string; prompt:string; answerFields:string[]};
+export type LibraryPrompt = {id:string; name:string; prompt:string; answerFields:string[]; answerSettings?:AnswerSettings};
 const LIBRARY_KEY='saved-prompt-library-v1';
 function library(change?:(entries:LibraryPrompt[])=>LibraryPrompt[]):Promise<LibraryPrompt[]>{
  // A single transaction prevents competing pickers from migrating or updating twice.
@@ -42,19 +43,19 @@ function library(change?:(entries:LibraryPrompt[])=>LibraryPrompt[]):Promise<Lib
   const stored=await getRecord(store,LIBRARY_KEY);
   const entries=stored===undefined?(await studyPrompts(store)).map(p=>({id:p.id,name:p.studyName+' · '+p.workspace,prompt:p.prompt,answerFields:p.answerFields})):stored;
   if(!Array.isArray(entries)||entries.some(p=>!p||typeof p.id!=='string'||typeof p.name!=='string'||typeof p.prompt!=='string'||!validAnswerFields(p.answerFields)))throw new Error('Saved prompts could not be read. Existing data is unchanged.');
-  const result=change?change(entries):entries;
+  const result=(change?change(entries):entries).map((p:LibraryPrompt)=>{const {answerSettings,...rest}=p,settings=cleanAnswerSettings(answerSettings);return settings?{...rest,answerSettings:settings}:rest;});
   if(change||stored===undefined)store.put(result,LIBRARY_KEY);
   return result;
  });
 }
 export const listSavedPrompts=()=>library();
-export function savePrompt(name:string,prompt:string,answerFields:string[]){
+export function savePrompt(name:string,prompt:string,answerFields:string[],answerSettings?:AnswerSettings){
  name=name.trim();
  if(!name||name.length>80)return Promise.reject(new Error('Enter a prompt name of 1–80 characters.'));
  if(!prompt.trim()||prompt.length>100000||!validAnswerFields(answerFields))return Promise.reject(new Error('Enter a valid prompt and answer fields first.'));
  return library(entries=>{
   if(entries.some(p=>p.name.toLocaleLowerCase()===name.toLocaleLowerCase()))throw new Error('That name is already in use. Choose another name.');
-  return [...entries,{id:newId(),name,prompt,answerFields:[...answerFields]}];
+  return [...entries,{id:newId(),name,prompt,answerFields:[...answerFields],...(answerSettings?{answerSettings}:{})}];
  });
 }
 export const deletePrompt=(id:string)=>library(entries=>entries.filter(p=>p.id!==id));

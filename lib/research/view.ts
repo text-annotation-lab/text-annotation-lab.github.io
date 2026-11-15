@@ -2,6 +2,7 @@
 // latest result, narrowed by search and filters, optionally next to a column
 // of labels or another run.
 import {resultAnswer} from '../answer-fields';
+import {fieldSpec} from '../answer-types';
 import {normalizeLabel} from './normalize';
 import {rowForRun,type Row} from './runs';
 import {cellOf,columnIndex,type Column} from './columns';
@@ -36,7 +37,9 @@ export function parseSource(key:string):CompareSource|undefined{
  if(key.startsWith('run:')){const run=Number(key.slice(4));return Number.isInteger(run)&&run>0?{kind:'run',run}:undefined;}
  return key.startsWith('col:')&&key.length>4?{kind:'column',name:key.slice(4)}:undefined;
 }
-export const sameLabel=(a:string,b:string)=>normalizeLabel(a)===normalizeLabel(b);
+// `yesNo`: a yes / no field, where 1 and 0, y and n, and ja and nej also read as yes and no.
+export const sameLabel=(a:string,b:string,yesNo=false)=>normalizeLabel(a,yesNo)===normalizeLabel(b,yesNo);
+const isYesNo=(row:Row,field:string)=>Boolean(field)&&fieldSpec(row.answerSettings,field)?.type==='boolean';
 export const viewNarrowed=(view:View)=>Boolean(view.query.trim())||view.show!=='all'||Boolean(view.column&&view.value)||view.run!=='latest';
 
 export function researchRows<T extends Row>(docs:T[],columns:Column[],view:View):{rows:ShownRow<T>[];field:string;fields:string[]}{
@@ -53,10 +56,10 @@ export function researchRows<T extends Row>(docs:T[],columns:Column[],view:View)
   let shown:ShownRow<T>=row;
   if(source){
    const own=row.status==='done'?valueOf(row,field):'';
-   let other='';
+   let other='',yesNo=isYesNo(row,field);
    if(source.kind==='column')other=cellOf(row,compareIndex);
-   else{const earlier=rowForRun(row,source.run);other=earlier.status==='done'?valueOf(earlier,pickField(fieldsOf([earlier]),field)):'';}
-   shown={...row,compared:{own,other,match:own&&other?sameLabel(own,other):null}};
+   else{const earlier=rowForRun(row,source.run),theirs=pickField(fieldsOf([earlier]),field);other=earlier.status==='done'?valueOf(earlier,theirs):'';yesNo=yesNo||isYesNo(earlier,theirs);}
+   shown={...row,compared:{own,other,match:own&&other?sameLabel(own,other,yesNo):null}};
   }
   if(view.show==='pending'&&row.status!=='pending')continue;
   if(view.show==='done'&&row.status!=='done')continue;
