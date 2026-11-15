@@ -1,6 +1,6 @@
 import {annotationSchema,answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
 import {extractText,TextEncodingError} from './extract-text';
-import {providerError,providerJson,incompleteAnnotation} from './provider-errors';
+import {providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export const openRouterKey=(key:string)=>/^sk-or-[\w-]+$/.test(key);
 
@@ -33,7 +33,7 @@ export async function annotateOpenRouter(file:File,prompt:string,model:string,ef
   });
   const out:any=await providerJson(response);
   const accounting={inputMode:pdfInput?'pdf-native':'text',tokens:out?.usage?.total_tokens,usage:out?.usage,responseId:out?.id};
-  if(!response.ok||out?.error){const code=Number(out?.error?.code),status=response.ok?(Number.isInteger(code)&&code>=400&&code<=599?code:502):response.status;return reply({...accounting,error:providerError('openrouter',status,out,response.headers)},status);}
+  if(!response.ok||out?.error){const code=Number(out?.error?.code),status=response.ok?(Number.isInteger(code)&&code>=400&&code<=599?code:502):response.status;return reply({...accounting,...providerFailure('openrouter',status,out,response.headers)},status);}
   const choice=out?.choices?.[0];
   if(choice?.message?.refusal)return reply({...accounting,error:incompleteAnnotation('openrouter','refusal')},422);
   if(choice?.finish_reason!=='stop')return reply({...accounting,error:incompleteAnnotation('openrouter',choice?.finish_reason)},422);

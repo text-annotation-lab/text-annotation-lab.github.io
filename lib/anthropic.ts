@@ -1,5 +1,5 @@
 import {annotationSchema,answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
-import {providerError,providerJson,incompleteAnnotation} from './provider-errors';
+import {providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 import {extractText,TextEncodingError} from './extract-text';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 
@@ -26,7 +26,7 @@ export async function annotateAnthropic(file:File,prompt:string,model:string,eff
     messages:[{role:'user',content}],...(settings?.plain?(haiku?{}:{output_config:{effort}}):{output_config:{...(!haiku?{effort}:{}),format:{type:'json_schema',schema:annotationSchema(answerFields,false,schemaPrompt,knowledge,settings)}}})
    })
   });
-  if(!r.ok)return reply({error:providerError('anthropic',r.status,await providerJson(r),r.headers)},r.status);
+  if(!r.ok)return reply(providerFailure('anthropic',r.status,await providerJson(r),r.headers),r.status);
   const out=await r.json() as {id?:string;stop_reason?:string;content?:{type:string;text?:string}[];usage?:{input_tokens?:number;output_tokens?:number;cache_creation_input_tokens?:number;cache_read_input_tokens?:number}};
   if(out.stop_reason!=='end_turn')return reply({error:incompleteAnnotation('anthropic',out.stop_reason)},422);
   const raw=(out.content||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('');

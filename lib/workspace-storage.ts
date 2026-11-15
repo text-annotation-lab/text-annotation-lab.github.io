@@ -4,6 +4,10 @@ export const workspaceRevision=(key:string)=>loadedRevisions.get(key);
 export function createWorkspaceStorage(workspaceKey='current'){
  let revision:number|undefined;
  let queue:Promise<unknown>=Promise.resolve();
+ // A save waiting for the one under way. Every save holds the whole workspace, so a waiting autosave
+ // (`replaceable`) gives way to a newer save, and both callers hear when the newer one is written. That keeps
+ // saving in step with a run that returns many results a second. A save made on purpose is always written.
+ let waiting:{value:Record<string,unknown>;replaceable:boolean;result:Promise<void>}|undefined;
  function database():Promise<IDBDatabase>{return new Promise((resolve,reject)=>{
   const r=indexedDB.open('annotation-desk',1);
   r.onupgradeneeded=()=>r.result.createObjectStore('workspace');
@@ -18,8 +22,12 @@ export function createWorkspaceStorage(workspaceKey='current'){
     tx.onabort=tx.onerror=()=>reject(tx.error||new Error('Could not read browser storage.'));
    });}finally{db.close();}
   },
-  save(value:Record<string,unknown>){
-   const result=queue.then(async()=>{
+  save(value:Record<string,unknown>,options?:{replaceable?:boolean}){
+   if(waiting?.replaceable){waiting.value=value;waiting.replaceable=options?.replaceable===true;return waiting.result;}
+   const entry={value,replaceable:options?.replaceable===true,result:undefined as unknown as Promise<void>};
+   const result=entry.result=queue.then(async()=>{
+    if(waiting===entry)waiting=undefined;
+    const value=entry.value;
     if(revision===undefined)throw new Error('Workspace has not been restored.');
     const db=await database();
     try{await new Promise<void>((resolve,reject)=>{
@@ -33,7 +41,7 @@ export function createWorkspaceStorage(workspaceKey='current'){
      tx.onabort=tx.onerror=()=>reject(conflict?new Error('Another tab saved changes. Choose Studies → More options → Download backup to keep the work in this tab before reloading.'):tx.error||new Error('Could not save browser storage.'));
     });}finally{db.close();}
    });
-   queue=result.catch(()=>{});return result;
+   waiting=entry;queue=result.catch(()=>{});return result;
   }
  };
 }

@@ -68,6 +68,27 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
  const single=parallel.button('Annotate next').props.onClick();await parallel.flush();assert.equal(parallel.requests.length,6);releases[5](Response.json({score:'ONE',explanation:'Single'}));await single;await parallel.flush();assert.equal(parallel.latest().items[5].concurrency,1);assert.equal(parallel.requests.length,6);
  parallel.find(n=>n.props?.id==='knowledge-concurrency').props.onChange({target:{value:'2'}});await parallel.flush();assert.equal(parallel.latest().concurrency,2);
  const restoredParallel=harness(parallel.latest());await restoredParallel.flush();restoredParallel.button('Processing options').props.onClick();await restoredParallel.flush();assert.equal(restoredParallel.find(n=>n.props?.id==='knowledge-concurrency').props.value,2);
+ // Research mode: up to 128 at once, and a subject refused for a rate limit is sent again after the wait (real time here).
+ {
+  const until=async(h,ready)=>{for(let n=0;n<200&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
+  const limited=extra=>Response.json({error:'Rate limit.',retryAfterMs:1,...extra},{status:429}),three=()=>({prompt:'Classify',concurrency:128,items:subjects.slice(0,3)});
+  const select=h=>h.find(n=>n.props?.id==='knowledge-concurrency').props,help=h=>h.text(h.find(n=>n.props?.id==='knowledge-parallel-help'));
+  let sends=0;const paced=harness(three(),async()=>++sends===1?limited():Response.json({score:'ONE',explanation:'Fine'}));paced.props.research=true;await paced.flush();
+  paced.button('Processing options').props.onClick();await paced.flush();
+  assert.equal(select(paced).value,128);assert.deepEqual(select(paced).children.map(option=>option.props.value),[1,2,4,8,16,32,64,128]);assert(paced.text(paced.button('Processing options')).includes('Instant · 128 at a time'));
+  assert.equal(help(paced),'Run all can annotate up to 128 subjects at once. Each subject gets a separate request; token prices are unchanged. When the provider reports a rate limit, the run waits and goes on with fewer at a time. Annotate next always runs one subject.');
+  paced.button('Run all').props.onClick();await paced.flush();assert.deepEqual(paced.latest().items.map(item=>item.status),['running','done','done']);
+  await until(paced,()=>paced.latest().items.every(item=>item.status==='done'));
+  assert.equal(paced.requests.length,4);assert(paced.latest().items.every(item=>item.concurrency===128&&item.error===undefined));
+  assert.match(paced.text(paced.find(n=>n.props?.role==='status'&&n.props.className==='message info')),/the provider reported a rate limit: a pause of about 1 second, then up to one subject at a time/);
+  // A web search already made is not made, and charged, again.
+  const searched=harness({...three(),webSearch:true,items:subjects.slice(0,1)},async()=>limited({research:{text:'Notes',sources:[],queries:[],searchedAt:'2026-11-16'},webUsed:true}));searched.props.research=true;await searched.flush();
+  await searched.button('Run all').props.onClick();await searched.flush();assert.equal(searched.requests.length,1);assert.equal(searched.latest().items[0].status,'error');
+  // The standard Lab: 1, 2, and 4; the study's higher number runs one at a time, and nothing is sent again.
+  const standard=harness(three(),async()=>limited());await standard.flush();standard.button('Processing options').props.onClick();await standard.flush();
+  assert.equal(select(standard).value,1);assert.deepEqual(select(standard).children.map(option=>option.props.value),[1,2,4]);assert(help(standard).startsWith('Run all can annotate several subjects at once.'));
+  await standard.button('Run all').props.onClick();await standard.flush();assert.equal(standard.requests.length,1);assert.deepEqual(standard.latest().items.map(item=>item.status),['error','pending','pending']);assert.equal(standard.latest().concurrency,128);
+ }
  // An error prevents new starts while already active results are still collected.
  const errorReleases=[];const parallelError=harness({prompt:'Classify',concurrency:2,items:subjects},()=>new Promise(resolve=>errorReleases.push(resolve)));await parallelError.flush();const errorRun=parallelError.button('Run all').props.onClick();await parallelError.flush();assert.equal(parallelError.requests.length,2);
  errorReleases[0](Response.json({error:'Quota'},{status:429}));await parallelError.flush();assert.equal(parallelError.requests.length,2);assert.equal(parallelError.find(n=>n.type==='setup').props.locked,true);errorReleases[1](Response.json({score:'KEPT',explanation:'Completed in flight'}));await errorRun;await parallelError.flush();assert.equal(parallelError.latest().items[0].status,'error');assert.equal(parallelError.latest().items[1].score,'KEPT');assert.equal(parallelError.requests.length,2);

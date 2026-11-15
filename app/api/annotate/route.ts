@@ -2,7 +2,7 @@ import {allowedOrigin,requestBody} from '@/lib/request-guards';
 import {annotateOpenRouter,openRouterKey} from '@/lib/openrouter';
 import {annotationValidationError} from '@/lib/answer-validation';
 import {annotationFormatRecord,readAnswerFields,readAnswerSettings,answerInstructions,annotationSchema,answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from '@/lib/answer-fields';
-import {providerError,providerJson,incompleteAnnotation} from '@/lib/provider-errors';
+import {providerFailure,providerJson,incompleteAnnotation} from '@/lib/provider-errors';
 import { extractText, TextEncodingError, supportedFile as supported } from "@/lib/extract-text";
 
 import {GEMINI_ENABLED,PROVIDERS,reasoningOptions} from '@/lib/providers';
@@ -73,7 +73,7 @@ export async function POST(request:Request){
  // supported OpenAI models (GPT-5.6 and later). Each document is new input.
  const r=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},signal:AbortSignal.timeout(180000),body:JSON.stringify({model,prompt_cache_options:{mode:'explicit'},instructions:prompt,input:[{role:'user',content}],reasoning:{effort},store:true,max_output_tokens:12000,...(answerSettings?.plain?{}:{text:{format:{type:'json_schema',name:'annotation',strict:true,schema:annotationSchema(answerFields,false,annotationPrompt,knowledge,answerSettings)}}})})});
  const out:any=await providerJson(r);
- if(!r.ok)return finish(json({error:providerError('openai',r.status,out,r.headers)},r.status));
+ if(!r.ok)return finish(json(providerFailure('openai',r.status,out,r.headers),r.status));
  if(!out)return finish(json({error:'OpenAI returned an unreadable response. Check OpenAI Platform usage before retrying; the request may have completed.'},502));
  if(out.status!=='completed')return finish(json({error:incompleteAnnotation('openai',out.incomplete_details?.reason)},422));
  const parts=(out.output||[]).flatMap((x:any)=>x.content||[]);if(parts.some((x:any)=>x.type==='refusal'))return finish(json({error:incompleteAnnotation('openai','refusal')},422));const raw=parts.filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join('');
@@ -82,5 +82,5 @@ export async function POST(request:Request){
  if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return finish(json({error:'Unexpected response format. Check OpenAI Logs.'},422));
  let answers;try{answers=answerValues(result,answerFields);}catch(error){return finish(json({error:(error as Error).message},422));}
  return finish(json({rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}));
- }catch(error){if(error instanceof KnowledgeWebError)return json({error:error.message,...(error.research?{research:error.research,webUsed:true}:{})},error.status);return json({error:'Connection interrupted. Check your provider’s usage before retrying; the request may have completed.',...(research?{research,webUsed:true}:{})},502);}
+ }catch(error){if(error instanceof KnowledgeWebError)return json({error:error.message,...(error.research?{research:error.research,webUsed:true}:{}),...(error.retryAfterMs===undefined?{}:{retryAfterMs:error.retryAfterMs})},error.status);return json({error:'Connection interrupted. Check your provider’s usage before retrying; the request may have completed.',...(research?{research,webUsed:true}:{})},502);}
 }

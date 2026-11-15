@@ -15,3 +15,12 @@ export function remainingEstimateNotice(rows: {status: string}[]): string | unde
 export function isPlainConfirmation(notice: string): boolean {
  return /^(\d+ documents? added\.|Checking selected documents…|Results cleared\. Your documents are ready to annotate again with the current settings\.)$/.test(notice.trim());
 }
+
+// What a run that paces itself (research mode) reports when the provider refuses requests for a rate limit. It is
+// information, shown in the neutral color: the run goes on by itself.
+export const isRateLimitNotice = (notice: string): boolean => /^At \S.* the provider reported a rate limit: a pause of about /.test(notice);
+export function rateLimitNotice(limited: {at: number; waitMs: number; atOnce: number}, unit: string): string {
+ const time = new Date(limited.at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+ const seconds = Math.max(1, Math.round(limited.waitMs / 1000));
+ return `At ${time} the provider reported a rate limit: a pause of about ${seconds} second${seconds === 1 ? '' : 's'}, then up to ${limited.atOnce === 1 ? `one ${unit}` : `${limited.atOnce} ${unit}s`} at a time, rising again as requests get through.`;
+}

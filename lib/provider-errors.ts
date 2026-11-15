@@ -20,17 +20,17 @@ function openRouterDiagnostics(error:any){
  const messages=[error?.message,upstream?.message,typeof metadata?.raw==='string'?metadata.raw:undefined]
   .filter((x:unknown)=>typeof x==='string').map((x:string)=>x.slice(0,16384)).join(' ');
  const has=(...values:string[])=>values.some(v=>codes.includes(v));
- let message:string|undefined;
- if(has('insufficient_quota','billing_error','credit_balance_exhausted','insufficient_credits','enforced_spend_limit_reached'))
+ let message:string|undefined,cause:'quota'|'daily'|'rate'|undefined;
+ if(has('insufficient_quota','billing_error','credit_balance_exhausted','insufficient_credits','enforced_spend_limit_reached')){cause='quota';
   message=`${source} reports an upstream account quota or credit limit. Check the failed request in OpenRouter Activity; if you supplied your own provider key, also check that provider's account. This does not by itself mean your lab key's allowance is exhausted.`;
- else if(/(?:requests|tokens)[ _-]*per[ _-]*day|\b(?:rpd|tpd)\b|daily (?:request|token|quota) limit/i.test(messages))
+ }else if(/(?:requests|tokens)[ _-]*per[ _-]*day|\b(?:rpd|tpd)\b|daily (?:request|token|quota) limit/i.test(messages)){cause='daily';
   message=`${source} reports a daily request or token limit. Retry after that limit resets, or try another model. Fewer parallel annotations will not remove a daily limit.`;
- else if(has('rate_limit_exceeded','rate_limit_error','rate_limited','too_many_requests','slow_down')||/rate[ -]limit|too many requests|(?:requests|tokens)[ _-]*per[ _-]*minute/i.test(messages)||metadata?.limit_source==='upstream_provider_shared_pool'){
+ }else if(has('rate_limit_exceeded','rate_limit_error','rate_limited','too_many_requests','slow_down')||/rate[ -]limit|too many requests|(?:requests|tokens)[ _-]*per[ _-]*minute/i.test(messages)||metadata?.limit_source==='upstream_provider_shared_pool'){cause='rate';
   const kind=/tokens[ _-]*per[ _-]*minute|\btpm\b/i.test(messages)?'a tokens-per-minute limit':/requests[ _-]*per[ _-]*minute|\brpm\b/i.test(messages)?'a requests-per-minute limit':'a temporary rate limit';
   const advice=kind==='a tokens-per-minute limit'?'Long texts can reach this limit even with only a few requests. Try fewer parallel annotations or smaller chunks.':'Try 1 or 2 parallel annotations in Processing options to reduce request bursts.';
   message=`${source} reports ${kind}. ${advice} Wait before queueing a retry with Queue for retry, then choose Annotate next or Run all to start it.`;
  }
- return {message,details};
+ return {message,details,cause};
 }
 // Never return raw provider messages: they can echo credentials or document text.
 // Codes guide the explanation only; an HTTP status alone cannot establish billing
@@ -69,6 +69,46 @@ export function providerError(provider:Provider,status:number,body:unknown,heade
   else if(typeof delay==='string'&&/^\d+(?:\.\d+)?s$/.test(delay))wait=` Suggested wait: ${delay}.`;
  }
  return `${message}${wait} (HTTP ${status}.)`;
+}
+// The wait a provider names, in milliseconds: its Retry-After header (often not readable from a browser), a
+// retryDelay detail (Gemini), or a phrase such as "try again in 1.2s" in its message. Only the number is read.
+function namedWait(e:any,details:any[],headers?:Headers):number|undefined{
+ const raw=headers?.get('retry-after')?.trim();
+ if(raw&&/^\d+(?:\.\d+)?$/.test(raw))return Number(raw)*1000;
+ if(raw&&Number.isFinite(Date.parse(raw)))return Math.max(0,Date.parse(raw)-Date.now());
+ const delay=details.find((d:any)=>typeof d?.retryDelay==='string')?.retryDelay;
+ if(typeof delay==='string'&&/^\d+(?:\.\d+)?s$/.test(delay))return Number(delay.slice(0,-1))*1000;
+ const phrase=typeof e?.message==='string'?e.message.slice(0,16384).match(/(?:try again|retry) in ((?:\d+(?:\.\d+)?(?:ms|h|m|s))+)(?![\w.]*\d)/i)?.[1]:undefined;
+ if(!phrase)return undefined;
+ const unit:Record<string,number>={ms:1,s:1000,m:60000,h:3600000};let total=0;
+ for(const part of phrase.matchAll(/(\d+(?:\.\d+)?)(ms|h|m|s)/gi))total+=Number(part[1])*unit[part[2].toLowerCase()];
+ return total;
+}
+const NOT_SHORT_TERM=['billing_error','billing_not_active','credit_balance_exhausted','insufficient_credits','enforced_spend_limit_reached','organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_exceeded','insufficient_quota','quota_exceeded'];
+const DAILY=/(?:requests|tokens)[ _-]*per[ _-]*day|\b(?:rpd|tpd)\b|daily (?:request|token|quota) limit|perday/i;
+export const MAX_AUTOMATIC_WAIT_MS=120000;
+// How long a run that paces itself (research mode) waits before sending a refused request again, in
+// milliseconds; 0 when the provider names no time. Only a short-term rate limit or an overloaded provider
+// qualifies, because such a request was not processed. Undefined otherwise: a quota, billing, or daily limit,
+// any other failure, or a wait of more than two minutes, which is left to the person.
+export function retryWait(provider:Provider,status:number,body:unknown,headers?:Headers):number|undefined{
+ if(status!==429&&status!==503&&status!==529)return undefined;
+ const e=(body as any)?.error,diagnostics=provider==='openrouter'?openRouterDiagnostics(e):undefined;
+ const details=[...(Array.isArray(e?.details)?e.details:[]),...(diagnostics?.details??[])];
+ if(status===429){
+  const codes=[e?.code,e?.type,e?.status,...details.map((d:any)=>d?.reason)].filter((x:unknown)=>typeof x==='string').map((x:string)=>x.toLowerCase());
+  if(codes.some(code=>NOT_SHORT_TERM.includes(code))||diagnostics?.cause==='quota'||diagnostics?.cause==='daily')return undefined;
+  if(provider==='openrouter'&&e?.metadata?.limit_source==='openrouter_key_limit')return undefined;
+  let text=typeof e?.message==='string'?e.message:'';try{text+=' '+JSON.stringify(details);}catch{}
+  if(DAILY.test(text.slice(0,16384)))return undefined;
+ }
+ const wait=namedWait(e,details,headers)??0;
+ return wait>MAX_AUTOMATIC_WAIT_MS?undefined:Math.ceil(wait);
+}
+// The reply for a failed provider request: the message, and `retryAfterMs` when a paced run may send it again.
+export function providerFailure(provider:Provider,status:number,body:unknown,headers?:Headers):{error:string;retryAfterMs?:number}{
+ const wait=retryWait(provider,status,body,headers);
+ return {error:providerError(provider,status,body,headers),...(wait===undefined?{}:{retryAfterMs:wait})};
 }
 export function incompleteAnnotation(provider:Provider,reason:unknown){
  const label=names[provider],consoleName=consoles[provider];
