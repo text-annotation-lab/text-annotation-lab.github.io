@@ -92,11 +92,10 @@
 .research-seg{display:inline-flex;align-items:stretch;align-self:stretch;min-height:36px;border:1px solid #c3ccd9;border-radius:8px;overflow:hidden;background:#fff}
 .research-seg button{border:0;background:none;padding:0 13px;font:inherit;font-size:14px;font-weight:500;color:#44566c;white-space:nowrap}
 .research-seg button+button{border-left:1px solid #c3ccd9}
-.research-seg button[aria-checked=true]{background:#003d73;color:#fff}
+.research-seg button[aria-checked=true]{background:#e8f1f8;color:#003d73;font-weight:600}
 .research-seg button:not([aria-checked=true]):not(:disabled):hover{background:#eef2f8}
 .research-seg button:disabled:not([aria-checked=true]){color:#9aa6b8}
 .research-seg button:focus-visible{outline:2px solid #003d73;outline-offset:-3px}
-.research-seg button[aria-checked=true]:focus-visible{outline-color:#fff}
 .research-try{display:inline-flex;align-items:stretch}
 .research-try>button{border-top-right-radius:0;border-bottom-right-radius:0;height:auto}
 .actions .research-try input[type=number]{width:60px;min-height:0;padding:0 6px;border:1px solid currentColor;border-left:0;border-radius:0 8px 8px 0;font:inherit;font-size:14px;text-align:center;background:#fff;color:#1b2942}
@@ -111,7 +110,19 @@
 .research-search input{border:0!important;padding:6px 0!important;width:150px!important;font-size:13px;outline:0;background:transparent}
 .research-search:focus-within{outline:2px solid #003d73;outline-offset:1px}
 .research-pick{display:inline-flex!important;align-items:center;gap:8px;margin:0 0 0 6px!important;font-size:13px!important;font-weight:400!important;color:#52617c}
-.research-filter-count{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-left:auto;font-size:13px;color:#64728b}
+.research-filter-count{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:13px;color:#64728b}
+.research-filter-count:empty{display:none}
+/* Chart, Excel, and the menu for clearing: at the right end of the row above the table. */
+.research-result-actions{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
+.research-result-actions .export{margin-left:0}
+.research-menu{position:relative;display:inline-flex}
+.research-menu-list{position:absolute;z-index:20;top:calc(100% + 6px);right:0;display:grid;min-width:190px;padding:6px;border:1px solid #d7dfe9;border-radius:10px;background:#fff;box-shadow:0 10px 28px #17254522}
+.research-menu-list button{border:0;border-radius:6px;background:none;padding:9px 12px;font:inherit;font-size:14px;color:#1b2942;text-align:left;white-space:nowrap}
+.research-menu-list button:not(:disabled):hover,.research-menu-list button:focus-visible{background:#eef2f8;outline:0}
+.research-menu-list button.danger{color:#94494c}
+.research-menu-list button.danger:not(:disabled):hover,.research-menu-list button.danger:focus-visible{background:#fff4f4}
+.research-menu-list button:disabled{color:#9aa6b8}
+@media(max-width:780px){.research-result-actions{margin-left:0}.research-menu-list{left:0;right:auto}}
 .research-filters+.result-pages{margin-top:10px}
 .research-check-cell{width:34px;padding-right:0!important}
 .research-check-cell input[type=checkbox]{width:16px;height:16px;padding:0;accent-color:#003d73;cursor:pointer;vertical-align:middle}
