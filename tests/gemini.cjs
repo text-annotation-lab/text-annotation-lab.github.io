@@ -5,12 +5,12 @@ function load(file){const filename=path.join(root,file);const exports={};const c
 function request(provider='gemini',model='gemini-3.1-flash-lite',file=new File(['sample'],'test.txt'),effort=provider==='gemini'?'minimal':'medium'){const f=new FormData();f.set('provider',provider);f.set('model',model);f.set('effort',effort);f.set('prompt','Rate text');f.set('file',file);return new Request('http://localhost/api/annotate',{method:'POST',headers:{origin:'http://localhost',authorization:provider==='gemini'?'Bearer AIzaFAKE_KEY_FOR_TEST_ONLY_12345':'Bearer sk-test'},body:f});}
 (async()=>{
 let route=load('app/api/annotate/route.ts');let r=await route.POST(request());assert.equal(r.status,200);assert.equal((await r.json()).score,'4');assert.equal(calls.length,1);assert.match(calls[0].url,/generativelanguage/);let body=JSON.parse(calls[0].options.body);assert.equal(body.generationConfig.thinkingConfig.thinkingLevel,'MINIMAL');assert.equal(calls[0].options.headers.Authorization,undefined);
-r=await route.POST(request('gemini','gemini-3.5-flash',new File(['%PDF-test'],'test.pdf')));assert.equal(r.status,200);assert.equal(JSON.parse(calls.at(-1).options.body).contents[0].parts[1].inlineData.mimeType,'application/pdf');
+r=await route.POST(request('gemini','gemini-3.6-flash',new File(['%PDF-test'],'test.pdf')));assert.equal(r.status,200);assert.equal(JSON.parse(calls.at(-1).options.body).contents[0].parts[1].inlineData.mimeType,'application/pdf');
 const settings=load('lib/providers.ts');
 for(const model of settings.PROVIDERS.gemini.models){
  const effort=settings.defaultEffort('gemini',model);assert(settings.reasoningOptions('gemini',model).includes(effort));
  r=await route.POST(request('gemini',model,new File(['sample'],'test.txt'),effort));assert.equal(r.status,200,model);
- const config=JSON.parse(calls.at(-1).options.body).generationConfig;assert.equal(config.maxOutputTokens,model==='gemini-4-argon'?32768:12000);assert.equal(config.responseMimeType,'application/json');
+ const config=JSON.parse(calls.at(-1).options.body).generationConfig;assert.equal(config.maxOutputTokens,model.startsWith('gemini-4-')?32768:12000);assert.equal(config.responseMimeType,'application/json');
  if(model.startsWith('gemini-2.5-')){assert.equal(config.thinkingConfig.thinkingBudget,effort==='off'?0:-1);assert.equal(config.thinkingConfig.thinkingLevel,undefined);}else{assert.equal(config.thinkingConfig.thinkingLevel,effort.toUpperCase());assert.equal(config.thinkingConfig.thinkingBudget,undefined);}
 }
 assert.equal(settings.modelAccessLabel('gemini','gemini-3.1-flash-lite'),'Free API tier');
@@ -18,13 +18,17 @@ assert.equal(settings.modelAccessLabel('gemini','gemini-3.8-flash'),'Free API ti
 assert.equal(settings.modelAccessLabel('gemini','gemini-3.6-flash'),'Free API tier');
 assert.equal(settings.modelAccessLabel('gemini','gemini-2.5-pro'),'Free tier · restricted');
 assert.equal(settings.modelAccessLabel('gemini','gemini-4-argon'),'Paid API');
+assert.equal(settings.modelAccessLabel('gemini','gemini-4-carbon'),'Paid API');
+assert.equal(settings.modelAccessLabel('gemini','gemini-4-hydrogen'),'Free API tier');
+assert.equal(settings.defaultEffort('gemini','gemini-4-hydrogen'),'high');
+for(const gone of ['gemini-2.5-flash','gemini-2.5-pro','gemini-3.5-flash'])assert(!settings.PROVIDERS.gemini.models.includes(gone),gone);
 assert.equal(settings.modelAccessLabel('gemini','gemini-3.1-pro-preview'),'Paid API');
 assert.equal(settings.modelAccessLabel('openai','gpt-6.1-terra'),'Paid API');
 assert.equal(settings.modelAccessLabel('anthropic','claude-haiku-5-5'),'Paid API');
 assert.match(settings.modelAccessHint('gemini','gemini-3.1-flash-lite'),/billing-enabled project/);
 assert(settings.PROVIDERS.openai.models.includes('gpt-6.1-terra'));assert(settings.reasoningOptions('openai','gpt-6.1-terra').includes('none'));
 r=await route.POST(request('gemini','gemini-2.5-flash-lite',new File(['%PDF-test'],'test.pdf'),'4096'));assert.equal(r.status,200);assert.equal(JSON.parse(calls.at(-1).options.body).generationConfig.thinkingConfig.thinkingBudget,4096);
-for(const [model,effort] of [['gemini-4-argon','minimal'],['gemini-3.8-flash','minimal'],['gemini-3.1-pro-preview','minimal'],['gemini-2.5-pro','off'],['gemini-2.5-flash-lite','low']]){const count=calls.length;assert.equal((await route.POST(request('gemini',model,new File(['sample'],'test.txt'),effort))).status,400);assert.equal(calls.length,count);}
+for(const [model,effort] of [['gemini-4-argon','minimal'],['gemini-3.8-flash','minimal'],['gemini-3.1-pro-preview','minimal'],['gemini-2.5-pro','off'],['gemini-2.5-flash-lite','low'],['gemini-4-hydrogen','minimal'],['gemini-4-carbon','xhigh']]){const count=calls.length;assert.equal((await route.POST(request('gemini',model,new File(['sample'],'test.txt'),effort))).status,400);assert.equal(calls.length,count);}
 const opaque=request();opaque.headers.set('authorization','Bearer fake.key+with/punctuation=');assert.equal((await route.POST(opaque)).status,200);assert.equal(calls.at(-1).options.headers['x-goog-api-key'],'fake.key+with/punctuation=');
 const spaced=request();spaced.headers.set('authorization','Bearer fake key');assert.equal((await route.POST(spaced)).status,401);
 const missing=request();missing.headers.delete('authorization');assert.equal((await route.POST(missing)).status,401);
