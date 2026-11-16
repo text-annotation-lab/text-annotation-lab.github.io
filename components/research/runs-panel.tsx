@@ -8,7 +8,8 @@ import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/u
 import {PROVIDERS,modelName,reasoningOptionLabel,type Provider} from '@/lib/providers';
 import {defaultOutputLimit} from '@/lib/request-settings';
 import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSources,runJob,sourceFields,sourceLabel,statLines,type LevelChoice} from '@/lib/research/agreement';
-import {computeIntervals} from '@/lib/research/intervals';
+import {computeIntervals,intervalsOf} from '@/lib/research/intervals';
+import {comparisonReport,groupColumns} from '@/lib/research/comparison-report';
 import {fileStem,runLines,sourceOf,unitOf,type Dataset,type RunLine} from '@/lib/research/export';
 import {requestLines,runRequests} from '@/lib/research/export-data';
 import {runFacts,type RunFacts} from '@/lib/research/export-tables';
@@ -18,7 +19,7 @@ import {toCsv} from '@/lib/research/parse-table';
 import {fieldLabel,parseSource,pickField,sourceKey,type CompareSource} from '@/lib/research/view';
 import type {Agreement} from '@/lib/research/metrics';
 import {answersLabel} from '@/lib/answer-types';
-import {downloadText} from './download';
+import {downloadBytes,downloadText} from './download';
 
 const when=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(date.getTime())?'—':date.toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});};
 // In the table the date and the time may go on two lines, so the table fits a laptop screen.
@@ -79,6 +80,31 @@ function RunSettings({dataset,run,facts,state,onClose}:{dataset:PanelData;run:Ru
  </Dialog>;
 }
 
+// How far two sources agree, in words and a bar: how many got the same answer, how far apart the others are, and
+// the commonest mix-ups of categories.
+function Glance({stats,unit}:{stats:Agreement;unit:string}){
+ const n=stats.n,g=stats.gaps,plural=(k:number)=>`${count(k)} ${unit}${k===1?'':'s'}`,share=(k:number)=>`${Math.round(k/Math.max(1,n)*100)}%`;
+ const same=g?g.same:Math.round((stats.percentAgreement??0)*n),diff=n-same;
+ const small=g?g.secondHigherSmall+g.secondLowerSmall:0,large=g?g.secondHigherLarge+g.secondLowerLarge:0;
+ const higher=g?g.secondHigherSmall+g.secondHigherLarge:0,lower=g?g.secondLowerSmall+g.secondLowerLarge:0;
+ // With half points among the differences (combined answers such as 0.5 or 1.5), the middle group is every
+ // difference under 2 points, not “off by 1”.
+ const segments=g?[{n:same,kind:'same',label:'Same answer'},{n:small,kind:'near',label:g.fractional?'Off by less than 2':'Off by 1'},{n:large,kind:'far',label:'Off by 2 or more'}]:[{n:same,kind:'same',label:'Same answer'},{n:diff,kind:'far',label:'Different answer'}];
+ const mixups=g?[]:stats.categories.flatMap(x=>stats.categories.filter(y=>y!==x&&(stats.confusion[x]?.[y]??0)>0).map(y=>({x,y,n:stats.confusion[x][y]}))).sort((p,q)=>q.n-p.n).slice(0,3);
+ const opposite=stats.oppositeDirection!==null&&stats.midpoint!==null?Math.round(stats.oppositeDirection*n):0;
+ return <div className="research-glance">
+  <h4>At a glance</h4>
+  <p><strong>{plural(same)}</strong> ({share(same)}) got the same answer from both sides{diff>0?<>; <strong>{plural(diff)}</strong> ({share(diff)}) got different answers.</>:'.'}</p>
+  <div className="research-glance-bar" role="img" aria-label={segments.map(x=>`${x.label}: ${x.n}`).join(', ')}>{segments.map(x=><div key={x.kind} className={x.kind} style={{width:`${x.n/Math.max(1,n)*100}%`}} title={`${x.label}: ${x.n}`}/>)}</div>
+  <div className="research-glance-legend">{segments.map(x=><span key={x.kind}><i className={x.kind}/>{x.label}: <strong>{count(x.n)}</strong> ({share(x.n)})</span>)}</div>
+  {g&&diff>0&&<ul>
+   <li>When they differ, the “Compared with” side gives the <strong>higher</strong> value in {plural(higher)} and the <strong>lower</strong> value in {plural(lower)}.</li>
+   {opposite>0&&<li>In {plural(opposite)} ({share(opposite)}) the two land on opposite sides of the middle of the scale ({stats.midpoint}): they disagree about the direction, not just the degree.</li>}
+  </ul>}
+  {mixups.length>0&&<><p className="research-glance-title">Most common mix-ups (Annotations → Compared with):</p><ul>{mixups.map(m=><li key={m.x+'\u0001'+m.y}>“{m.x}” where the other side says “{m.y}”: <strong>{plural(m.n)}</strong></li>)}</ul></>}
+ </div>;
+}
+
 // onRenameRun, onRetryRun: uploaded texts only (a run of Model knowledge has no record to carry a label, and its
 // failed subjects are queued for retry in its own workspace).
 export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpenText,onRenameRun,onRetryRun}:{datasets:PanelData[];studyName?:string;locked:boolean;onShowRun:(run:number)=>void;onDeleteRun:(run:number)=>void;onOpenText:(id:string)=>void;onRenameRun:(run:number,label:string)=>void;onRetryRun:(run:number)=>void}){
@@ -132,6 +158,20 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
  const ci=intervals?.key===jobKey?intervals.ci:undefined;
  const differing=useMemo(()=>pairing?disagreements(pairing):[],[pairing]);
  const [showAll,setShowAll]=useState(false);
+ // The comparison report of two runs (an Excel file): the column it is broken down by, how far it has got while
+ // it is built, and what went wrong.
+ const runVsRun=a?.kind==='run'&&!a.rep&&b?.kind==='run'&&!b.rep&&a.run!==b.run;
+ const groups=useMemo(()=>groupColumns(dataset),[dataset.rows,dataset.columns]);
+ const [groupBy,setGroupBy]=useState(''),[report,setReport]=useState<string|null>(null),[reportError,setReportError]=useState('');
+ async function downloadReport(){
+  if(!runVsRun||report!==null||a?.kind!=='run'||b?.kind!=='run')return;
+  setReport('');setReportError('');
+  try{
+   const bytes=await comparisonReport(dataset,a.run,b.run,{tolerance:tol,groupBy:groups.includes(groupBy)?groupBy:'',intervals:intervalsOf,onProgress:setReport});
+   downloadBytes(`${fileStem(studyName,dataset)}-run-${a.run}-vs-run-${b.run}.xlsx`,bytes,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }catch(error){setReportError(`The comparison report could not be made: ${error instanceof Error?error.message:String(error)}`);}
+  finally{setReport(null);}
+ }
 
  function downloadComparison(){
   if(!stats||!a||!b)return;
@@ -181,13 +221,18 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
      {pairing?.numeric&&<div><label htmlFor="agreement-tolerance">Tolerance (±)</label><input id="agreement-tolerance" type="number" inputMode="decimal" min={0} step="any" value={tolerance} onChange={event=>setTolerance(event.target.value)}/></div>}
     </div>
     {stats&&pairing&&(stats.n?<>
+     <Glance stats={stats} unit={unit}/>
      <div className="research-stats">{statLines(stats,ci,unit).map(line=><div key={line.key} className="research-stat" title={line.help}>
       <span className="research-stat-label">{line.label}</span><strong>{line.value}</strong>
       {line.key!=='n'&&line.key!=='spearman'&&<span className="research-stat-ci">{line.ciText?`95% CI ${line.ciText}`:stats.n<10?'':BOOTSTRAPPED.has(line.key)&&!ci?'95% CI: computing…':''}</span>}
      </div>)}</div>
      <p className="hint">{[pairing.onlyA?`${pairing.onlyA.toLocaleString('en-US')} ${unit}${pairing.onlyA===1?' has':'s have'} a value only in ${sourceLabel(a)}`:'',pairing.onlyB?`${pairing.onlyB.toLocaleString('en-US')} only in ${sourceLabel(b)}`:''].filter(Boolean).join('; ')}{pairing.onlyA||pairing.onlyB?'; these are not compared. ':''}{leftOutNote(stats,unit,pairing.leftOut)} {pairing.basis} {stats.n<10?`Intervals need at least 10 compared ${unit}s.`:`Intervals for the coefficients are bootstrap percentile intervals (10,000 resamples of the ${unit}s, fixed seed); those for shares are Wilson intervals.`} Values are compared after trimming and ignoring case.</p>
      {categories.length>0&&(categories.length<=25?<div className="research-table-scroll"><table className="research-table research-confusion"><caption>Rows: {sourceLabel(a)}. Columns: {sourceLabel(b)}.</caption><thead><tr><th/>{categories.map(c=><th key={c} scope="col">{c}</th>)}</tr></thead><tbody>{categories.map(row=><tr key={row}><th scope="row">{row}</th>{categories.map(column=>{const n=stats.confusion[row]?.[column]??0;return <td key={column} className={n?row===column?'agree':'disagree':''}>{n||''}</td>;})}</tr>)}</tbody></table></div>:<p className="hint">{categories.length} distinct values: too many to show as a table. The downloaded comparison includes the full table.</p>)}
-     <div className="research-page-actions"><Button type="button" variant="outline" onClick={downloadComparison}><Download size={16}/>Download this comparison (CSV)</Button></div>
+     <div className="research-page-actions"><Button type="button" variant="outline" onClick={downloadComparison}><Download size={16}/>Download this comparison (CSV)</Button>
+      {runVsRun&&<><Button type="button" variant="outline" disabled={report!==null} onClick={downloadReport} title="Every answer field the two runs can be compared on, in one Excel file: the figures with intervals, a sheet for expert review, draft text for a paper, and the runs’ settings"><Download size={16}/>{report===null?'Download comparison report (Excel)':`Building the report…${report?` ${report}`:''}`}</Button>
+      {groups.length>0&&<select className="research-report-groups" aria-label="Break the comparison report down by a column" value={groups.includes(groupBy)?groupBy:''} disabled={report!==null} onChange={event=>setGroupBy(event.target.value)} title="Adds a sheet with the same figures for each value of the column (exploratory)"><option value="">No breakdown</option>{groups.map(column=><option key={column} value={column}>Break down by {column}</option>)}</select>}</>}
+     </div>
+     {reportError&&<p className="message" role="alert">{reportError}</p>}
      <h4>Disagreements ({differing.length.toLocaleString('en-US')})</h4>
      {differing.length?<><div className="research-table-scroll"><table className="research-table"><thead><tr><th>{unit==='text'?'Document':'Subject'}</th><th>{sourceLabel(a)}</th><th>{sourceLabel(b)}</th></tr></thead><tbody>{differing.slice(0,showAll?2000:25).map(d=><tr key={d.id}><td>{dataset.kind==='texts'?<button type="button" className="docbutton" onClick={()=>onOpenText(d.id)}>{d.name}</button>:d.name}</td><td><span className="answer-cell">{d.a}</span></td><td><span className="answer-cell">{d.b}</span></td></tr>)}</tbody></table></div>{differing.length>25&&<button type="button" className="textbutton" onClick={()=>setShowAll(v=>!v)}>{showAll?'Show fewer':`Show all ${Math.min(differing.length,2000).toLocaleString('en-US')}`}</button>}</>:<p className="hint">The two sources give the same value for every compared {unit}.</p>}
     </>:<p className="research-empty">No {unit} has a value in both {sourceLabel(a)} and {sourceLabel(b)} yet.</p>)}
