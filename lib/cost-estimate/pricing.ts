@@ -45,3 +45,17 @@ export function priceFor(provider:Provider,model:string,date=new Date().toISOStr
  const p=PRICES[key];if(!p||p.provider!==provider)return;
  const change=p.changes?.filter(c=>c.from<=date).at(-1);return change?{...p,input:change.input,output:change.output}:p;
 }
+
+// Your own price for a model (research mode, lib/own-prices.ts), in USD per million tokens. In the estimate
+// before a run it replaces the listed input and output prices. The model's other listed terms stay: the batch
+// discount, the token multiplier, and the cache-read share. Its listed prices for long requests and for later
+// dates do not apply to a typed price. A model without a listed price gets its provider's usual terms; Claude
+// models from Opus 4.7 on count about 30% more tokens for the same text than earlier ones.
+export type OwnPrice={input:number;output:number};
+const earlierClaude=(id:string)=>/^claude-(?:\d|instant)/.test(id)||/^claude-(?:opus|sonnet|haiku)-4(?:[-.][0-6])?(?:-\d{8}|-latest)?(?::[\w-]+)?$/.test(id);
+export function ownRates(provider:Provider,model:string,own:OwnPrice,date?:string):Price{
+ const listed=priceFor(provider,model,date);
+ if(listed){const {threshold,longInput,longOutput,changes,note,...terms}=listed;return {...terms,input:own.input,output:own.output};}
+ const claude=provider==='anthropic'?model:provider==='openrouter'&&model.startsWith('anthropic/')?model.slice(10):'';
+ return {provider,input:own.input,output:own.output,batch:provider!=='openrouter',...(claude&&!earlierClaude(claude)?{tokenMultiplier:1.3}:{}),...(provider==='anthropic'?{cacheRead:.1}:{})};
+}

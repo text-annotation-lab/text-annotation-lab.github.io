@@ -12,6 +12,7 @@ import {DEFAULT_ANNOTATION_CONCURRENCY,concurrencyChoices,annotationConcurrency,
 import {missingAnnotationSetup,rateLimitNotice,isRateLimitNotice} from '@/lib/annotation-feedback';
 import CostEstimate from '@/lib/cost-estimate/panel';
 import {studentEstimate,countStudentInputs} from '@/lib/student-estimate';
+import {ownPrice,useOwnPrices} from '@/lib/own-prices';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {MAX_BATCH_ITEMS,MAX_BATCH_SOURCE_BYTES,MAX_KNOWLEDGE_INPUT_CHARS,BATCH_CAPACITY} from '@/lib/batch-limits';
 import {ResultPages} from '@/components/result-pages';
@@ -64,6 +65,8 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // Research mode: the placeholders of the prompt that are filled in for each subject (lib/prompt-inserts.ts). A
  // prompt that begins with one has no part that every subject shares, so nothing of it can be cached.
  const insertNames=research?promptInserts(prompt):[],promptFixed=insertNames.length?fixedLength(prompt):undefined;
+ // Research mode: your own price for the model, for the cost estimate before a run.
+ const ownPrices=useOwnPrices(),typedPrice=research?ownPrice(provider,model,ownPrices):undefined;
  const sentRequest=research?sentRequestSettings(provider,model,promptFixed!==undefined&&!prompt.slice(0,promptFixed).trim()?{...requestSettings,cache:undefined}:requestSettings,effort):undefined;
  // The values a subject gives those placeholders, kept with its result.
  const insertsOf=(item:Item):{inserts?:string[]}=>insertNames.length?{inserts:insertValues(insertNames,item,columns)}:{};
@@ -201,7 +204,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  const resultStart=Math.min(resultPage,Math.max(0,Math.ceil(items.length/100)-1))*100;
  useEffect(()=>{const index=items.findIndex(item=>item.id===selected);if(index>=0)setResultPage(Math.floor(index/100));},[selected]);
  const repeatPending=current&&items.some(item=>item.status==='pending'&&(item.subjectId||item.id)===(current.subjectId||current.id));
- const costEstimate=<CostEstimate rows={items} disabled={!ready} batch={processing==='batch'} revision={JSON.stringify([provider,model,effort,prompt,sentFields,sentSettings,processing,webSearch,items.map(d=>[d.id,d.status,d.usage]),...(sentRequest?[sentRequest]:[])])} load={signal=>studentEstimate({provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,rows:items,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),maxOutput:sentRequest?.maxOutput,batch:processing==='batch',signal})} canCountInputs={!keyRejected&&provider!=='openrouter'&&Boolean(apiKey.trim())&&!locked} countInputs={provider==='openrouter'?undefined:(signal,onProgress)=>countStudentInputs({provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,rows:items,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),maxOutput:sentRequest?.maxOutput,batch:processing==='batch',apiKey:apiKey,signal,onProgress})}/>;
+ const costEstimate=<CostEstimate rows={items} disabled={!ready} batch={processing==='batch'} revision={JSON.stringify([provider,model,effort,prompt,sentFields,sentSettings,processing,webSearch,items.map(d=>[d.id,d.status,d.usage]),...(sentRequest?[sentRequest]:[]),...(research?[typedPrice||1]:[])])} load={signal=>studentEstimate({provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,rows:items,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),maxOutput:sentRequest?.maxOutput,batch:processing==='batch',ownPrice:typedPrice,research,signal})} canCountInputs={!keyRejected&&provider!=='openrouter'&&Boolean(apiKey.trim())&&!locked} countInputs={provider==='openrouter'?undefined:(signal,onProgress)=>countStudentInputs({provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,rows:items,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),maxOutput:sentRequest?.maxOutput,batch:processing==='batch',ownPrice:typedPrice,research,apiKey:apiKey,signal,onProgress})}/>;
  return <div className="knowledge-workspace">
   <div className="knowledge-intro"><h2 id="model-knowledge" tabIndex={-1}>Model knowledge <span className="experimental-badge">Experimental</span></h2><p>Assess named subjects, such as books or films, using what the model has learned. You do not upload the original works here. Web search is optional; each subject is assessed independently.</p>
    <details className="knowledge-method">

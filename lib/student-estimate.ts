@@ -1,6 +1,7 @@
 import {answerInstructions,type AnswerSettings} from './answer-fields';
 import {remainingEstimateNotice} from './annotation-feedback';
 import {estimate,textTokens,usageSample,add,type Input,type EstimateConfig} from './cost-estimate/engine';
+import {ownRates,priceFor,type OwnPrice} from './cost-estimate/pricing';
 import {knowledgeInstructions,knowledgeItemText} from './model-knowledge';
 import {validModelId,annotationOutputLimit,type Provider} from './providers';
 const visualCache=new WeakMap<File,Promise<Input>>(),textCache=new WeakMap<File,Promise<Input>>();
@@ -27,13 +28,16 @@ async function fileInput(file:File,textOnly=false):Promise<Input>{
 // cache, batch: research mode's prompt caching, and whether the texts go out as a batch (a cache write costs more there).
 // times: research mode, several annotations per text: how many requests a waiting text gets (absent: one).
 // maxOutput: research mode's output limit, where it is not the Lab's own.
-export async function studentEstimate({provider,model,effort,prompt,rows,answerFields=[],answerSettings,knowledge=false,webSearch=false,cache=false,batch=false,times,maxOutput,signal}:{provider:Provider;model:string;effort:string;prompt:string;rows:any[];answerFields?:string[];answerSettings?:AnswerSettings;knowledge?:boolean;webSearch?:boolean;cache?:boolean;batch?:boolean;times?:(row:any)=>number;maxOutput?:number;signal?:AbortSignal}){
+// ownPrice: research mode, your own price for the model, used in place of the Lab's (lib/own-prices.ts).
+// research: research mode, where a model without a price can be given one.
+export async function studentEstimate({provider,model,effort,prompt,rows,answerFields=[],answerSettings,knowledge=false,webSearch=false,cache=false,batch=false,times,maxOutput,ownPrice,research=false,signal}:{provider:Provider;model:string;effort:string;prompt:string;rows:any[];answerFields?:string[];answerSettings?:AnswerSettings;knowledge?:boolean;webSearch?:boolean;cache?:boolean;batch?:boolean;times?:(row:any)=>number;maxOutput?:number;ownPrice?:OwnPrice;research?:boolean;signal?:AbortSignal}){
  if(!validModelId(provider,model))throw Error('Choose a supported model.');
  const pending=rows.filter(r=>r.status==='pending'),inputs:Input[]=[];
  for(const row of pending){signal?.throwIfAborted();const count=countFromCache(row,{provider,model,effort,prompt,answerFields,answerSettings,knowledge,webSearch});const input:Input=count!==undefined?{tokens:{low:0,high:0},requestTokens:count}:knowledge?{tokens:textTokens(knowledgeItemText(row.fields))}:await fileInput(row.file);for(let n=times?Math.max(1,times(row)):1;n>0;n--)inputs.push(input);}
- const config:EstimateConfig={provider,model,effort,...(cache?{cache,batch}:{}),prompt:prompt.trim()?prompt+answerInstructions(answerFields,answerSettings)+(knowledge?'\n\n'+knowledgeInstructions(webSearch):''):'',defaultExplanation:answerSettings?.plain||answerSettings?.rationale===false?false:true,webSearch,maxTokens:maxOutput??annotationOutputLimit(provider,model),fields:answerSettings?.plain?[{name:'response',type:'string'}]:[...(answerFields.length?answerFields.map(name=>{const spec=answerSettings?.fields?.find(f=>f.name===name);return {name,type:spec?.type==='text'?'string':'category',...(spec?.description?{description:spec.description}:{})};}):[{name:'score',type:'category'}]),...(answerSettings?.rationale===false?[]:[{name:'explanation',type:'string'}])]};
+ const config:EstimateConfig={provider,model,effort,...(ownPrice?{rates:ownRates(provider,model,ownPrice)}:{}),...(cache?{cache,batch}:{}),prompt:prompt.trim()?prompt+answerInstructions(answerFields,answerSettings)+(knowledge?'\n\n'+knowledgeInstructions(webSearch):''):'',defaultExplanation:answerSettings?.plain||answerSettings?.rationale===false?false:true,webSearch,maxTokens:maxOutput??annotationOutputLimit(provider,model),fields:answerSettings?.plain?[{name:'response',type:'string'}]:[...(answerFields.length?answerFields.map(name=>{const spec=answerSettings?.fields?.find(f=>f.name===name);return {name,type:spec?.type==='text'?'string':'category',...(spec?.description?{description:spec.description}:{})};}):[{name:'score',type:'category'}]),...(answerSettings?.rationale===false?[]:[{name:'explanation',type:'string'}])]};
  const samples=rows.filter(r=>r.status==='done'&&r.provider===provider&&!(provider==='openrouter'&&r.file&&/\.pdf$/i.test(r.file.name)&&r.inputMode!=='pdf-native')&&r.model===model&&r.effort===effort&&r.prompt===prompt&&JSON.stringify(r.answerFields||[])===JSON.stringify(answerFields)&&JSON.stringify(r.answerSettings||null)===JSON.stringify(answerSettings||null)&&Boolean(r.webSearch)===webSearch).flatMap(r=>(Array.isArray(r.annotations)&&r.annotations.length?r.annotations.filter((a:any)=>a?.status==='done'):[r]).flatMap((request:any)=>{const sample=usageSample(provider,request.usage);return sample?[sample]:[];}));
  const result=estimate(config,inputs,samples);
+ if(ownPrice)result.ownPrice=ownPrice;else if(research&&!priceFor(provider,model))result.unknown='The Lab has no price for this model. Type its price under Processing options to have its cost estimated.';
  const notice=remainingEstimateNotice(rows);
  return notice?{...result,unknown:notice}:result;
 }
@@ -41,7 +45,7 @@ export async function studentEstimate({provider,model,effort,prompt,rows,answerF
 // Counts stay in this open page's memory. Neither API keys nor counts are saved.
 // Repeated subjects/files reuse counts only under identical request settings.
 const fileCounts=new WeakMap<File,Map<string,number>>(),subjectCounts=new Map<string,number>();
-type CountingOptions={provider:Provider;model:string;effort:string;prompt:string;rows:any[];answerFields?:string[];answerSettings?:AnswerSettings;knowledge?:boolean;webSearch?:boolean;cache?:boolean;batch?:boolean;times?:(row:any)=>number;maxOutput?:number;apiKey:string;signal:AbortSignal;onProgress?:(completed:number,total:number)=>void};
+type CountingOptions={provider:Provider;model:string;effort:string;prompt:string;rows:any[];answerFields?:string[];answerSettings?:AnswerSettings;knowledge?:boolean;webSearch?:boolean;cache?:boolean;batch?:boolean;times?:(row:any)=>number;maxOutput?:number;ownPrice?:OwnPrice;research?:boolean;apiKey:string;signal:AbortSignal;onProgress?:(completed:number,total:number)=>void};
 function signature(c:{provider:Provider;model:string;effort:string;prompt:string;answerFields?:string[];answerSettings?:AnswerSettings;knowledge?:boolean;webSearch?:boolean}){return JSON.stringify([c.provider,c.model,c.effort,c.prompt,c.answerFields||[],!!c.knowledge,!!c.webSearch,...(c.answerSettings?[c.answerSettings]:[])]);}
 function countFromCache(row:any,c:{provider:Provider;model:string;effort:string;prompt:string;answerFields?:string[];answerSettings?:AnswerSettings;knowledge?:boolean;webSearch?:boolean}){const sig=signature(c);return c.knowledge?subjectCounts.get(sig+'\n'+knowledgeItemText(row.fields)):fileCounts.get(row.file)?.get(sig);}
 export async function countStudentInputs(c:CountingOptions){
