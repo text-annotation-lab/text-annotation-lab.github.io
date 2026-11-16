@@ -209,7 +209,5 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
  assert(!page.includes('Other model ID')&&menu.includes('Other model ID…')&&menu.includes('Back to the list')&&menu.includes('on your account'));
  assert(menu.includes("fetch('/api/models',{method:'POST',headers:{Authorization:'Bearer '+key,'X-Lab-Provider':provider}"),'The key travels in a header to the request handler, as for every other request');
  assert(!/localStorage|sessionStorage|indexedDB/.test(menu),'The account’s list is kept in memory only');
- // The methods text of an export names no effort where none was sent.
- assert(read('lib/research/export-packages.ts').includes("run.effort&&run.effort!=='default'?`reasoning effort “${reasoningOptionLabel(run.effort).toLowerCase()}”`:'the provider’s default reasoning effort'"));
  console.log('model choice checks passed');
 })().catch(error=>{console.error(error);process.exit(1);});

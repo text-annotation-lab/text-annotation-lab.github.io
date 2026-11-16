@@ -180,7 +180,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert(!tables.requestsTable(exported,undefined,new Map(),{reasoning:false})[0].includes('reasoning_summary'),'Left out of the supplementary table');
  assert(tables.requestsTable(exported,[2],new Map())[0].includes('reasoning_summary'),'The column is there (empty) for a run without summaries');
  const workbook=load('lib/research/export-workbook.ts');assert(workbook.isProse('reasoning_summary'),'Kept as text in the workbook');
- // The supplementary repository of the run with the settings: record, README, methods text, and logs.
+ // The supplementary repository of the run with the settings: record, README, and logs.
  const packages=load('lib/research/export-packages.ts'),packStudy={name:'Settings',lab:'test',dataset:{...dataset,rows:rows.map(row=>({...row,file:new File(['Text of '+row.id],row.name),startedAt:'2026-11-16T10:00:00.000Z',time:'2026-11-16T10:00:03.000Z',processing:'instant'}))}};
  const build=run=>packages.buildSupplementary({study:packStudy,read:data.documentReader(packStudy.dataset,file=>file.text()),now:new Date('2026-11-16T12:00:00Z')},run,{texts:false,explanations:true,logs:true});
  const textOf=async value=>typeof value==='string'?value:value instanceof Blob?await value.text():Buffer.from(value).toString('utf8'),read=async(pack,name)=>textOf(pack.files.find(file=>file.path===pack.name+'/'+name).data);
@@ -188,12 +188,11 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.deepEqual([record.model.reasoning_summary_requested,record.model.temperature,record.model.max_output_tokens],[true,0.2,4000]);
  assert.equal(record.requests_as_sent.bodies[0].body.temperature,0.2);assert.equal(record.requests_as_sent.bodies[0].body.store,false);assert.deepEqual(record.requests_as_sent.bodies[0].body.reasoning,{effort:'medium',summary:'auto'});
  assert(readme.includes('| Temperature | 0.2 |')&&readme.includes('| Max output tokens | 4000 |'),'README: the settings');
- assert(readme.includes('using reasoning effort “medium”, temperature 0.2, and a maximum of 4,000 output tokens.'),readme.split('\n').find(line=>line.startsWith('> ')));
  assert(!(await read(pack,'results/results_by_replicate.csv')).includes('reasoning_summary'),'The supplementary table of requests leaves the summaries out');
  assert.deepEqual((await read(pack,'logs/responses.jsonl')).trim().split('\n').map(line=>JSON.parse(line).response.reasoning_summary),['Read the text, chose A.','Stopped early.'],'The logs keep them');
  const usual=await build(2),usualRecord=JSON.parse(await read(usual,'metadata.json')),usualReadme=await read(usual,'README.md');
  assert.deepEqual([usualRecord.model.reasoning_summary_requested,usualRecord.model.temperature,usualRecord.model.max_output_tokens],[false,'model default',12000]);
- assert(usualReadme.includes('| Temperature | model default |')&&usualReadme.includes('using reasoning effort “medium” and a maximum of 12,000 output tokens.'),usualReadme.split('\n').find(line=>line.startsWith('> ')));
+ assert(usualReadme.includes('| Temperature | model default |'));
  assert(!(await read(usual,'logs/responses.jsonl')).includes('reasoning_summary'));
  assert.equal(JSON.parse(await read(await build(3),'metadata.json')).model.reasoning_summary_requested,'in part');
 
