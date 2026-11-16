@@ -338,6 +338,23 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert(notices(first).includes('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.'));
  }
 
+ // A text whose missing annotation fails again is sent once per run, not over and over (a run carries on past a
+ // failed text, so the text must not be taken again).
+ {
+  const until=async(h,ready)=>{for(let n=0;n<300&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
+  const two={docs:Array.from({length:2},(_,i)=>({id:String(i),name:`text-${i}.txt`,file:new File([`Text ${i}`],`text-${i}.txt`),status:'pending'})),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1,repeats:3};
+  const named=options=>options.body.get('file').name,ended=h=>()=>!h.latest().docs.some(doc=>doc.status==='running')&&h.all(n=>['Button','button'].includes(n.type)&&h.text(n).trim()==='Pause').length===0;
+  // (Past 12 requests the stand-in never answers, so a run that sends over and over fails this check instead of running on.)
+  let cut=1;const h=harness(two,async()=>{},async(url,options)=>h.calls.length>12?new Promise(()=>{}):named(options)==='text-0.txt'&&cut-->0?Response.json({error:'The reply was cut off.'},{status:422}):Response.json({score:'POSITIVE',explanation:'Evidence'}));
+  await h.flush();h.find(n=>n.type==='ModeSwitch').props.onChange(true);await h.flush();h.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-once'},false);await h.flush();
+  h.button('All (').props.onClick();await until(h,()=>Boolean(h.latest())&&h.latest().docs.every(doc=>doc.status==='done'));await until(h,ended(h));
+  assert.equal(h.calls.length,6);assert.deepEqual(h.latest().docs[0].annotations.map(a=>a.status),['error','done','done']);
+  cut=Infinity;h.button('Remaining').props.onClick();await until(h,()=>h.latest().docs[0].history?.length===1);await until(h,ended(h));
+  for(let n=0;n<20;n++){await new Promise(resolve=>setTimeout(resolve,10));await h.flush();}
+  assert.equal(h.calls.length,7,'The missing annotation is sent once');assert.deepEqual(h.latest().docs[0].annotations.map(a=>a.status),['error','done','done']);
+  assert(h.all(n=>n.props?.role==='alert'||n.props?.role==='status').map(n=>h.text(n)).includes('The request failed. “Remaining” sends it again.'));
+ }
+
  // Annotations per text: each text is sent several times and its answers are combined; what is missing is filled in.
  {
   const until=async(h,ready)=>{for(let n=0;n<200&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
