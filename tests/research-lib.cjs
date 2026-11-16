@@ -11,7 +11,7 @@ function load(file){
  return exports;
 }
 const near=(actual,expected,message)=>assert(actual!==null&&Math.abs(actual-expected)<1e-6,`${message||'value'}: got ${actual}, expected ${expected}`);
-const metrics=load('lib/research/metrics.ts'),runs=load('lib/research/runs.ts'),columns=load('lib/research/columns.ts'),sample=load('lib/research/sample.ts'),view=load('lib/research/view.ts'),agree=load('lib/research/agreement.ts'),knowledge=load('lib/research/knowledge.ts'),exporting=load('lib/research/export.ts'),table=load('lib/research/parse-table.ts');
+const metrics=load('lib/research/metrics.ts'),runs=load('lib/research/runs.ts'),columns=load('lib/research/columns.ts'),sample=load('lib/research/sample.ts'),view=load('lib/research/view.ts'),agree=load('lib/research/agreement.ts'),knowledge=load('lib/research/knowledge.ts'),exporting=load('lib/research/export.ts'),tables=load('lib/research/export-tables.ts'),table=load('lib/research/parse-table.ts');
 
 // --- Agreement statistics ----------------------------------------------------
 // Krippendorff's two-observer, two-category example: alpha = 0.095.
@@ -254,13 +254,13 @@ const dataset={kind:'texts',rows:exportDocs,runs:runRecords,columns:viewColumns,
 const wideRows=exporting.wideTable(dataset);
 assert.deepEqual(wideRows[0],['document','tone_human','year','run1_score','run1_explanation','run2_score','run2_explanation']);
 assert.deepEqual(wideRows[1],['a.txt','positive','1961','MIXED','Both.','POSITIVE','Hopeful.']);assert.deepEqual(wideRows[2],['b.txt','NEGATIVE','1981','NEGATIVE','Grim.','','']);
-const longRows=exporting.longTable(dataset);
-assert.deepEqual(longRows[0].slice(0,7),['document','tone_human','year','run','field','value','explanation']);assert.equal(longRows.length,4,'One row per completed result');
-assert.deepEqual(longRows.slice(1).map(row=>[row[0],row[3],row[5],row[longRows[0].indexOf('model')]]),[['a.txt',1,'MIXED','gpt-6-luna'],['a.txt',2,'POSITIVE','gpt-6.1-terra'],['b.txt',1,'NEGATIVE','gpt-6-luna']]);
-const runRows=exporting.runsTable(dataset);
-assert.deepEqual(runRows.slice(1).map(row=>[row[0],row[1],row[runRows[0].indexOf('model')],row[runRows[0].indexOf('texts_completed')],row[runRows[0].indexOf('prompt')]]),[[1,'uploaded texts','gpt-6-luna',2,'Classify tone'],[2,'uploaded texts','gpt-6.1-terra',1,'Classify tone']]);
-assert.deepEqual(runRows[0].slice(7,9),['answer_fields','answer_format']);assert.equal(runRows[1][8],'Score / category');
-assert.equal(exporting.runsTable({...dataset,runs:[{...runRecords[0],answerFields:['Tone'],answerSettings:{rationale:false,fields:[{name:'Tone',type:'category',values:['positive','mixed'],description:'Overall tone.'}]}},runRecords[1]]})[1][8],'Tone (category: positive, mixed; description: Overall tone.) | no explanation requested','The record of runs names each field’s type, values, and description');
+const exportStudy={name:'Tone',dataset,lab:'test'},longRows=tables.requestsTable(exportStudy,undefined,new Map()),longAt=name=>longRows[0].indexOf(name);
+assert.deepEqual(longRows[0].slice(0,4),['study','data','run','prompt_version']);assert.equal(longRows.length,4,'One row per request with an outcome');
+assert.deepEqual(longRows.slice(1).map(row=>[row[longAt('document')],row[longAt('run')],row[longAt('score')],row[longAt('model_requested')],row[longAt('status')]]),[['a.txt',1,'MIXED','gpt-6-luna','ok'],['b.txt',1,'NEGATIVE','gpt-6-luna','ok'],['a.txt',2,'POSITIVE','gpt-6.1-terra','ok']],'In the order of the runs');
+const runRows=tables.runsOverview(exportStudy,new Map()),runAt=name=>runRows[0].indexOf(name);
+assert.deepEqual(runRows.slice(1).map(row=>[row[0],row[1],row[runAt('model_requested')],row[runAt('n_texts_with_usable_answer')],row[runAt('prompt')]]),[[1,'uploaded texts','gpt-6-luna',2,'Classify tone'],[2,'uploaded texts','gpt-6.1-terra',1,'Classify tone']]);
+assert.equal(runRows[0][runAt('answer_format')-1],'answer_fields');assert.equal(runRows[1][runAt('answer_format')],'Score / category');
+assert.equal(tables.runsOverview({...exportStudy,dataset:{...dataset,runs:[{...runRecords[0],answerFields:['Tone'],answerSettings:{rationale:false,fields:[{name:'Tone',type:'category',values:['positive','mixed'],description:'Overall tone.'}]}},runRecords[1]]}},new Map())[1][runAt('answer_format')],'Tone (category: positive, mixed; description: Overall tone.) | no explanation requested','The record of runs names each field’s type, values, and description');
 assert.equal(exporting.samplesTable([record]).length,2);
 assert.deepEqual(exporting.uniqueNames(['document','Year','year','run','year']),['document','Year','year_2','run','year_3']);
 assert.equal(exporting.wideTable({...dataset,columns:[{name:'Document',role:'meta'},{name:'year',role:'meta'}]})[0][1],'Document_2','An imported column never repeats a column name of the Lab’s own');
@@ -284,8 +284,8 @@ assert.deepEqual(labeled.map(item=>item.cells),[['4'],['1'],['4'],['1']],'Labels
 const knowledgeSet={kind:'knowledge',rows:subjects,runs:[],columns:[{name:'villainy_human',role:'label'}],samples:[]};
 const knowledgeWide=exporting.wideTable(knowledgeSet);
 assert.deepEqual(knowledgeWide[0],['subject','villainy_human','run1_score','run2_score'],'A simple list’s only field is the subject itself');assert.deepEqual(knowledgeWide[1],['The Lion King (1994)','4','5','4']);
-const knowledgeRuns=exporting.runsTable(knowledgeSet);
-assert.deepEqual(knowledgeRuns.slice(1).map(row=>[row[0],row[1],row[knowledgeRuns[0].indexOf('web_search')],row[knowledgeRuns[0].indexOf('subjects_completed')]]),[[1,'model knowledge (no texts supplied)','no',2],[2,'model knowledge (no texts supplied)','yes',1]],'Exports say that no texts were supplied');
+const knowledgeRuns=tables.runsOverview({name:'Villains',dataset:knowledgeSet,lab:'test'},new Map());
+assert.deepEqual(knowledgeRuns.slice(1).map(row=>[row[0],row[1],row[knowledgeRuns[0].indexOf('web_search')],row[knowledgeRuns[0].indexOf('n_subjects_with_usable_answer')]]),[[1,'model knowledge (no texts supplied)','no',2],[2,'model knowledge (no texts supplied)','yes',1]],'Exports say that no texts were supplied');
 assert.equal(exporting.sourceOf(knowledgeSet),'model knowledge (no texts supplied)');assert.equal(exporting.unitOf(knowledgeSet),'subject');
 
 // --- A study backup keeps everything research mode adds, and never a key --------------------
