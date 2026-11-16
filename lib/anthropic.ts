@@ -1,4 +1,4 @@
-import {answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
+import {readReply,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
 import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 import {extractText,TextEncodingError} from './extract-text';
 import {requestTimeout,type RequestSettings} from './request-settings';
@@ -36,8 +36,9 @@ export async function annotateAnthropic(file:File,prompt:string,model:string,eff
   const u=out.usage,tokens=u?(u.input_tokens||0)+(u.output_tokens||0)+(u.cache_creation_input_tokens||0)+(u.cache_read_input_tokens||0):undefined;
   if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...noted,...plain,tokens,usage:u,responseId:out.id}):reply({...noted,error:EMPTY_REPLY},422);}
   let result;try{result=JSON.parse(raw);}catch{return reply({...noted,error:'Claude did not return a valid annotation. Check your usage before retrying.'},422);}
-  if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return reply({...noted,error:'Claude returned an unexpected annotation format.'},422);
-  let answers;try{answers=answerValues(result,answerFields);}catch(error){return reply({...noted,error:(error as Error).message},422);}
- return reply({...noted,rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens,usage:u,responseId:out.id});
+  const read=readReply(result,answerFields,settings);
+  if(!read)return reply({...noted,error:'Claude returned an unexpected annotation format.'},422);
+  if(typeof read==='string')return reply({...noted,error:read},422);
+ return reply({...noted,rawResponse:raw,...read,tokens,usage:u,responseId:out.id});
  }catch(error){return reply({error:'Anthropic connection interrupted or timed out. Check Claude Console usage before retrying; the request may have completed.',...connectionFailure(error)},502);}
 }

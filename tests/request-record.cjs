@@ -156,7 +156,7 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
   assert(!('output' in batch.parseBatchAnnotation(provider,providerReply(provider,{text:'Mostly hopeful.'}),true,true)));
   assert.equal(batch.parseBatchAnnotation(provider,providerReply(provider,{text:' Mostly hopeful.'}),true,true).output,' Mostly hopeful.');
  }
- {const source=fs.readFileSync(path.join(root,'app/api/batch/route.ts'),'utf8');assert(source.includes("checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true',summary==='true')"));}
+ {const source=fs.readFileSync(path.join(root,'app/api/batch/route.ts'),'utf8');assert(source.includes("checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true',summary==='true',format)"));}
 
  // --- The list of requests -----------------------------------------------------------------------------
  const frameA={url:'https://a.test',body:'{"a":1}'},frameB={url:'https://a.test',body:'{"b":2}'};

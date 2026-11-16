@@ -3,6 +3,7 @@
 // using only Python's standard library. The template marks every value that comes from the study as
 // {{PLACEHOLDER}}; fillScript inserts the values.
 import {isGemini4,type Provider} from '../providers';
+import {wireKeys,isExplanationField,RATIONALE_KEY,type AnswerSettings} from '../answer-types';
 import type {RequestFrame} from '../request-frame';
 import {requestParts} from './export-data';
 
@@ -110,9 +111,18 @@ REQUEST_PDF = {{REQUEST_PDF}}
 # column: the study no longer has that column, and nothing is filled in.
 INSERTS = {{INSERTS}}
 
-# The answer fields, in the order of their keys in the answer format (f0, f1, ...).
-# An empty list: the answer is one score or category.
+# The answer fields, in their order. An empty list: the answer is one score or
+# category.
 FIELDS = {{FIELDS}}
+
+# The key of each answer field in the answer format, in the order of FIELDS (an
+# empty list: the key "score"). None: the earlier format, which has the fields
+# under "answers" as f0, f1, ..., and the explanation under "explanation".
+KEYS = {{KEYS}}
+
+# The key of the explanation in the answer format (None: none was asked for, or
+# the earlier format).
+RATIONALE = {{RATIONALE}}
 
 # The values the answer format allows for a field (a field not listed: any text).
 ALLOWED = {{ALLOWED}}
@@ -276,15 +286,30 @@ def parse_answer(text):
         result = read_json(text)
     except ValueError:
         return {}, "The reply was not valid JSON"
-    if not isinstance(result, dict) or not isinstance(result.get("score"), str) or not isinstance(result.get("explanation"), str):
-        return {}, "The reply did not have the answer format"
-    if FIELDS:
-        answers = result.get("answers")
-        if not isinstance(answers, dict) or any(not isinstance(answers.get("f%d" % i), str) for i in range(len(FIELDS))):
-            return {}, "The reply is missing a named answer field"
-        values = {name: answers["f%d" % i] for i, name in enumerate(FIELDS)}
+    if KEYS is not None:
+        # Each field under its own key and type.
+        if not isinstance(result, dict):
+            return {}, "The reply did not have the answer format"
+        explanation = result.get(RATIONALE) if RATIONALE else ""
+        if not isinstance(explanation, str):
+            return {}, "The reply is missing its explanation"
+        values = {}
+        for name, key in zip(FIELDS or ["score"], KEYS or ["score"]):
+            value = as_text(result.get(key))
+            if value is None:
+                return {}, "The reply is missing a named answer field"
+            values[name] = value
     else:
-        values = {"score": result["score"]}
+        if not isinstance(result, dict) or not isinstance(result.get("score"), str) or not isinstance(result.get("explanation"), str):
+            return {}, "The reply did not have the answer format"
+        explanation = result["explanation"]
+        if FIELDS:
+            answers = result.get("answers")
+            if not isinstance(answers, dict) or any(not isinstance(answers.get("f%d" % i), str) for i in range(len(FIELDS))):
+                return {}, "The reply is missing a named answer field"
+            values = {name: answers["f%d" % i] for i, name in enumerate(FIELDS)}
+        else:
+            values = {"score": result["score"]}
     for name, value in values.items():
         if not value.strip():
             return {}, "The answer for " + name + " is missing"
@@ -292,8 +317,22 @@ def parse_answer(text):
         if allowed and value.strip().lower() not in [a.lower() for a in allowed]:
             return {}, "The answer for " + name + " is not one of the allowed values"
     if "explanation" not in [name.lower() for name in values]:
-        values["explanation"] = result["explanation"]
+        values["explanation"] = explanation
     return values, ""
+
+
+def as_text(value):
+    """An answer as the Lab keeps it: text as it is, a number as JavaScript writes it
+    (3, 2.5), true and false as yes and no. None: not an answer."""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            return None
+        return str(int(value)) if value.is_integer() and abs(value) < 1e21 else repr(value)
+    return value if isinstance(value, str) else None
 
 
 def short_code(out):
@@ -403,20 +442,28 @@ if __name__ == "__main__":
 
 const KEY_NAMES:Record<Provider,string>={openai:'OPENAI_API_KEY',anthropic:'ANTHROPIC_API_KEY',gemini:'GEMINI_API_KEY',openrouter:'OPENROUTER_API_KEY'};
 export const keyVariable=(provider:Provider)=>KEY_NAMES[provider];
-// The values the answer format allows, by field (`score` for the single score or category).
-function allowedValues(frame:RequestFrame,fields:string[]):Record<string,string[]>{
+// The values the answer format allows, by field (`score` for the single score or category). keys: the fields'
+// keys in the named format (absent: the earlier format). A whole number there is allowed as the Lab keeps it (3),
+// and a scale given by its ends (Google's schema) allows each whole number between them.
+function allowedValues(frame:RequestFrame,fields:string[],keys?:string[]):Record<string,string[]>{
  const schema=requestParts(frame).schema,out:Record<string,string[]>={};
- const list=(name:string,spec:any)=>{if(Array.isArray(spec?.enum)&&spec.enum.every((value:unknown)=>typeof value==='string')&&spec.enum.some((value:string)=>value!==''))out[name]=spec.enum;};
+ const list=(name:string,spec:any)=>{
+  if(Array.isArray(spec?.enum)&&spec.enum.every((value:unknown)=>typeof value==='string')&&spec.enum.some((value:string)=>value!==''))out[name]=spec.enum;
+  else if(Array.isArray(spec?.enum)&&spec.enum.length&&spec.enum.every((value:unknown)=>Number.isInteger(value)))out[name]=spec.enum.map(String);
+  else if(String(spec?.type).toLowerCase()==='integer'&&Number.isInteger(spec?.minimum)&&Number.isInteger(spec?.maximum)&&spec.maximum>=spec.minimum&&spec.maximum-spec.minimum<=1000)out[name]=Array.from({length:spec.maximum-spec.minimum+1},(_,i)=>String(spec.minimum+i));
+ };
  if(!schema)return out;
- if(fields.length)fields.forEach((name,i)=>list(name,schema.properties?.answers?.properties?.['f'+i]));else list('score',schema.properties?.score);
+ if(keys)fields.length?fields.forEach((name,i)=>list(name,schema.properties?.[keys[i]])):list('score',schema.properties?.score);
+ else if(fields.length)fields.forEach((name,i)=>list(name,schema.properties?.answers?.properties?.['f'+i]));else list('score',schema.properties?.score);
  return out;
 }
 // text, pdf: the run's request for a text and for a PDF sent as a file (lib/request-frame.ts); at least one.
 // repeats: the run's annotations per text (absent: one). inserts: for each placeholder of the prompt that was
 // filled in, the corpus column that holds its values (null: the study no longer has the column).
-export type ScriptInput={lab:string;studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;repeats?:number;note?:string;inserts?:[string,string|null][]};
+// settings: the run's answer settings (for the named format).
+export type ScriptInput={lab:string;studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;settings?:AnswerSettings;repeats?:number;note?:string;inserts?:[string,string|null][]};
 export function scriptValues(input:ScriptInput):Record<string,string>{
- const frame=(input.text||input.pdf)!,model=requestParts(frame).model;
+ const frame=(input.text||input.pdf)!,model=requestParts(frame).model,named=!input.plain&&input.settings?.named===true,keys=named?wireKeys(input.fields,input.settings):undefined;
  return {
   LAB_VERSION:docLine(input.lab),STUDY_NAME:docLine(input.studyName),RUN_DESCRIPTION:docLine(input.runDescription),
   SCRIPT_NOTE:input.note?'\n\n'+input.note.split('\n').map(docLine).join('\n'):'',
@@ -424,7 +471,7 @@ export function scriptValues(input:ScriptInput):Record<string,string>{
   PROVIDER:JSON.stringify(input.provider),URL:JSON.stringify(frame.url),
   REQUEST:input.text?pyLiteral(JSON.parse(input.text.body)):'None',REQUEST_PDF:input.pdf?pyLiteral(JSON.parse(input.pdf.body)):'None',
   INSERTS:pyLiteral(Object.fromEntries(input.inserts||[])),
-  FIELDS:pyLiteral(input.plain?[]:input.fields),ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
+  FIELDS:pyLiteral(input.plain?[]:input.fields),KEYS:keys?pyLiteral(keys):'None',RATIONALE:named&&input.settings?.rationale!==false&&!input.fields.some(isExplanationField)?JSON.stringify(RATIONALE_KEY):'None',ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields,keys)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
   TIMEOUT:String(input.provider==='gemini'&&isGemini4(model)?900:180),
  };
 }

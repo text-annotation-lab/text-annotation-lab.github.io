@@ -1,6 +1,6 @@
 // The tables in the Export tab's files, each as rows of cells with the column names first: one run text by
 // text and request by request, the runs of a study with their settings, and the corpus as it was sent.
-import {answersLabel,fieldSpec,PLAIN_FIELD,type AnswerSettings} from '../answer-types';
+import {answersLabel,fieldSpec,wireKeys,RATIONALE_KEY,PLAIN_FIELD,type AnswerSettings} from '../answer-types';
 import {fieldsOf,valueOf} from './view';
 import {explanationOf,runLines,sourceOf,subjectField,subjectHeadings,uniqueNames,unitOf,type Dataset,type RunLine} from './export';
 import {costOf,latencyOf,requestLines,rowForRun,shortHash,tokensOf,type ExportStudy,type RequestLine} from './export-data';
@@ -158,14 +158,15 @@ export function codebook(answerFields:string[],settings:AnswerSettings|undefined
  if(settings?.plain)return '# Answer fields\n\nThe model was asked for a free-text reply: there were no answer fields and no answer format. The whole reply is stored as `response`; a reply that is one JSON object also has a column for each of its values.\n';
  const escape=(text:string)=>text.replace(/\|/g,'\\|').replace(/\s*\n\s*/g,' ');
  const types={category:'category',ordinal:'ordinal scale',number:'number',boolean:'yes / no',text:'free text'} as const;
- const lines=['# Answer fields','','The model had to return these fields as JSON that follows a schema (structured output; see `output_schema.json`). The Lab sends each named field under a short key (f0, f1, …) and stores the answer under the field’s name.','','| Field | Column | Key in the schema | Type | Allowed values | Description |','|---|---|---|---|---|---|'];
+ const named=settings?.named===true,keys=wireKeys(answerFields,settings);
+ const lines=['# Answer fields','',named?'The model had to return these fields as JSON that follows a schema (structured output; see `output_schema.json`), each under its own key and type: a scale as a whole number, a number as a number, yes / no as true or false, anything else as text. Nothing about the answer format was added to the prompt. The Lab stores each answer as text under the field’s name (a scale’s 3 as 3, true and false as yes and no).':'The model had to return these fields as JSON that follows a schema (structured output; see `output_schema.json`). The Lab sends each named field under a short key (f0, f1, …) and stores the answer under the field’s name.','','| Field | Column | Key in the schema | Type | Allowed values | Description |','|---|---|---|---|---|---|'];
  if(!answerFields.length)lines.push('| Score / category | score | score | text | as the prompt defines | The final score or category |');
  answerFields.forEach((name,i)=>{
   const spec=fieldSpec(settings,name);
-  lines.push(`| ${escape(name)} | ${escape(name)} | answers.f${i} | ${spec?types[spec.type]:'text'} | ${spec?escape((spec.type==='boolean'?['yes','no']:spec.values).join(', ')):'as the prompt defines'} | ${escape(spec?.description||'')} |`);
+  lines.push(`| ${escape(name)} | ${escape(name)} | ${named?escape(keys[i]):'answers.f'+i} | ${spec?types[spec.type]:'text'} | ${spec?escape((spec.type==='boolean'?['yes','no']:spec.values).join(', ')):'as the prompt defines'} | ${escape(spec?.description||'')} |`);
  });
- if(!answerFields.some(name=>lower(name)==='explanation'))lines.push(settings?.rationale===false?'| Explanation | (none) | explanation | | | No explanation was requested; the key is returned empty |':'| Explanation | explanation | explanation | free text | | One explanation of the answers, written before them |');
+ if(!answerFields.some(name=>lower(name)==='explanation'))lines.push(named?(settings?.rationale===false?'| Explanation | (none) | (none) | | | No explanation was requested |':`| Explanation | explanation | ${RATIONALE_KEY} | free text | | One explanation of the answers, written before them |`):settings?.rationale===false?'| Explanation | (none) | explanation | | | No explanation was requested; the key is returned empty |':'| Explanation | explanation | explanation | free text | | One explanation of the answers, written before them |');
  lines.push('','A field named like one of a table’s own columns (status, error, …) is written there as `answer_<name>`.');
- if(knowledge)lines.push('','Model knowledge: each field also accepts INSUFFICIENT_KNOWLEDGE, for a judgment the model cannot make reliably.');
+ if(knowledge)lines.push('','Model knowledge: each field also accepts INSUFFICIENT_KNOWLEDGE, for a judgment the model cannot make reliably.'+(named?' A scale, a number, or yes / no is therefore sent as text, limited to its values and INSUFFICIENT_KNOWLEDGE.':''));
  return lines.join('\n')+'\n';
 }

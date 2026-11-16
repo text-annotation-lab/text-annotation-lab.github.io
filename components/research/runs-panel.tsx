@@ -12,7 +12,8 @@ import {computeIntervals,intervalsOf} from '@/lib/research/intervals';
 import {comparisonReport,groupColumns} from '@/lib/research/comparison-report';
 import {fileStem,runLines,sourceOf,unitOf,type Dataset,type RunLine} from '@/lib/research/export';
 import {scaleText} from '@/lib/research/score-scale';
-import {requestLines,runRequests} from '@/lib/research/export-data';
+import {requestLines,requestParts,runRequests} from '@/lib/research/export-data';
+import {formText} from '@/lib/request-frame';
 import {runFacts,type RunFacts} from '@/lib/research/export-tables';
 import type {RecordedRequest} from '@/lib/research/requests';
 import {LABEL_LENGTH,retryable,runState,type RunState} from '@/lib/research/runs';
@@ -42,6 +43,11 @@ function RunSettings({dataset,run,facts,state,onClose}:{dataset:PanelData;run:Ru
  const sent=useMemo(()=>runRequests({name:'',dataset,requests:dataset.requests,lab:''},run.number),[dataset.rows,dataset.requests,run.number]);
  const frame=(sent.text||sent.pdf)?.frame;
  const body=useMemo(()=>{if(!frame)return '';try{return JSON.stringify(JSON.parse(frame.body),null,2);}catch{return frame.body;}},[frame?.body]);
+ // What the Lab added to the prompt (Model knowledge's paragraph; in runs of the earlier answer format, also the
+ // paragraph on that format), read from the request: what follows the prompt as written. undefined: the prompt as
+ // sent does not begin with it, and it is shown whole.
+ const asSent=useMemo(()=>{if(!frame)return undefined;try{return requestParts(frame).prompt;}catch{return undefined;}},[frame?.body]),written=formText(run.prompt||'');
+ const lead=asSent===undefined?undefined:[written,written.trimEnd()].find(start=>asSent.startsWith(start)),added=asSent===undefined?'':lead===undefined?undefined:asSent.slice(lead.length).replace(/^\s+/,'');
  const kept=sent.total-sent.rebuilt-sent.unknown;
  const record=sent.rebuilt===0&&sent.unknown===0?'It was kept when the run was made.':kept===0?'It was not kept when the run was made, so it is built again here from the run’s settings by this version of the Lab.':`It was kept when the run was made for ${count(kept)} of ${count(sent.total)} requests; for the others it is built again from their settings.`;
  const batches=facts.batchIds.length?` (${facts.batchIds.join(', ')})`:'';
@@ -73,6 +79,7 @@ function RunSettings({dataset,run,facts,state,onClose}:{dataset:PanelData;run:Ru
    </dl>
    <h3>Prompt</h3>
    <pre className="research-preview-text" tabIndex={0}>{run.prompt||'(no prompt recorded)'}</pre>
+   {added?<><h3>Added by the Lab after the prompt</h3><pre className="research-preview-text" tabIndex={0}>{added}</pre></>:added===undefined&&asSent?<><h3>Prompt as sent</h3><pre className="research-preview-text" tabIndex={0}>{asSent}</pre></>:null}
    {run.system&&<><h3>System prompt</h3><pre className="research-preview-text" tabIndex={0}>{run.system}</pre></>}
    <h3>Shared request body</h3>
    {frame?<>

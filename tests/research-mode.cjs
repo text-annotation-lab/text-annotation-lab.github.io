@@ -85,8 +85,9 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  modes()[1].props.onClick();await h.flush();assert.equal(h.latest().processing,'batch');assert.equal(modes()[1].props['aria-checked'],true);assert(main().includes('Results arrive later'));
  modes()[0].props.onClick();await h.flush();assert.equal(h.latest().processing,'instant');assert(!main().includes('Results arrive later'));
  h.button('Processing options').props.onClick();await h.flush();assert.throws(()=>h.find(n=>n.props?.id==='processing-mode'));h.find(n=>n.props?.id==='annotation-concurrency');h.button('Processing options').props.onClick();await h.flush();
- // All: a second run; the first results are kept. Nothing remains, since every text has a result from these settings.
- assert(h.text(h.button('All (')).includes('All (3)'));assert(h.text(h.button('Remaining')).includes('Remaining (0)'));assert.equal(h.button('Remaining').props.disabled,true);
+ // All: a second run; the first results are kept. Every text remains: its result came from the standard Lab, whose
+ // requests put the answer format in a paragraph after the prompt, while research mode sends the fields by name.
+ assert(h.text(h.button('All (')).includes('All (3)'));assert(h.text(h.button('Remaining')).includes('Remaining (3)'));assert.equal(h.button('Remaining').props.disabled,false);
  await h.button('All (').props.onClick();await h.flush();
  assert.equal(h.calls.length,6);assert.deepEqual(h.latest().docs.map(doc=>[doc.status,doc.runNo,doc.earlier.length,doc.earlier[0].runNo,doc.earlier[0].score]),Array(3).fill(['done',2,1,1,'POSITIVE']));
  assert.deepEqual(h.latest().runs.map(run=>run.number),[1,2]);
@@ -130,8 +131,9 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  assert.equal(h.calls.length,callsBefore+3);assert.deepEqual(h.latest().docs.map(doc=>[doc.status,doc.runNo,doc.prompt,doc.earlier.map(entry=>entry.runNo)]),Array(3).fill(['done',3,'Classify tone again',[1]]));
  assert.equal(h.latest().requests.length,1);assert(JSON.parse(h.latest().requests[0].body).input[0].content[0].text.startsWith('Classify tone again'));assert(h.latest().docs.every(doc=>doc.requestId===h.latest().requests[0].id));
  assert(h.text(h.button('Remaining')).includes('Remaining (0)'));
- // Back at the first prompt nothing remains either: each text has a result from it in an earlier run.
- await setPrompt('Classify tone');assert(h.text(h.button('Remaining')).includes('Remaining (0)'));
+ // Back at the first prompt every text remains: its result from that prompt came from the standard Lab, which sends
+ // the answer format another way.
+ await setPrompt('Classify tone');assert(h.text(h.button('Remaining')).includes('Remaining (3)'));
 
  // Switching off from a research tab returns to the Workspace; nothing is lost and nothing research shows.
  page().onValueChange('runs');await h.flush();assert.equal(page().value,'runs');
@@ -185,7 +187,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.equal(typed.all(n=>n.type==='ResearchAnswerFields').length,0,'The standard Lab keeps its own answer fields');assert.deepEqual(standard().names,[]);assert.deepEqual(notes(),[]);
   mode().onChange(true);await typed.flush();
   assert.equal(typed.all(n=>n.type==='AnswerFields').length,0);assert.deepEqual(editor().names,[]);assert.equal(editor().settings,undefined);
-  const tone={name:'Tone',type:'category',values:['positive','negative'],description:'Overall tone.'},asked={rationale:false,fields:[tone,{name:'Notes',type:'text',values:[],description:''}]},sentForm={rationale:false,fields:[tone]};
+  const tone={name:'Tone',type:'category',values:['positive','negative'],description:'Overall tone.'},asked={rationale:false,fields:[tone,{name:'Notes',type:'text',values:[],description:''}]},sentForm={rationale:false,named:true,fields:[tone]};
   editor().onChange(['Tone','Notes'],asked);await typed.flush();
   assert.deepEqual(typed.latest().answerFields,['Tone','Notes']);assert.deepEqual(typed.latest().answerSettings,asked,'The study keeps the fields as they were entered');assert.deepEqual(editor().settings,asked);
   await typed.button('All (').props.onClick();await typed.flush();
@@ -200,7 +202,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert(typed.text(typed.button('Remaining')).includes('Remaining (3)'));
   replies.push(...Array(3).fill({score:'',explanation:'Hopeful wording.',answers:{f0:'negative',f1:'Dry.'}}));
   await typed.button('Remaining').props.onClick();await typed.flush();
-  assert.deepEqual(typed.latest().docs.map(doc=>[doc.runNo,doc.answers.f0,JSON.stringify(doc.answerSettings),doc.earlier.map(entry=>[entry.runNo,JSON.stringify(entry.answerSettings)])]),Array(3).fill([2,'negative',JSON.stringify({fields:[tone]}),[[1,JSON.stringify(sentForm)]]]));
+  assert.deepEqual(typed.latest().docs.map(doc=>[doc.runNo,doc.answers.f0,JSON.stringify(doc.answerSettings),doc.earlier.map(entry=>[entry.runNo,JSON.stringify(entry.answerSettings)])]),Array(3).fill([2,'negative',JSON.stringify({named:true,fields:[tone]}),[[1,JSON.stringify(sentForm)]]]));
   assert.deepEqual(typed.latest().runs.map(run=>run.number),[1,2]);
   // Plain text: one field named “response”, and no settings of the fields are sent.
   editor().onChange(['Tone','Notes'],{...asked,plain:true});await typed.flush();
@@ -280,7 +282,8 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   held.button('Pause').props.onClick();await until(held,()=>c.statuses()[0]==='pending');
   assert.deepEqual(c.statuses(),['pending','done','done']);assert.equal(held.calls.length,3,'Nothing is sent after a pause');
   const waiting=held.latest().docs[0];assert.equal(waiting.error,undefined);assert.equal(waiting.startedAt,undefined);assert.equal(waiting.concurrency,undefined);
-  assert(held.all(n=>n.props?.role==='status').some(n=>held.text(n).includes('Paused. Active annotations have finished; completed results are kept.')));
+  // The pause is reported once the run has wound down (under load, a moment after the text is back in the queue).
+  await until(held,()=>held.all(n=>n.props?.role==='status').some(n=>held.text(n).includes('Paused. Active annotations have finished; completed results are kept.')));
   assert(held.text(held.button('Remaining')).includes('Remaining (1)'));held.button('Remaining').props.onClick();await until(held,()=>c.statuses().every(status=>status==='done'));
   assert.equal(held.calls.length,4);
 

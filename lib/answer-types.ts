@@ -4,7 +4,10 @@
 export type FieldType='category'|'ordinal'|'number'|'boolean'|'text';
 export type FieldSpec={name:string;type:FieldType;values:string[];description:string};
 // plain: no fields, the whole reply is kept. rationale false: no shared explanation is asked for.
-export type AnswerSettings={plain?:true;rationale?:false;fields?:FieldSpec[]};
+// named (research mode): each field is sent under its own name and type, and nothing is added to the prompt
+// (see wireKeys and lib/answer-fields.ts). Without it, fields go under short keys (f0, f1, …) as text, with a
+// paragraph on the answer format after the prompt.
+export type AnswerSettings={plain?:true;rationale?:false;named?:true;fields?:FieldSpec[]};
 export const FIELD_TYPES:FieldType[]=['category','ordinal','number','boolean','text'];
 export const FIELD_TYPE_LABELS:Record<FieldType,string>={category:'Category',ordinal:'Ordinal scale',number:'Number',boolean:'Yes / no',text:'Free text'};
 export const MAX_ANSWER_FIELDS=40;
@@ -31,21 +34,46 @@ const validSpec=(f:any):f is FieldSpec=>Boolean(f)&&typeof f==='object'&&typeof 
 export function cleanAnswerSettings(value:unknown):AnswerSettings|undefined{
  if(!value||typeof value!=='object'||Array.isArray(value))return undefined;
  const v=value as any,fields:FieldSpec[]=Array.isArray(v.fields)?v.fields.filter(validSpec).slice(0,MAX_ANSWER_FIELDS).map((f:FieldSpec)=>({name:f.name,type:f.type,values:[...f.values],description:f.description})):[];
- const out:AnswerSettings={...(v.plain===true?{plain:true as const}:{}),...(v.rationale===false?{rationale:false as const}:{}),...(fields.length?{fields}:{})};
+ const out:AnswerSettings={...(v.plain===true?{plain:true as const}:{}),...(v.rationale===false?{rationale:false as const}:{}),...(v.named===true&&v.plain!==true?{named:true as const}:{}),...(fields.length?{fields}:{})};
  return Object.keys(out).length?out:undefined;
 }
 export const fieldSpec=(settings:AnswerSettings|undefined,name:string)=>settings?.fields?.find(f=>f.name.toLowerCase()===name.toLowerCase());
 // What a request uses and a result records: the field names, and only the settings that differ from
 // the standard format. Two setups ask for the same answers exactly when these are the same.
-export function sentAnswers(names:string[]=[],settings?:AnswerSettings):{names:string[];settings?:AnswerSettings}{
+// named: the fields go under their own names and types (research mode).
+export function sentAnswers(names:string[]=[],settings?:AnswerSettings,named=settings?.named===true):{names:string[];settings?:AnswerSettings}{
  if(settings?.plain)return {names:[PLAIN_FIELD],settings:{plain:true}};
  const fields=names.flatMap(name=>{
   const found=fieldSpec(settings,name);if(!found)return [];
   const spec:FieldSpec={name,type:found.type,values:allowedValues(found),description:found.description.trim()};
   return spec.type==='text'&&!spec.description?[]:[spec];
  });
- const out:AnswerSettings={...(settings?.rationale===false?{rationale:false as const}:{}),...(fields.length?{fields}:{})};
+ const out:AnswerSettings={...(settings?.rationale===false?{rationale:false as const}:{}),...(named?{named:true as const}:{}),...(fields.length?{fields}:{})};
  return {names,settings:Object.keys(out).length?out:undefined};
+}
+// The key of the shared explanation in the named format.
+export const RATIONALE_KEY='rationale';
+/** A key from a field's name, where the name is not one: “Positive score” → positive_score. */
+export function slugKey(label:string):string{
+ const s=label.toLowerCase().replace(/æ/g,'ae').replace(/ø/g,'o').replace(/å/g,'a').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+ if(!s)return 'field';
+ return /^[a-z_]/.test(s)?s:'f_'+s;
+}
+// A field explains the answers in place of the shared explanation when it is named Explanation.
+export const isExplanationField=(name:string)=>name.toLowerCase()==='explanation';
+// The key each field is sent under, in the order of the names. Earlier format: f0, f1, …. Named format: the name
+// itself where it is one (letters, digits, and _, not starting with a digit), else a key made from it; never
+// “rationale” (the shared explanation's) and never another field's key (a number is added: tone_2).
+export function wireKeys(names:string[]=[],settings?:AnswerSettings):string[]{
+ if(!settings?.named)return names.map((_,i)=>'f'+i);
+ const taken:string[]=[];
+ for(const name of names){
+  let key=/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)?name:slugKey(name);
+  if(key.toLowerCase()===RATIONALE_KEY)key=key+'_field';
+  const base=key;for(let n=2;taken.some(k=>k.toLowerCase()===key.toLowerCase());n++)key=base+'_'+n;
+  taken.push(key);
+ }
+ return taken;
 }
 // Settings as they arrive with a request: already in the form `sentAnswers` gives.
 export function readAnswerSettings(raw:unknown,names:string[]):AnswerSettings|undefined{

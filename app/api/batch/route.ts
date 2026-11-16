@@ -1,8 +1,8 @@
 import {allowedOrigin,requestBody} from '@/lib/request-guards';
-import {readAnswerFields,readAnswerSettings} from '@/lib/answer-fields';
+import {readAnswerFields,readAnswerSettings,type AnswerSettings} from '@/lib/answer-fields';
 import {PROVIDERS,validModelId,reasoningOptions,GEMINI_ENABLED,type Provider} from '@/lib/providers';
 import {supportedFile} from '@/lib/extract-text';
-import {BatchError,buildBatchBody,createBatchPayload,createSplitPayload,createBatch,checkBatch,cancelBatch,validBatchId} from '@/lib/batch-provider';
+import {BatchError,buildBatchBody,createBatchPayload,createSplitPayload,createBatch,checkBatch,cancelBatch,validBatchId,type ReplyFormat} from '@/lib/batch-provider';
 import {knowledgeInstructions,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
 import {MAX_BATCH_ITEMS,MAX_BATCH_SOURCE_BYTES,MAX_BATCH_REQUEST_BYTES,MAX_SPLIT_REQUESTS,MAX_SPLIT_SOURCE_BYTES,MAX_SPLIT_UPLOAD_BYTES} from '@/lib/batch-limits';
 import {readRequestSettings} from '@/lib/request-settings';
@@ -71,7 +71,7 @@ export async function POST(request:Request){
    if(research)prepared=null;
    const payload=research?createSplitPayload(provider,runId):createBatchPayload(provider,runId);
    f.delete('files');f.delete('subjects');
-   const added=knowledge?'\n\n'+knowledgeInstructions(false):'';
+   const added=knowledge?'\n\n'+knowledgeInstructions(false,Boolean(answerSettings?.named)):'';
    for(let i=0,at=0;i<files.length;i++){
     const values=inserts?insertMap(prompt,inserts[i]):undefined,filled=placed?fillPlaces(prompt,(name,whole)=>values?values.get(name)??'':whole):undefined,written=filled?filled.prompt:inserts?fillInserts(prompt,inserts[i]):prompt;
     if(written.length>100000)throw new BatchError(`${(files[i] as File).name}: with the values of its placeholders filled in, the prompt is longer than 100,000 characters.`);
@@ -95,6 +95,9 @@ export async function POST(request:Request){
   // returned, and (summary) the summary of the model's reasoning that the requests asked for.
   const record=f.get('record');if(record!==null&&record!=='true')throw new BatchError('Invalid record setting.');
   const summary=f.get('summary');if(summary!==null&&(summary!=='true'||record!=='true'))throw new BatchError('Invalid summary setting.');
-  return reply(await checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true',summary==='true'));
+  // A run in the named format (research mode) sends its answer fields and settings, by which its replies are read.
+  let format:ReplyFormat|undefined;
+  if(f.get('answerSettings')!==null){let names:string[],settings:AnswerSettings|undefined;try{names=readAnswerFields(f.get('answerFields'));settings=readAnswerSettings(f.get('answerSettings'),names);}catch(error){throw new BatchError((error as Error).message);}if(settings?.named)format={names,settings};}
+  return reply(await checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true',summary==='true',format));
  }catch(error){return reply({error:error instanceof BatchError?error.message:'Could not process this batch request. Check your provider’s console before retrying.',uncertain:error instanceof BatchError?error.uncertain:false},error instanceof BatchError?error.status:400);}
 }

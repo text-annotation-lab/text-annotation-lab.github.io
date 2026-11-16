@@ -1,7 +1,7 @@
 import {answerInstructions,type AnswerSettings} from './answer-fields';
 import {remainingEstimateNotice} from './annotation-feedback';
-import {estimate,textTokens,usageSample,add,type Input,type EstimateConfig} from './cost-estimate/engine';
-import {ownRates,priceFor,type OwnPrice} from './cost-estimate/pricing';
+import {estimate,textTokens,usageSample,add,money,type Input,type EstimateConfig} from './cost-estimate/engine';
+import {contextWindow,ownRates,priceFor,type OwnPrice} from './cost-estimate/pricing';
 import {knowledgeInstructions,knowledgeItemText} from './model-knowledge';
 import {validModelId,annotationOutputLimit,type Provider} from './providers';
 import {documentTags} from './request-frame';
@@ -38,7 +38,7 @@ export async function studentEstimate({provider,model,effort,prompt,system,rows,
  if(!validModelId(provider,model))throw Error('Choose a supported model.');
  const pending=rows.filter(r=>r.status==='pending'),inputs:Input[]=[];
  for(const row of pending){signal?.throwIfAborted();const count=countFromCache(row,{provider,model,effort,prompt,system,answerFields,answerSettings,knowledge,webSearch});const input:Input=count!==undefined?{tokens:{low:0,high:0},requestTokens:count}:knowledge?{tokens:textTokens(documentTags(true).open+knowledgeItemText(row.fields)+documentTags(true).close)}:await fileInput(row.file);for(let n=times?Math.max(1,times(row)):1;n>0;n--)inputs.push(input);}
- const config:EstimateConfig={provider,model,effort,...(ownPrice?{rates:ownRates(provider,model,ownPrice)}:{}),...(cache?{cache,batch}:{}),...(system?{system}:{}),prompt:prompt.trim()?prompt+answerInstructions(answerFields,answerSettings)+(knowledge?'\n\n'+knowledgeInstructions(webSearch):''):'',defaultExplanation:answerSettings?.plain||answerSettings?.rationale===false?false:true,webSearch,maxTokens:maxOutput??annotationOutputLimit(provider,model),fields:answerSettings?.plain?[{name:'response',type:'string'}]:[...(answerFields.length?answerFields.map(name=>{const spec=answerSettings?.fields?.find(f=>f.name===name);return {name,type:spec?.type==='text'?'string':'category',...(spec?.description?{description:spec.description}:{})};}):[{name:'score',type:'category'}]),...(answerSettings?.rationale===false?[]:[{name:'explanation',type:'string'}])]};
+ const config:EstimateConfig={provider,model,effort,...(ownPrice?{rates:ownRates(provider,model,ownPrice)}:{}),...(cache?{cache,batch}:{}),...(system?{system}:{}),prompt:prompt.trim()?prompt+answerInstructions(answerFields,answerSettings)+(knowledge?'\n\n'+knowledgeInstructions(webSearch,Boolean(answerSettings?.named)):''):'',defaultExplanation:answerSettings?.plain||answerSettings?.rationale===false?false:true,webSearch,maxTokens:maxOutput??annotationOutputLimit(provider,model),fields:answerSettings?.plain?[{name:'response',type:'string'}]:[...(answerFields.length?answerFields.map(name=>{const spec=answerSettings?.fields?.find(f=>f.name===name);return {name,type:spec?.type==='text'?'string':'category',...(spec?.description?{description:spec.description}:{})};}):[{name:'score',type:'category'}]),...(answerSettings?.rationale===false?[]:[{name:'explanation',type:'string'}])]};
  const samples=rows.filter(r=>r.status==='done'&&r.provider===provider&&!(provider==='openrouter'&&r.file&&/\.pdf$/i.test(r.file.name)&&r.inputMode!=='pdf-native')&&r.model===model&&r.effort===effort&&r.prompt===prompt&&JSON.stringify(r.answerFields||[])===JSON.stringify(answerFields)&&JSON.stringify(r.answerSettings||null)===JSON.stringify(answerSettings||null)&&Boolean(r.webSearch)===webSearch&&(r.requestSettings?.system||'')===(system||'')).flatMap(r=>(Array.isArray(r.annotations)&&r.annotations.length?r.annotations.filter((a:any)=>a?.status==='done'):[r]).flatMap((request:any)=>{const sample=usageSample(provider,request.usage);return sample?[sample]:[];}));
  const result=estimate(config,inputs,samples);
  if(ownPrice)result.ownPrice=ownPrice;else if(research&&!priceFor(provider,model))result.unknown='The Lab has no price for this model. Type its price under Processing options to have its cost estimated.';
@@ -63,4 +63,38 @@ export async function countStudentInputs(c:CountingOptions){
   const sig=signature(c);if(c.knowledge){if(subjectCounts.size>=10000)subjectCounts.clear();subjectCounts.set(sig+'\n'+knowledgeItemText(row.fields),out.inputTokens!);}else{let map=fileCounts.get(row.file);if(!map){map=new Map();fileCounts.set(row.file,map);}if(map.size>=20)map.clear();map.set(sig,out.inputTokens!);}
  }c.onProgress?.(++completed,pending.length);}
  return studentEstimate(c);
+}
+
+// Research mode: the texts of a run that are probably too long for the model: the prompt and the text, at the middle
+// of their estimated length in tokens, with room for the longest answer, more than its context window. Only a
+// Claude model's window is known; for any other model, none. rows: the texts (or subjects) of the run. pdfs false:
+// PDFs are not read (reading every PDF of a corpus takes long; before a run they are).
+export async function tooLongTexts({provider,model,prompt,system,rows,knowledge=false,maxOutput,signal,pdfs=true}:{provider:Provider;model:string;prompt:string;system?:string;rows:any[];knowledge?:boolean;maxOutput?:number;signal?:AbortSignal;pdfs?:boolean}):Promise<{window?:number;names:string[]}>{
+ const window=contextWindow(provider,model);if(!window)return {names:[]};
+ const multiplier=priceFor(provider,model)?.tokenMultiplier||1,middle=(r:{low:number;high:number})=>(r.low+r.high)/2*multiplier;
+ const room=window-middle(textTokens((system||'')+'\n'+prompt))-(maxOutput??annotationOutputLimit(provider,model)),names:string[]=[];
+ for(const row of rows){
+  signal?.throwIfAborted();
+  // A text file has at most as many characters as bytes: one that short cannot be too long, and is not read.
+  if(!knowledge&&row.file&&(/\.pdf$/i.test(row.file.name)?!pdfs:row.file.size*multiplier/3.2<room))continue;
+  const tokens=knowledge?textTokens(knowledgeItemText(row.fields)):(await fileInput(row.file).catch(()=>undefined))?.tokens;
+  if(tokens&&middle(tokens)>room)names.push(String(row.name));
+ }
+ return {window,names};
+}
+// Research mode, before a run of more than 50 requests or with texts that are probably too long: the question to
+// confirm, with the estimated cost (as in the cost estimate; batch price for a batch). rows: the texts of the run;
+// samples: the study's results, which calibrate the estimate. undefined: nothing to ask.
+export async function runQuestion(o:{provider:Provider;model:string;effort:string;prompt:string;system?:string;rows:any[];samples:any[];answerFields?:string[];answerSettings?:AnswerSettings;knowledge?:boolean;webSearch?:boolean;cache?:boolean;batch?:boolean;times:number;maxOutput?:number;ownPrice?:OwnPrice;unit:string}):Promise<string|undefined>{
+ const requests=o.rows.length*Math.max(1,o.times),long=await tooLongTexts(o);
+ if(requests<=50&&!long.names.length)return undefined;
+ let cost='no price known for this model';
+ try{
+  const result=await studentEstimate({...o,rows:[...o.rows.map(row=>({...row,status:'pending'})),...o.samples.filter(row=>row.status==='done')],times:()=>o.times,research:true});
+  const range=o.batch?result.batch:result.total;
+  if(!result.unknown&&range)cost='about '+money(range)+(o.batch?' at batch price (½)':'')+' (a rough guide; see the cost estimate for how it is worked out)';
+ }catch{cost='the cost could not be estimated';}
+ const n=requests.toLocaleString('en-US'),units=o.unit+'s',few=long.names.slice(0,3).join(', ');
+ const longText=long.names.length?`\n\n${long.names.length} ${long.names.length===1?o.unit+' is':units+' are'} probably too long for this model (about ${Math.round((long.window??0)/1000)}k tokens including the answer), e.g. ${few}. Those requests will most likely fail.`:'';
+ return `${o.batch?'Submit a batch of':'Send'} ${n} request${requests===1?'':'s'} to ${o.model}${o.times>1?` (${o.rows.length.toLocaleString('en-US')} ${units} × ${o.times} annotations)`:''}? Provider charges apply: ${cost}.${longText}`;
 }
