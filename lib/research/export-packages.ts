@@ -34,7 +34,7 @@ const pretty=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
 // CSV files are written for analysis software, exactly as the values are.
 const CSV_NOTE='The CSV files are for analysis software: they keep every value exactly as it is (a value starting with =, +, -, or @ is not escaped, so a spreadsheet program may read it as a formula).';
 const TOKEN_NOTE='Token counts are the providers’ own: input tokens include tokens read from or written to a prompt cache, and output tokens include reasoning tokens.';
-const LOG_NOTE='A request line is the request as it was sent: the request the Lab kept when the run was made, with the document put back where it was. The Lab keeps the body of a run’s requests once, not once per text, and never an API key (keys travel in request headers). A response line is what the Lab kept of the reply: the text the model returned, the model the provider named, the stop reason, the token counts, and the response ID, not the provider’s whole response.';
+const LOG_NOTE='A request line is the request as it was sent: the request the Lab kept when the run was made, with the document put back where it was. The Lab keeps the body of a run’s requests once, not once per text, and never an API key (keys travel in request headers). A response line is what the Lab kept of the reply: the text the model returned, the summary of its reasoning where the run asked for one, the model the provider named, the stop reason, the token counts, and the response ID, not the provider’s whole response.';
 
 // The documents of a set of texts, read once. A PDF was sent as a file: it has no text, and the file goes
 // into the package under `folder`.
@@ -73,12 +73,15 @@ async function runLogs(ctx:ExportContext,run:number,find:(row:Row,result:Row)=>S
   }else request=fillRequest(sent.frame.body,{filename:doc.filename,text:doc.text});
   requests.push({...head,...(sent?{recorded:sent.recorded?'kept when the request was sent':'built again from the result’s settings by the version of the Lab that made this export',...(sent.formatUnchanged===undefined?{}:{answer_format_unchanged:sent.formatUnchanged}),url:sent.frame.url}:{}),...(note?{note}:{}),request});
   const done=result.status==='done',reply=result.output??result.rawResponse??(result.answerSettings?.plain?result.answers?.f0:undefined);
-  responses.push({...head,status:done?'ok':'error',...(done?{}:{error:String(result.error??'')}),response_text:typeof reply==='string'?reply:null,model_reported:result.modelReported??null,stop_reason:result.stopReason??null,response_id:result.responseId??null,
+  responses.push({...head,status:done?'ok':'error',...(done?{}:{error:String(result.error??'')}),response_text:typeof reply==='string'?reply:null,...(typeof result.reasoningSummary==='string'?{reasoning_summary:result.reasoningSummary}:{}),model_reported:result.modelReported??null,stop_reason:result.stopReason??null,response_id:result.responseId??null,
    ...(result.batchId?{batch_id:result.batchId}:{}),usage:result.usage??null,requested_at:result.startedAt??null,completed_at:result.time??null});
  }
  return {requests:jsonLines(requests),responses:jsonLines(responses)};
 }
 
+// The temperature a run was sent with: what its request says, or what the run's setup records.
+const temperatureOf=(run:RunFacts['run'],parts?:{temperature?:number}):number|'model default'=>parts?.temperature??run.temperature??'model default';
+const summaryWords=(run:RunFacts['run'])=>run.summary==='on'?'requested':run.summary==='off'?'not requested':'requested for part of the run';
 const explanationRequested=(facts:RunFacts)=>!facts.run.answerSettings?.plain&&(facts.run.answerSettings?.rationale!==false||facts.run.answerFields.some(name=>name.toLowerCase()==='explanation'));
 const processingWords=(facts:RunFacts)=>facts.processing==='batch'?'the provider’s batch interface':facts.processing==='instant'?'requests sent one by one':'requests sent one by one and the provider’s batch interface';
 const requestNote=(sent:RunRequests)=>sent.total===0?'':sent.rebuilt===0&&sent.unknown===0?'kept when the run was made':sent.rebuilt===sent.total?'built again from the run’s settings by the version of the Lab that made this export (the run was made before the Lab kept requests, or in the standard Lab)':`kept when the run was made for ${count(sent.total-sent.rebuilt-sent.unknown)} of ${count(sent.total)} requests; the others are built again from the results’ settings by the version of the Lab that made this export`;
@@ -93,7 +96,7 @@ function runRecord(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequests
   exported_at:exportedAt,study:study.name,data:sourceOf(dataset),
   ...(dataset.samples.length?{samples:dataset.samples.map(sampleNote)}:{}),
   run:{number:run.number,started_at:run.startedAt,finished_at:facts.finished||null,status_when_exported:run.active?'in progress':'finished',processing:processingWords(facts),batch_ids:facts.batchIds},
-  model:{provider:run.provider,requested:run.model,reported_by_api:facts.models,reasoning_effort:run.effort,max_output_tokens:parts?.limit??null},
+  model:{provider:run.provider,requested:run.model,reported_by_api:facts.models,reasoning_effort:run.effort,reasoning_summary_requested:run.summary==='in part'?'in part':run.summary==='on',temperature:temperatureOf(run,parts),max_output_tokens:parts?.limit??null},
   prompt:{version:run.promptVersion,sha256_prefix:hash,answer_format:run.answerSettings?.plain?'plain text':'structured',explanation_requested:explanationRequested(facts),answer_fields:run.answerFields,answer_settings:run.answerSettings??null},
   options:{annotations_per_text:run.repeats||1,prompt_caching:run.caching,...(dataset.kind==='knowledge'?{web_search:run.webSearch}:{})},
   // The bodies of the run's requests, with marks where each document goes (<<DOCUMENT_FILENAME>>, <<DOCUMENT_TEXT>>, <<FILE_BASE64>>).
@@ -112,7 +115,7 @@ type RunRecord=ReturnType<typeof runRecord>;
 function settingsTable(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequests):Table{
  const {dataset}=study,{run}=facts,frame=(sent.text||sent.pdf)?.frame,parts=frame?requestParts(frame):undefined;
  return [['setting','value'],['Study',study.name],['Data',sourceOf(dataset)],['Run','#'+run.number],['Started',run.startedAt],['Finished',run.active?'not finished when exported (the results so far)':facts.finished],
-  ['Provider',run.provider],['Model',run.model],['Model reported by the provider',facts.models.join('; ')||'not recorded'],['Reasoning effort',run.effort],['Max output tokens',parts?.limit??''],[`Annotations per ${unitOf(dataset)}`,(run.repeats||1)>1?`${run.repeats} (the Results sheet has the combined answers; By replicate has each annotation)`:1],
+  ['Provider',run.provider],['Model',run.model],['Model reported by the provider',facts.models.join('; ')||'not recorded'],['Reasoning effort',run.effort],['Reasoning summary',summaryWords(run)],['Temperature',temperatureOf(run,parts)],['Max output tokens',parts?.limit??''],[`Annotations per ${unitOf(dataset)}`,(run.repeats||1)>1?`${run.repeats} (the Results sheet has the combined answers; By replicate has each annotation)`:1],
   ['Prompt caching',run.caching],['Processing',processingWords(facts)],...(dataset.kind==='knowledge'?[['Web search',run.webSearch?'yes':'no']]:[]),
   ['Prompt version',`v${run.promptVersion} (${hash})`],['Prompt',run.prompt],...(parts?.system?[['Prompt as sent (with the Lab’s instructions)',parts.system]]:[]),
   ['Answer fields',run.answerSettings?.plain?'plain text: the whole reply is stored as “response”':run.answerFields.join(' | ')||'Score / category'],['Answer format',parts?.schema?JSON.stringify(parts.schema):run.answerSettings?.plain?'plain text (no answer format was sent)':'not recorded'],
@@ -191,7 +194,7 @@ export function methodsParagraph(study:ExportStudy,report:RunReport,record:RunRe
  // What the package holds: no request without recorded settings, and no script for a run that carried web search results.
  const known=Boolean(report.sent.text||report.sent.pdf),provided=['The full prompt',...(known?['the requests as sent']:[]),...(known&&!facts.webSearch?['an executable script']:[])];
  return [
-  `${unit==='text'?'Texts':'Subjects'} (N = ${count(facts.usable)}) were annotated with ${run.model} (${run.provider==='openrouter'?'through the OpenRouter API':(PROVIDER_NAMES[run.provider]||run.provider)+' API'}${reported})${period}, using ${effort}${limit?` and a maximum of ${count(limit)} output tokens`:''}.`,
+  `${unit==='text'?'Texts':'Subjects'} (N = ${count(facts.usable)}) were annotated with ${run.model} (${run.provider==='openrouter'?'through the OpenRouter API':(PROVIDER_NAMES[run.provider]||run.provider)+' API'}${reported})${period}, using ${[effort,...(typeof record.model.temperature==='number'?[`temperature ${record.model.temperature}`]:[])].join(', ')}${limit?`${typeof record.model.temperature==='number'?',':''} and a maximum of ${count(limit)} output tokens`:''}.`,
   knowledge?`No source texts were supplied: the model answered from what it has learned, given a few identifying details for each subject (see the prompt and the list of subjects).${facts.webSearch?' Web search results collected beforehand for each subject were supplied with the request.':''}`:'',
   run.answerSettings?.plain?'The model returned free-text responses.':`The model was required to return the answer fields listed in the codebook as JSON conforming to a schema (structured outputs)${explanationRequested(facts)?', with an explanation written before the answers':''}.`,
   combined,
@@ -227,7 +230,7 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   ...(run.active?['**This run was not finished when these materials were exported**: they describe the results so far.','']:[]),
   ...(knowledge?['Model knowledge: no texts were supplied. The model judged named subjects from what it has learned.'+(facts.webSearch?' Web search results collected for each subject were supplied with the request.':''),'']:[]),
   '## Summary','','| | |','|---|---|',
-  tableRow(['Provider / model',`${run.provider} / \`${run.model}\``]),tableRow(['Model reported by the API',facts.models.map(model=>'`'+model+'`').join(', ')||'—']),tableRow(['Reasoning effort',run.effort||'—']),tableRow(['Max output tokens',record.model.max_output_tokens??'—']),
+  tableRow(['Provider / model',`${run.provider} / \`${run.model}\``]),tableRow(['Model reported by the API',facts.models.map(model=>'`'+model+'`').join(', ')||'—']),tableRow(['Reasoning effort',run.effort||'—']),tableRow(['Temperature',record.model.temperature]),tableRow(['Max output tokens',record.model.max_output_tokens??'—']),
   tableRow([`${unit==='text'?'Texts':'Subjects'} with a usable annotation`,`${facts.usable} of ${facts.texts}`]),tableRow([`Annotations per ${unit}`,run.repeats||1]),tableRow(['Requests (ok / failed)',`${facts.requests.ok} / ${facts.requests.failed}`]),
   ...(facts.requests.replaced?[tableRow(['Failed attempts sent again',`${facts.requests.replaced} (their tokens are included in the token totals${options.logs?'; the logs keep them':''})`])]:[]),
   tableRow(['Annotation period',`${facts.requests.first||'—'} to ${facts.requests.last||'—'}`]),tableRow(['Prompt version / hash',`v${run.promptVersion} / \`${report.hash}\``]),tableRow(['Prompt caching',run.caching]),tableRow(['Sent through',processingWords(facts)]),'',
@@ -265,7 +268,7 @@ export async function buildSupplementary(ctx:ExportContext,run:number,options:Su
  const prompt=promptFiles(study,report,{prompt:true});
  for(const file of prompt)await add('prompt/'+file.path,file.data);
  await add('results/results.csv',toCsv(resultsTable(study,run,{texts:corpus?.texts,explanation:options.explanations})));
- await add('results/results_by_replicate.csv',toCsv(requestsTable(study,[run],hashes,{explanation:options.explanations})));
+ await add('results/results_by_replicate.csv',toCsv(requestsTable(study,[run],hashes,{explanation:options.explanations,reasoning:false})));
  if(report.agreement.length)await add('results/agreement.csv',toCsv(agreementTable(report.agreement)));
  if(corpus){
   await add('data/corpus.csv',toCsv(corpusTable(dataset,rows,corpus.texts,corpus.files)));

@@ -10,8 +10,8 @@ import {annotateGemini} from '@/lib/gemini';
 import {annotateAnthropic} from '@/lib/anthropic';
 import {knowledgeInstructions,knowledgeDocumentText,validKnowledgeFields,type KnowledgeFields,type KnowledgeResearch} from '@/lib/model-knowledge';
 import {researchKnowledge,KnowledgeWebError} from '@/lib/knowledge-web';
-import {readRequestSettings,marksCache,type RequestSettings} from '@/lib/request-settings';
-import {providerBody,requestUrl,replyCode,replyText,formText,type RequestDocument} from '@/lib/request-frame';
+import {readRequestSettings,sentRequestSettings,requestTimeout,type RequestSettings} from '@/lib/request-settings';
+import {providerBody,requestUrl,replyCode,replyText,reasoningSummary,formText,type RequestDocument} from '@/lib/request-frame';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const MAX_REQUEST_BYTES=22*1024*1024;
 export async function POST(request:Request){
@@ -37,7 +37,8 @@ export async function POST(request:Request){
  // Line breaks as a browser's form encoding writes them (already so in current browsers).
  prompt=formText(prompt);
  let answerFields:string[],answerSettings:AnswerSettings|undefined;try{answerFields=readAnswerFields(f.get('answerFields'));answerSettings=readAnswerSettings(f.get('answerSettings'),answerFields);}catch(error){return json({error:(error as Error).message},400);}
- // Research mode: prompt caching. It reaches the provider only where the model's provider caches at a mark.
+ // Research mode: request settings (prompt caching, temperature, output limit, reasoning summary, OpenAI's
+ // logs). Each reaches the provider only where it changes a request to the selected model.
  let requestSettings:RequestSettings|undefined;try{requestSettings=readRequestSettings(f.get('requestSettings'));}catch(error){return json({error:(error as Error).message},400);}
  // Research mode: the reply also carries the model the provider names, its stop reason, and the text it returned.
  const recordFlag=f.get('record');if(recordFlag!==null&&recordFlag!=='true')return json({error:'Invalid record setting.'},400);
@@ -67,15 +68,15 @@ export async function POST(request:Request){
  if(!(file instanceof File)||!file.size||file.size>20*1024*1024||!supported.test(file.name))return json({error:'Choose a PDF, DOCX, TXT, MD, HTML, or RTF file up to 20 MB.'},400);
  if(webSearch&&subjectFields){research=await researchKnowledge(provider,String(model),String(effort),auth.slice(7),subjectFields,annotationPrompt);file=new File([knowledgeDocumentText(subjectFields,research)],'subject.txt',{type:'text/plain'});}
  prompt+=answerInstructions(answerFields,answerSettings);
- const cached=marksCache(provider,String(model),requestSettings)?requestSettings:undefined;
+ const sent=sentRequestSettings(provider,String(model),requestSettings,String(effort));
  const finish=async(response:Response)=>{const result=await response.json() as {tokens?:number;[key:string]:any};const error=response.ok?annotationValidationError(result,answerFields,annotationPrompt,knowledge,answerSettings):undefined;if(response.ok&&!error)delete result.rawResponse;
   // The reply as returned is not stored a second time where the result already holds it whole: a plain-text
   // answer, or the reply kept with a rejected result.
   if(result.output!==undefined&&(result.output===result.rawResponse||answerSettings?.plain&&result.output===result.answers?.f0))delete result.output;
   return json({...result,responseFormat:annotationFormatRecord(answerFields,annotationPrompt,knowledge,answerSettings),...(error?{error}:{}),...(knowledge?{webUsed:Boolean(research)}:{}),...(research?{research,...(response.ok?{tokens:(result.tokens||0)+(research.tokens||0)}:{})}:{})},error?422:response.status);};
- if(provider==='openrouter')return finish(await annotateOpenRouter(file,prompt,String(model),String(effort),auth.slice(7),knowledge,answerFields,annotationPrompt,answerSettings,cached,record));
- if(provider==='anthropic')return finish(await annotateAnthropic(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,cached,record));
- if(provider==='gemini')return finish(await annotateGemini(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,record));
+ if(provider==='openrouter')return finish(await annotateOpenRouter(file,prompt,String(model),String(effort),auth.slice(7),knowledge,answerFields,annotationPrompt,answerSettings,sent,record));
+ if(provider==='anthropic')return finish(await annotateAnthropic(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,sent,record));
+ if(provider==='gemini')return finish(await annotateGemini(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,sent,record));
  let doc:RequestDocument;
  if(/\.pdf$/i.test(file.name)){const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));doc={filename:file.name,pdf:btoa(binary)};}else{
  let text:string;
@@ -83,11 +84,12 @@ export async function POST(request:Request){
  if(!text.trim())return json({error:'The document contains no readable text. For an image-only document, upload a PDF instead.'},400);
  if(text.length>2000000)return json({error:'The extracted text is too large. Split the document into smaller files.'},400);
  doc={filename:file.name,text};}
- const r=await fetch(requestUrl('openai',String(model)),{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},signal:AbortSignal.timeout(180000),body:JSON.stringify(providerBody({provider:'openai',model:String(model),effort:String(effort),prompt,schemaPrompt:annotationPrompt,answerFields,settings:answerSettings,request:cached,knowledge},doc))});
+ const r=await fetch(requestUrl('openai',String(model)),{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('openai',String(model),sent)),body:JSON.stringify(providerBody({provider:'openai',model:String(model),effort:String(effort),prompt,schemaPrompt:annotationPrompt,answerFields,settings:answerSettings,request:sent,knowledge},doc))});
  const out:any=await providerJson(r);
- if(!r.ok)return finish(json(providerFailure('openai',r.status,out,r.headers),r.status));
+ if(!r.ok)return finish(json(providerFailure('openai',r.status,out,r.headers,sent),r.status));
  if(!out)return finish(json({error:'OpenAI returned an unreadable response. Check OpenAI Platform usage before retrying; the request may have completed.'},502));
  const noted:Record<string,unknown>=record?{modelReported:replyCode(out.model),stopReason:replyCode([out.status,out.incomplete_details?.reason].filter(part=>typeof part==='string'&&part).join(': '))}:{};
+ if(record&&sent?.summary){const summary=reasoningSummary('openai',out);if(summary)noted.reasoningSummary=summary;}
  if(out.status!=='completed')return finish(json({...noted,error:incompleteAnnotation('openai',out.incomplete_details?.reason)},422));
  const parts=(out.output||[]).flatMap((x:any)=>x.content||[]);if(parts.some((x:any)=>x.type==='refusal'))return finish(json({...noted,...(record?{stopReason:'refusal'}:{}),error:incompleteAnnotation('openai','refusal')},422));const raw=parts.filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join('');
  if(record)noted.output=replyText(raw);

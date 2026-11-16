@@ -1,11 +1,13 @@
 import {answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
 import {providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
-import {isGemini4} from './providers';
 import {extractText,TextEncodingError} from './extract-text';
-import {providerBody,requestUrl,replyCode,replyText,type RequestDocument} from './request-frame';
+import {requestTimeout,type RequestSettings} from './request-settings';
+import {providerBody,requestUrl,replyCode,replyText,reasoningSummary,type RequestDocument} from './request-frame';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
-// record (research mode): the reply also carries the model the provider names, its stop reason, and the text it returned.
-export async function annotateGemini(file:File,prompt:string,model:string,effort:string,key:string,knowledge=false,webSearch=false,answerFields:string[]=[],schemaPrompt=prompt,settings?:AnswerSettings,record=false){
+// record (research mode): the reply also carries the model the provider names, its stop reason, the text it
+// returned, and, where the request asked for one, the summary of the model's reasoning.
+// request: research mode's request settings, as they apply to this model (lib/request-settings.ts).
+export async function annotateGemini(file:File,prompt:string,model:string,effort:string,key:string,knowledge=false,webSearch=false,answerFields:string[]=[],schemaPrompt=prompt,settings?:AnswerSettings,request?:RequestSettings,record=false){
  try {
  let doc:RequestDocument;
  if(/\.pdf$/i.test(file.name)){
@@ -16,12 +18,13 @@ export async function annotateGemini(file:File,prompt:string,model:string,effort
  if(!text.trim()||text.length>2000000)return reply({error:'The document is empty or too large. Upload readable text or split it into smaller files.'},400);
  doc={filename:file.name,text};
  }
- const r=await fetch(requestUrl('gemini',model),{method:'POST',headers:{'x-goog-api-key':key,'Content-Type':'application/json'},signal:AbortSignal.timeout(isGemini4(model)?900000:180000),body:JSON.stringify(providerBody({provider:'gemini',model,effort,prompt,schemaPrompt,answerFields,settings,knowledge},doc))});
+ const r=await fetch(requestUrl('gemini',model),{method:'POST',headers:{'x-goog-api-key':key,'Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('gemini',model,request)),body:JSON.stringify(providerBody({provider:'gemini',model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge},doc))});
  const out:any=await providerJson(r);
- if(!r.ok)return reply(providerFailure('gemini',r.status,out,r.headers),r.status);
+ if(!r.ok)return reply(providerFailure('gemini',r.status,out,r.headers,request),r.status);
  if(!out)return reply({error:'Gemini returned an unreadable response. Check Google AI Studio usage before retrying; the request may have completed.'},502);
  const candidate=out.candidates?.[0];
  const noted:Record<string,unknown>=record?{modelReported:replyCode(out.modelVersion),stopReason:replyCode(out.promptFeedback?.blockReason||candidate?.finishReason)}:{};
+ if(record&&request?.summary){const summary=reasoningSummary('gemini',out);if(summary)noted.reasoningSummary=summary;}
  if(out.promptFeedback?.blockReason||candidate?.finishReason!=='STOP')return reply({...noted,error:incompleteAnnotation('gemini',out.promptFeedback?.blockReason||candidate?.finishReason)},422);
  const raw=(candidate.content?.parts||[]).filter((p:any)=>!p.thought&&typeof p.text==='string').map((p:any)=>p.text).join('');
  if(record)noted.output=replyText(raw);

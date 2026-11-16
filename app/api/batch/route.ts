@@ -60,8 +60,10 @@ export async function POST(request:Request){
   const id=f.get('id');if(!validBatchId(provider,id))throw new BatchError('Enter a valid batch ID for the selected provider.');
   if(action==='cancel'){await cancelBatch(provider,key,id);return reply({cancelRequested:true});}
   if(action!=='check'&&action!=='collect')throw new BatchError('Unsupported batch action.');
-  // Research mode: collected results also carry the model the provider names, its stop reason, and the text it returned.
+  // Research mode: collected results also carry the model the provider names, its stop reason, the text it
+  // returned, and (summary) the summary of the model's reasoning that the requests asked for.
   const record=f.get('record');if(record!==null&&record!=='true')throw new BatchError('Invalid record setting.');
-  return reply(await checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true'));
+  const summary=f.get('summary');if(summary!==null&&(summary!=='true'||record!=='true'))throw new BatchError('Invalid summary setting.');
+  return reply(await checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true',summary==='true'));
  }catch(error){return reply({error:error instanceof BatchError?error.message:'Could not process this batch request. Check your provider’s console before retrying.',uncertain:error instanceof BatchError?error.uncertain:false},error instanceof BatchError?error.status:400);}
 }

@@ -1,14 +1,15 @@
 import {answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
 import {extractText,TextEncodingError} from './extract-text';
 import {providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
-import type {RequestSettings} from './request-settings';
-import {providerBody,requestUrl,replyCode,replyText,type RequestDocument} from './request-frame';
+import {requestTimeout,type RequestSettings} from './request-settings';
+import {providerBody,requestUrl,replyCode,replyText,reasoningSummary,type RequestDocument} from './request-frame';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export const openRouterKey=(key:string)=>/^sk-or-[\w-]+$/.test(key);
 
 // Whole PDFs use native file input; text documents and split chunks stay text.
 // record (research mode): the reply also carries the model and upstream provider named in the response, its
-// finish reason, and the text it returned.
+// finish reason, the text it returned, and, where the request asked for it, the model's reasoning as passed on.
+// request: research mode's request settings, as they apply to this model (lib/request-settings.ts).
 export async function annotateOpenRouter(file:File,prompt:string,model:string,effort:string,key:string,knowledge=false,answerFields:string[]=[],schemaPrompt=prompt,settings?:AnswerSettings,request?:RequestSettings,record=false){
  try{
   const pdfInput=/\.pdf$/i.test(file.name);
@@ -24,14 +25,15 @@ export async function annotateOpenRouter(file:File,prompt:string,model:string,ef
    doc={filename:file.name,text};
   }
   const response=await fetch(requestUrl('openrouter',model),{
-   method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},signal:AbortSignal.timeout(180000),
+   method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('openrouter',model,request)),
    body:JSON.stringify(providerBody({provider:'openrouter',model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge},doc))
   });
   const out:any=await providerJson(response);
   const served=[out?.model,out?.provider].map(replyCode).filter(Boolean).join(' via ');
   const accounting:Record<string,unknown>={inputMode:pdfInput?'pdf-native':'text',tokens:out?.usage?.total_tokens,usage:out?.usage,responseId:out?.id,...(record?{modelReported:served||undefined,stopReason:replyCode(out?.choices?.[0]?.finish_reason)}:{})};
-  if(!response.ok||out?.error){const code=Number(out?.error?.code),status=response.ok?(Number.isInteger(code)&&code>=400&&code<=599?code:502):response.status;return reply({...accounting,...providerFailure('openrouter',status,out,response.headers)},status);}
+  if(!response.ok||out?.error){const code=Number(out?.error?.code),status=response.ok?(Number.isInteger(code)&&code>=400&&code<=599?code:502):response.status;return reply({...accounting,...providerFailure('openrouter',status,out,response.headers,request)},status);}
   const choice=out?.choices?.[0];
+  if(record&&request?.summary){const summary=reasoningSummary('openrouter',out);if(summary)accounting.reasoningSummary=summary;}
   if(choice?.message?.refusal)return reply({...accounting,error:incompleteAnnotation('openrouter','refusal')},422);
   if(choice?.finish_reason!=='stop')return reply({...accounting,error:incompleteAnnotation('openrouter',choice?.finish_reason)},422);
   const raw=choice.message?.content;let result;

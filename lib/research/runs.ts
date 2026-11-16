@@ -1,6 +1,6 @@
 // Runs. A run is every annotation made with one setup (provider, model,
-// reasoning effort, prompt, and answer fields), numbered in the order the runs
-// were started. Annotating more texts with an unchanged setup adds to the
+// reasoning effort, prompt, answer fields, and, where set, temperature and
+// output limit), numbered in the order the runs were started. Annotating more texts with an unchanged setup adds to the
 // latest run; a changed setup, or annotating a text again, starts a new one.
 // A text keeps its latest result in its own fields (as it always has) and the
 // results of earlier runs in `earlier`, so nothing is overwritten. The run is
@@ -11,7 +11,11 @@ import {cleanRepeats,incomplete} from './repeats';
 
 // answerSettings: the types of the answer fields, plain text, or no explanation (absent: the standard format).
 // repeats: annotations per text, when more than one (lib/research/repeats.ts).
-export type Setup={provider:string;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;repeats?:number};
+// temperature, maxOutput: the request settings that can change an answer, as sent (lib/request-settings.ts;
+// absent: the model's own temperature, the Lab's own output limit). The other request settings (prompt caching,
+// reasoning summary, OpenAI's logs) leave the answers alone and are recorded on each result only.
+export type Setup={provider:string;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;repeats?:number;temperature?:number;maxOutput?:number};
+const tuning=(value:{temperature?:unknown;maxOutput?:unknown}|undefined)=>({...(typeof value?.temperature==='number'&&Number.isFinite(value.temperature)?{temperature:value.temperature}:{}),...(typeof value?.maxOutput==='number'&&Number.isInteger(value.maxOutput)?{maxOutput:value.maxOutput}:{})});
 // A deleted run keeps its record (marked), so its number is never used again.
 export type RunRecord=Setup&{number:number;startedAt:string;deleted?:boolean};
 // The fields of a result the research views read by name; a result may hold more.
@@ -22,18 +26,18 @@ export type Row=ResultFields&{id:string;status:string;name:string;runNo?:number;
 // Everything a single annotation writes on a text (the same list Clear results removes). requestId to lab are
 // the record research mode keeps of a request (lib/research/requests.ts); the last three belong to a result
 // made of several annotations (lib/research/repeats.ts).
-export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','requestSettings','answers','history','startedAt','concurrency','provider','score','explanation','error','model','prompt','effort','tokens','usage','time','responseId','processing','batchId','runNo','requestId','modelReported','stopReason','output','lab','repeats','annotations','consistency'] as const;
+export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','requestSettings','answers','history','startedAt','concurrency','provider','score','explanation','error','model','prompt','effort','tokens','usage','time','responseId','processing','batchId','runNo','requestId','modelReported','stopReason','output','reasoningSummary','lab','repeats','annotations','consistency'] as const;
 
 // Field names and their settings together: the same answers are asked for exactly when this is the same.
 const fieldsKey=(setup:{answerFields?:string[];answerSettings?:AnswerSettings})=>JSON.stringify([setup.answerFields||[],setup.answerSettings||null]);
 export function sameSetup(a:Setup,b:Setup){
- return a.provider===b.provider&&a.model===b.model&&a.effort===b.effort&&a.prompt===b.prompt&&fieldsKey(a)===fieldsKey(b)&&(a.repeats||1)===(b.repeats||1);
+ return a.provider===b.provider&&a.model===b.model&&a.effort===b.effort&&a.prompt===b.prompt&&fieldsKey(a)===fieldsKey(b)&&(a.repeats||1)===(b.repeats||1)&&a.temperature===b.temperature&&a.maxOutput===b.maxOutput;
 }
 // Results from before providers were recorded name their provider by the model.
 const providerOf=(row:{provider?:string;model?:string})=>row.provider||(row.model?.startsWith('gemini-')?'gemini':row.model?.startsWith('claude-')?'anthropic':'openai');
-export function setupOf(row:{provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[];answerSettings?:AnswerSettings;repeats?:number}):Setup{
+export function setupOf(row:{provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[];answerSettings?:AnswerSettings;repeats?:number;requestSettings?:{temperature?:number;maxOutput?:number}}):Setup{
  const repeats=cleanRepeats(row.repeats);
- return {provider:providerOf(row),model:row.model||'',effort:row.effort||'',prompt:row.prompt||'',answerFields:row.answerFields||[],...(row.answerSettings?{answerSettings:row.answerSettings}:{}),...(repeats?{repeats}:{})};
+ return {provider:providerOf(row),model:row.model||'',effort:row.effort||'',prompt:row.prompt||'',answerFields:row.answerFields||[],...(row.answerSettings?{answerSettings:row.answerSettings}:{}),...(repeats?{repeats}:{}),...tuning(row.requestSettings)};
 }
 const hasSettings=(row:Row)=>row.prompt!==undefined&&Boolean(row.model)&&row.status!=='pending';
 const needsNumber=(row:Row)=>row.runNo===undefined&&hasSettings(row);
@@ -68,7 +72,7 @@ export function beginRun<T extends Row>(docs:T[],runs:RunRecord[]|undefined,setu
 export function cleanRuns(value:unknown):RunRecord[]{
  if(!Array.isArray(value))return [];
  const seen=new Set<number>();
- return value.filter((r):r is RunRecord=>Boolean(r)&&typeof r==='object'&&Number.isInteger(r.number)&&r.number>0&&!seen.has(r.number)&&Boolean(seen.add(r.number))&&typeof r.model==='string'&&typeof r.prompt==='string').map(r=>({provider:String(r.provider||''),model:r.model,effort:String(r.effort||''),prompt:r.prompt,answerFields:Array.isArray(r.answerFields)?r.answerFields.filter((n:unknown)=>typeof n==='string'):[],...(cleanAnswerSettings(r.answerSettings)?{answerSettings:cleanAnswerSettings(r.answerSettings)}:{}),...(cleanRepeats(r.repeats)?{repeats:cleanRepeats(r.repeats)}:{}),number:r.number,startedAt:String(r.startedAt||''),...(r.deleted?{deleted:true}:{})})).sort((a,b)=>a.number-b.number);
+ return value.filter((r):r is RunRecord=>Boolean(r)&&typeof r==='object'&&Number.isInteger(r.number)&&r.number>0&&!seen.has(r.number)&&Boolean(seen.add(r.number))&&typeof r.model==='string'&&typeof r.prompt==='string').map(r=>({provider:String(r.provider||''),model:r.model,effort:String(r.effort||''),prompt:r.prompt,answerFields:Array.isArray(r.answerFields)?r.answerFields.filter((n:unknown)=>typeof n==='string'):[],...(cleanAnswerSettings(r.answerSettings)?{answerSettings:cleanAnswerSettings(r.answerSettings)}:{}),...(cleanRepeats(r.repeats)?{repeats:cleanRepeats(r.repeats)}:{}),...tuning(r),number:r.number,startedAt:String(r.startedAt||''),...(r.deleted?{deleted:true}:{})})).sort((a,b)=>a.number-b.number);
 }
 
 function withoutResult<T extends Row>(doc:T):T{
