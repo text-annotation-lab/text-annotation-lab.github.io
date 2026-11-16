@@ -139,15 +139,16 @@ assert.deepEqual(requestLines.map(line=>[line.row.id,line.run,line.replicate,lin
 const facts=tables.runFacts(dataset,lines.runLines(dataset)[0]);
 assert.deepEqual([facts.texts,facts.usable,facts.requests.total,facts.requests.ok,facts.requests.failed,facts.requests.replaced],[2,2,6,5,1,1]);
 const results=tables.resultsTable(study,1);
-assert.deepEqual(results[0],['doc_id','document','stance','stance_replicate_agreement','tone','tone_replicate_agreement','count','count_replicate_agreement','ironic','ironic_replicate_agreement','note','stance_explanation','explanation','stance_human','n_ok','n_error']);
-assert.deepEqual(results[1].slice(2,10),['pro',0.667,'3',0.333,'11',0.333,'true',1]);assert.deepEqual(results[2].slice(2,6),['con | pro',0,'3',0]);assert.deepEqual(results[2].slice(-2),[2,2],'Usable and failed requests of the text, a replaced attempt included');
+assert.deepEqual(results[0],['doc_id','stance','stance_replicate_agreement','stance_explanation','tone','tone_replicate_agreement','count','count_replicate_agreement','ironic','ironic_replicate_agreement','note','rationale','stance_human','n_ok','n_error'],'As in Desk: each field with its share, its explanation right after it');
+const cells=(row,names)=>names.map(name=>row[results[0].indexOf(name)]);
+assert.deepEqual(cells(results[1],['stance','stance_replicate_agreement','tone','tone_replicate_agreement','count','count_replicate_agreement','ironic','ironic_replicate_agreement']),['pro',0.667,'3',0.333,'11',0.333,'true',1]);assert.deepEqual(cells(results[2],['stance','stance_replicate_agreement','tone','tone_replicate_agreement']),['con | pro',0,'3',0]);assert.deepEqual(results[2].slice(-2),[2,2],'Usable and failed requests of the text, a replaced attempt included');
 assert(!tables.resultsTable({...study,dataset:{...dataset,rows:[{...single,id:'s',name:'s.txt',runNo:1}],runs:[]}},1)[0].some(name=>name.includes('replicate_agreement')),'No share for one annotation per text');
 const byRequest=tables.requestsTable(study,[1],new Map());
-assert.deepEqual(byRequest[0].slice(9,15),['doc_id','document','replicate','attempt','status','sent_again']);
-assert.deepEqual(byRequest.slice(1).map(line=>line.slice(9,15)),[['t1','t1.txt',1,1,'ok',''],['t1','t1.txt',2,1,'ok',''],['t1','t1.txt',3,1,'ok',''],['t2','t2.txt',1,1,'ok',''],['t2','t2.txt',2,1,'error',''],['t2','t2.txt',3,1,'error','yes'],['t2','t2.txt',3,2,'ok','']]);
+const at=name=>byRequest[0].indexOf(name);assert.deepEqual(byRequest[0].slice(8,11),['doc_id','replicate','status']);
+assert.deepEqual(byRequest.slice(1).map(line=>[line[at('doc_id')],line[at('replicate')],line[at('attempt')],line[at('status')],line[at('sent_again')]]),[['t1',1,1,'ok',''],['t1',2,1,'ok',''],['t1',3,1,'ok',''],['t2',1,1,'ok',''],['t2',2,1,'error',''],['t2',3,1,'error','yes'],['t2',3,2,'ok','']]);
 assert.deepEqual(byRequest.slice(1).map(line=>line[byRequest[0].indexOf('stance')]),['pro','con','Pro','con','','','pro'],'Each annotation’s own answer');
 assert.equal(byRequest[5][byRequest[0].indexOf('error')],'The model stopped before finishing.');
-const overview=tables.runsOverview(study,new Map());assert.equal(overview[1][overview[0].indexOf('annotations_per_text')],3);assert.equal(overview[0].indexOf('annotations_per_text'),overview[0].indexOf('n_texts_with_usable_answer')+1);
+const overview=tables.runsOverview(study,new Map());assert.equal(overview[1][overview[0].indexOf('replicates')],3);assert.equal(overview[0].indexOf('replicates'),overview[0].indexOf('n_texts')+1,'Desk’s place');
 
 (async()=>{
  const pack=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:new Date('2026-11-16T12:00:00.000Z')},1,{texts:true,explanations:true,logs:true});
@@ -162,7 +163,7 @@ const overview=tables.runsOverview(study,new Map());assert.equal(overview[1][ove
  assert.equal(readCsv(await read('results/results_by_replicate.csv')).length,8);
  const sent=(await read('logs/requests.jsonl')).trim().split('\n').map(line=>JSON.parse(line)),replies=(await read('logs/responses.jsonl')).trim().split('\n').map(line=>JSON.parse(line));
  assert.deepEqual(sent.map(line=>[line.doc_id,line.replicate,line.attempt,line.sent_again]),[['t1',1,1,undefined],['t1',2,1,undefined],['t1',3,1,undefined],['t2',1,1,undefined],['t2',2,1,undefined],['t2',3,1,true],['t2',3,2,undefined]]);
- assert.deepEqual(replies.map(line=>line.status),['ok','ok','ok','ok','error','error','ok']);assert.deepEqual(Object.keys(sent[0]).slice(0,4),['doc_id','document','run','replicate']);
+ assert.deepEqual(replies.map(line=>line.status),['ok','ok','ok','ok','error','error','ok']);assert.deepEqual(Object.keys(sent[0]).slice(0,4),['doc_id','replicate','attempt','request']);
  assert((await read('scripts/annotate.py')).includes('\nREPLICATES = 3\n'));assert((await read('scripts/annotate_template.py')).includes('REPLICATES = {{REPLICATES}}'));
  // A complete run without ties, and one annotation per text: the methods text says only what applies.
  const tidy={...study,dataset:{...dataset,rows:[exportRows[0]]}},tidyReadme=await (async()=>{const p=await packages.buildSupplementary({study:tidy,read:data.documentReader(tidy.dataset,file=>file.text()),now:new Date('2026-11-16T12:00:00.000Z')},1,{texts:false,explanations:true,logs:false});const f=p.files.find(entry=>entry.path.endsWith('README.md'));return f.data;})();

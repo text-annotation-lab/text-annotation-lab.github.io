@@ -159,7 +159,7 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
  assert(knowledgePage.includes("{research&&<DetailSteps index={currentAt} total={rows.length} onStep={stepTo}/>}"));assert(knowledgePage.includes("{research&&<ResearchDetail row={current} columns={columns} study={{kind:'knowledge',requests,versions:promptVersions}}/>}"));
  // The export's logs and the details are written by the same code.
  const packages=fs.readFileSync(path.join(root,'lib/research/export-packages.ts'),'utf8');
- assert(packages.includes('requests.push({...head,...requestRecord(sent,doc,result,pdf)});')&&packages.includes('responses.push({...head,...responseRecord(result)});'));
+ assert(packages.includes('const {request,...kept}=requestRecord(sent,doc,result,pdf),{status,error,...reply}=responseRecord(result)')&&packages.includes('requests.push({...head,request,run,')&&packages.includes('response:reply,run,'));
 
  console.log('Text details: technical details per request, the full request and response as the logs hold them, and Previous / Next.');
 })().catch(error=>{console.error(error);process.exit(1);});

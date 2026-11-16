@@ -125,12 +125,13 @@ export async function runAgreement(dataset:Dataset,run:number,intervals:Interval
  return {lines,pairs,skipped};
 }
 // The agreement figures as a table, one row per comparison.
-export function agreementTable(lines:AgreementLine[]):Table{
+// keyOf: the column of a line's field in the results tables (the field's name where not given).
+export function agreementTable(lines:AgreementLine[],keyOf:(line:AgreementLine)=>string=line=>fieldLabel(line.field)):Table{
  // Four decimals: more would not be meaningful for a coefficient or a bootstrap interval.
  const round=(x:number)=>Math.round(x*10000)/10000,value=(x:number|null|undefined):string|number=>x===null||x===undefined||!Number.isFinite(x)?'':round(x);
  const stats=['percent_agreement','cohen_kappa','weighted_kappa_linear','weighted_kappa_quadratic','krippendorff_alpha','gwet_ac1','gwet_ac2_linear'] as const;
  const keys={percent_agreement:'percentAgreement',cohen_kappa:'cohenKappa',weighted_kappa_linear:'weightedKappaLinear',weighted_kappa_quadratic:'weightedKappa',krippendorff_alpha:'krippendorffAlpha',gwet_ac1:'gwetAC1',gwet_ac2_linear:'gwetAC2Linear'} as const;
  const header=['run','field','annotations','compared_with','level_of_measurement','n','n_with_label','n_left_out_not_on_scale',...stats.flatMap(name=>[name,name+'_ci_low',name+'_ci_high']),'spearman_rho','pearson_r','mean_absolute_error','scale_or_categories'];
- return [header,...lines.map(a=>[a.run,fieldLabel(a.field),a.source==='model'?`model (run ${a.run})`:a.source,a.comparedWith,a.stats.level,a.stats.n,a.withLabel,a.stats.leftOut.n,
+ return [header,...lines.map(a=>[a.run,keyOf(a),a.source==='model'?`model (run ${a.run})`:a.source,a.comparedWith,a.stats.level,a.stats.n,a.withLabel,a.stats.leftOut.n,
   ...stats.flatMap(name=>{const ci=a.stats.ci[keys[name]];return [value(a.stats[keys[name]]),ci?round(ci[0]):'',ci?round(ci[1]):''];}),value(a.stats.spearman),value(a.stats.pearson),value(a.stats.mae),a.basis])];
 }

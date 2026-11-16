@@ -173,12 +173,12 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const dataset={kind:'texts',rows,runs:[{...setup,temperature:0.2,maxOutput:4000,number:1,startedAt:'2026-11-16T10:00:00Z'},{...setup,model:'gpt-6-sol',number:2,startedAt:'2026-11-16T11:00:00Z'},{...setup,number:3,startedAt:'2026-11-16T12:00:00Z'}],columns:[],samples:[]};
  const lines=exporting.runLines(dataset);assert.deepEqual(lines.map(line=>line.summary),['on','off','in part']);assert.deepEqual(lines.map(line=>[line.temperature,line.maxOutput]),[[0.2,4000],[undefined,undefined],[undefined,undefined]]);
  const exported={name:'Settings',dataset,lab:'test'},overview=tables.runsOverview(exported,new Map()),col=name=>overview[0].indexOf(name);
- assert.deepEqual(overview[0].slice(col('reasoning_effort'),col('reasoning_effort')+5),['reasoning_effort','reasoning_summary_requested','temperature','max_output_tokens','prompt_caching']);
+ assert.deepEqual(overview[0].slice(col('effort'),col('effort')+5),['effort','thinking','temperature','max_output_tokens','caching'],'Desk’s columns');assert(col('reasoning_summary_requested')>col('notes'),'The Lab’s own column comes after Desk’s');
  assert.deepEqual(overview.slice(1).map(line=>[line[col('reasoning_summary_requested')],line[col('temperature')],line[col('max_output_tokens')]]),[['yes',0.2,4000],['no','default',12000],['in part','default',12000]]);
  const long=tables.requestsTable(exported,undefined,new Map()),at=long[0].indexOf('reasoning_summary');
- assert.equal(long[0][at-1],'explanation');assert.equal(long[0][at+1],'error');assert.deepEqual(long.slice(1).map(line=>line[at]),['Read the text, chose A.','Stopped early.','','',''],'A failed request keeps its summary');
+ assert.equal(long[0][at-1],'rationale');assert.equal(long[0][at+1],'parse_error');assert.deepEqual(long.slice(1).map(line=>line[at]),['Read the text, chose A.','Stopped early.','','',''],'A failed request keeps its summary');
  assert(!tables.requestsTable(exported,undefined,new Map(),{reasoning:false})[0].includes('reasoning_summary'),'Left out of the supplementary table');
- assert(!tables.requestsTable(exported,[2],new Map())[0].includes('reasoning_summary'),'No column for a run without summaries: its table is the one it was');
+ assert(tables.requestsTable(exported,[2],new Map())[0].includes('reasoning_summary'),'As in Desk, the column is there (empty) for a run without summaries');
  const workbook=load('lib/research/export-workbook.ts');assert(workbook.isProse('reasoning_summary'),'Kept as text in the workbook');
  // The supplementary repository of the run with the settings: record, README, methods text, and logs.
  const packages=load('lib/research/export-packages.ts'),packStudy={name:'Settings',lab:'test',dataset:{...dataset,rows:rows.map(row=>({...row,file:new File(['Text of '+row.id],row.name),startedAt:'2026-11-16T10:00:00.000Z',time:'2026-11-16T10:00:03.000Z',processing:'instant'}))}};
@@ -190,7 +190,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert(readme.includes('| Temperature | 0.2 |')&&readme.includes('| Max output tokens | 4000 |'),'README: the settings');
  assert(readme.includes('using reasoning effort “medium”, temperature 0.2, and a maximum of 4,000 output tokens.'),readme.split('\n').find(line=>line.startsWith('> ')));
  assert(!(await read(pack,'results/results_by_replicate.csv')).includes('reasoning_summary'),'The supplementary table of requests leaves the summaries out');
- assert.deepEqual((await read(pack,'logs/responses.jsonl')).trim().split('\n').map(line=>JSON.parse(line).reasoning_summary),['Read the text, chose A.','Stopped early.'],'The logs keep them');
+ assert.deepEqual((await read(pack,'logs/responses.jsonl')).trim().split('\n').map(line=>JSON.parse(line).response.reasoning_summary),['Read the text, chose A.','Stopped early.'],'The logs keep them');
  const usual=await build(2),usualRecord=JSON.parse(await read(usual,'metadata.json')),usualReadme=await read(usual,'README.md');
  assert.deepEqual([usualRecord.model.reasoning_summary_requested,usualRecord.model.temperature,usualRecord.model.max_output_tokens],[false,'model default',12000]);
  assert(usualReadme.includes('| Temperature | model default |')&&usualReadme.includes('using reasoning effort “medium” and a maximum of 12,000 output tokens.'),usualReadme.split('\n').find(line=>line.startsWith('> ')));
