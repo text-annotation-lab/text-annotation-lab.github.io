@@ -3,11 +3,11 @@
 // Every table puts the common layout first (doc_id names the text; each answer field has a column under its
 // key; a field or value named like one of the tables' own columns is written as answer_<name>), and the
 // columns only the Lab has after all the others.
-import {answersLabel,fieldSpec,isExplanationField,slugKey,wireKeys,RATIONALE_KEY,PLAIN_FIELD,type AnswerSettings} from '../answer-types';
+import {fieldSpec,isExplanationField,slugKey,wireKeys,RATIONALE_KEY,PLAIN_FIELD,type AnswerSettings} from '../answer-types';
 import {fieldsOf,valueOf} from './view';
-import {docIdOf,docIds,explanationOf,runLines,sourceOf,subjectField,subjectHeadings,uniqueNames,type Dataset,type RunLine} from './export';
+import {docIdOf,docIds,explanationOf,runLines,subjectField,subjectHeadings,uniqueNames,type Dataset,type RunLine} from './export';
 import {costOf,latencyOf,requestLines,rowForRun,shortHash,tokensOf,type ExportStudy,type RequestLine} from './export-data';
-import {promptKey,runSummaries,setupOf,type Row} from './runs';
+import {promptKey,setupOf,type Row} from './runs';
 import {removedOn} from './removed';
 import {consistencyOf} from './repeats';
 import {budgetedClaude,defaultOutputLimit} from '../request-settings';
@@ -62,26 +62,6 @@ function fieldPlan(results:Row[]){
  const order:number[]=[];
  keys.forEach((key,i)=>{if(scoreOf.has(key))return;order.push(i);keys.forEach((other,j)=>{if(scoreOf.get(other)===key)order.push(j);});});
  return order.map(i=>({field:fields[i],key:keys[i]}));
-}
-function leading(dataset:Dataset){
- const chunked=dataset.kind==='texts'&&dataset.rows.some(row=>row.sourceId),fields=dataset.kind==='knowledge'?subjectHeadings(dataset.rows).filter(heading=>dataset.rows.some(row=>subjectField(row,heading)!==String(row.name??''))):[];
- const header=['doc_id',...(chunked?['source_document','chunk']:[]),...fields,...dataset.columns.map(column=>column.name)];
- const cells=(row:Row)=>[docIdOf(dataset,row),...(chunked?[String(row.sourceName??''),row.sourceId?`${row.chunkIndex} of ${row.chunkCount}`:'']:[]),...fields.map(heading=>subjectField(row,heading)),...dataset.columns.map((_,i)=>row.cells?.[i]??'')];
- return {header,cells};
-}
-// results_all_runs_wide.csv: one row per text, its doc_id, labels, and metadata, then every run's answers side by
-// side under the tables' column names (run1_tone, run1_rationale, …).
-export function wideTable(dataset:Dataset):(string|number)[][]{
- const lead=leading(dataset),runs=runSummaries(dataset.rows,dataset.runs);
- const plan=runs.map(run=>{
-  const results=dataset.rows.map(row=>rowForRun(row,run.number));
-  return {run:run.number,results,fields:fieldPlan(results),explanation:results.some(result=>result.status==='done'&&explanationOf(result))};
- });
- const header=uniqueNames([...lead.header,...plan.flatMap(p=>[...p.fields.map(f=>`run${p.run}_${f.key}`),...(p.explanation?[`run${p.run}_rationale`]:[])])]);
- return [header,...dataset.rows.map((row,i)=>[...lead.cells(row),...plan.flatMap(p=>{
-  const result=p.results[i],done=result.status==='done';
-  return [...p.fields.map(f=>done?valueOf(result,f.field):''),...(p.explanation?[done?explanationOf(result):'']:[])];
- })])];
 }
 // The shared explanation, written before the answers: asked for unless the run sent plain text, asked for no
 // explanation, or has an answer field named Explanation.
@@ -172,15 +152,14 @@ export function resultsTable(study:ExportStudy,run:number,options:{texts?:Map<st
  })];
 }
 
-// One row per request, in the order of the runs and, within a run, of the texts. A failed request has no
-// answers, so a table of requests cannot be averaged with them by mistake; a plain-text run keeps the reply.
-// replicate: which of the text's annotations in the run the request is for (1 when the run makes one per
-// text). Columns only the Lab has, at the end: attempt (1, 2, … for one replicate sent again), sent_again (a
-// failed attempt that was queued again), cost, processing, prompt caching, web search, batch and request IDs,
-// and the Lab's version.
+// One row per request (text × replicate), in the order of the runs and, within a run, of the texts. A failed
+// attempt that Retry failed replaced is not a row: runs.csv counts those, and the logs keep them. A failed request
+// has no answers, so a table of requests cannot be averaged with them by mistake; a plain-text run keeps the reply.
+// replicate: which of the text's annotations in the run the request is for (1 when the run makes one per text).
+// Model knowledge adds web_search at the end.
 export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:Map<string,string>,options:{explanation?:boolean;reasoning?:boolean}={}):Table{
  const {dataset}=study,knowledge=dataset.kind==='knowledge';
- const lines=requestLines(dataset).filter(line=>!runs||runs.includes(line.run)).map((line,i)=>({line,i})).sort((a,b)=>a.line.run-b.line.run||a.i-b.i).map(entry=>entry.line);
+ const lines=requestLines(dataset).filter(line=>!line.replaced&&(!runs||runs.includes(line.run))).map((line,i)=>({line,i})).sort((a,b)=>a.line.run-b.line.run||a.i-b.i).map(entry=>entry.line);
  const byNumber=new Map(runLines(dataset).map(run=>[run.number,run]));
  // Within the fields, a plain-text reply comes before the values of its JSON.
  const plan=fieldPlan(lines.map(line=>line.result)),reply=plan.filter(p=>p.field===PLAIN_FIELD),fields=[...reply,...plan.filter(p=>p.field!==PLAIN_FIELD)];
@@ -188,31 +167,30 @@ export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:M
  const summaryOf=(result:Row)=>typeof result.reasoningSummary==='string'?result.reasoningSummary:'';
  const header=['study','run','run_label','prompt_version','prompt_hash','provider','model_requested','model_reported','doc_id','replicate','status',...fields.map(p=>p.key),...(rationale?['rationale']:[]),...(reasoning?['reasoning_summary']:[]),
   'parse_error','error','stop_reason','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','latency_ms','requested_at','completed_at','response_id',
-  'data','reasoning_effort','attempt','sent_again','cost_usd','processing','prompt_caching',...(knowledge?['web_search']:[]),'batch_id','request_id','lab_version'];
- return [uniqueNames(header),...lines.map(({row,run,replicate,attempt,result,replaced})=>{
+  ...(knowledge?['web_search']:[])];
+ return [uniqueNames(header),...lines.map(({row,run,replicate,result})=>{
   const done=result.status==='done',used=tokensOf(result),failure=failureOf(result),line=byNumber.get(run);
   // The reply of a plain-text run is kept for a failed request too (a reply that could not be read as JSON, say).
   const value=(field:string)=>done?valueOf(result,field):field===PLAIN_FIELD&&result.answerSettings?.plain?String(result.rawResponse??result.output??result.answers?.f0??''):'';
   return [study.name,run,line?.label??'',line?.promptVersion??'',hashOf(hashes,String(result.prompt??''),setupOf(result).system),String(result.provider??''),String(result.model??''),String(result.modelReported??''),docIdOf(dataset,row),replicate,done?'ok':'error',
    ...fields.map(p=>value(p.field)),...(rationale?[done?explanationOf(result):'']:[]),...(reasoning?[summaryOf(result)]:[]),
    failure.parseError,failure.error,String(result.stopReason??''),used.input,used.output,used.reasoning,used.cacheRead,used.cacheWrite,latencyOf(result),String(result.startedAt??''),String(result.time??''),String(result.responseId??''),
-   sourceOf(dataset),String(result.effort??''),attempt,replaced?'yes':'',costOf(result),result.processing==='batch'?'batch':'instant',result.requestSettings?.cache?'on':'off',...(knowledge?[result.webSearch?'yes':'no']:[]),String(result.batchId??''),String(result.requestId??''),String(result.lab??'')];
+   ...(knowledge?[result.webSearch?'yes':'no']:[])];
  })];
 }
 
-// One row per run, with its settings, counts, and tokens; then what only the Lab records: cost, the answer
-// fields and format, and the full prompt.
+// One row per run, with its settings, counts, and tokens (Model knowledge adds web_search at the end).
 export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
- const {dataset}=study,knowledge=dataset.kind==='knowledge',lines=requestLines(dataset),system=runLines(dataset).some(run=>run.system);
+ const {dataset}=study,knowledge=dataset.kind==='knowledge',lines=requestLines(dataset);
  const header=['run','label','started_at','finished_at','status','mode','batch_id','scope','n_texts','replicates','requests_ok','requests_failed','requests_retried','requests_replaced_by_retries','provider','model_requested','models_reported','effort','thinking','temperature','max_output_tokens','caching','prompt_version','prompt_hash','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','app_version','error','notes',
-  'data','n_texts_with_usable_answer','reasoning_summary_requested',...(knowledge?['web_search']:[]),'answer_fields','answer_format','cost_usd','cost_known_for','prompt',...(system?['system_prompt']:[])];
+  ...(knowledge?['web_search']:[])];
  return [header,...runLines(dataset).map(run=>{
   const facts=runFacts(dataset,run,lines),known=facts.tokens.knownFor>0,sum=(n:number)=>known?n:'';
   const notes=run.mixed?'Settings vary within this run; see the table of requests.':run.recorded?'':'Settings read from the run’s results (the run has no record of its own).';
   return [run.number,run.label??'',run.startedAt,facts.finished,run.active?(facts.processing==='instant'?'running':'submitted'):'completed',modeOf(facts.processing),facts.batchIds.join('; '),run.scope??'',facts.texts,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,facts.requests.replaced,
    run.provider,run.model,facts.models.join('; '),run.effort||'default',thinkingOf(run),run.temperature??'default',run.maxOutput??defaultOutputLimit(run.provider,run.model),run.caching,run.promptVersion,hashOf(hashes,run.prompt,run.system),
    sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),facts.labs.join('; '),'',notes,
-   sourceOf(dataset),facts.usable,run.summary==='on'?'yes':run.summary==='off'?'no':'in part',...(knowledge?[run.webSearch?'yes':'no']:[]),run.answerFields.join(' | '),answersLabel(run.answerFields,run.answerSettings,true),facts.cost.knownFor?facts.cost.amount:'',`${facts.cost.knownFor} of ${facts.cost.of}`,run.prompt,...(system?[run.system??'']:[])];
+   ...(knowledge?[run.webSearch?'yes':'no']:[])];
  })];
 }
 

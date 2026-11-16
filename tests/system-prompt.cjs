@@ -116,10 +116,9 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.deepEqual(runs.cleanRuns([{...withOwn,number:2,startedAt:'x'}])[0].system,SYSTEM,'A run’s record keeps it');
  const dataset={kind:'texts',rows:docs,runs:[{...setup,number:1,startedAt:'2026-11-16T10:00:00Z'},{...withOwn,number:2,startedAt:'2026-11-16T11:00:00Z'}],columns:[],samples:[]},exported={name:'Own',dataset,lab:'test'};
  const hashes=await tables.promptHashes(dataset);assert.equal(hashes.size,2);
- const overview=tables.runsOverview(exported,hashes),column=overview[0].indexOf('system_prompt'),hashAt=overview[0].indexOf('prompt_hash');
- assert.equal(overview[0].at(-1),'system_prompt');assert.deepEqual(overview.slice(1).map(line=>line[column]),['',SYSTEM]);assert.notEqual(overview[1][hashAt],overview[2][hashAt]);
+ const overview=tables.runsOverview(exported,hashes),hashAt=overview[0].indexOf('prompt_hash');
+ assert(!overview[0].includes('system_prompt'),'runs.csv has no column for it: prompts/vN/system_prompt.txt holds it');assert.notEqual(overview[1][hashAt],overview[2][hashAt]);
  const long=tables.requestsTable(exported,undefined,hashes),hashColumn=long[0].indexOf('prompt_hash');assert.deepEqual(long.slice(1).map(line=>line[hashColumn]),[overview[1][hashAt],overview[2][hashAt]]);
- assert(!tables.runsOverview({...exported,dataset:{...dataset,rows:[docs[0]],runs:[dataset.runs[0]]}},hashes)[0].includes('system_prompt'),'Without one the table is what it was');
  const packages=fs.readFileSync(path.join(root,'lib/research/export-packages.ts'),'utf8');
  for(const piece of ["['System prompt',run.system||'(none)']","{path:'system_prompt.txt',data:run.system}","await add(`prompts/v${run.promptVersion}/${file.path}`,file.data)","which!=='run'?[{path:'prompt.txt',data:run.prompt},...(run.system?[{path:'system_prompt.txt',data:run.system}]:[])]",'system_prompt:run.system??null'])assert(packages.includes(piece),piece);
 

@@ -188,7 +188,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
  sheets.push({name:'Review',table:tableOf(review.map(r=>named(r.cells))),frozen:2,numbers:column=>column==='first'||column==='second',prose:column=>column.endsWith('_explanation')});
  if(groupBy)sheets.push({name:`By ${groupBy}`,table:tableOf(byGroup.map(named)),frozen:2});
 
- // The two runs' settings, side by side; the Lab's own rows (temperature, texts with a usable answer) last.
+ // The two runs' settings, side by side.
  const hashes=await promptHashes(dataset),removedIn=(run:number)=>textsOfRun(dataset,run).filter(row=>row.removedAt).length,removed=removedIn(first)+removedIn(second)>0;
  const settings=(run:RunLine,facts:ReturnType<typeof runFacts>):Record<string,string>=>{
   const state=runState(dataset.rows,run),unfinished=state==='running'?'not finished: it was still running':state==='submitted'?'not finished: its batch was still being processed':'';
@@ -200,7 +200,6 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
    started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(facts.texts-facts.active),
    ...(removed?{texts_removed_from_study_since:String(removedIn(run.number))}:{}),
    annotations_per_text:String(run.repeats||1),app_version:facts.labs.join('; ')||'not recorded',
-   temperature:run.temperature!==undefined?String(run.temperature):'model default',texts_with_a_usable_answer:String(facts.usable),
   };
  };
  const sa=settings(runA,factsA),sb=settings(runB,factsB);
