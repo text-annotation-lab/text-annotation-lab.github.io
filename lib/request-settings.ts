@@ -5,9 +5,13 @@
 // maxOutput: the most output tokens a reply may have (reasoning included), where it is not the Lab's own limit.
 // summary: the provider is asked for a readable summary of the model's reasoning, which is kept with the result.
 // store: false asks OpenAI not to keep the request in its logs (the Lab otherwise asks OpenAI to keep it).
+// system: a system prompt of the researcher's own, sent unchanged with every request in the provider's place for
+// one. The annotation prompt then opens the message that carries the text (lib/request-frame.ts); without one,
+// the annotation prompt is itself the system prompt. The box keeps what was typed; a request carries it only
+// where it holds more than spaces.
 // This file imports nothing, so anything may import it.
-export type RequestSettings={cache?:true;temperature?:number;maxOutput?:number;summary?:true;store?:false};
-export const MIN_OUTPUT_TOKENS=16,MAX_OUTPUT_TOKENS=1000000,MAX_TEMPERATURE=2;
+export type RequestSettings={cache?:true;temperature?:number;maxOutput?:number;summary?:true;store?:false;system?:string};
+export const MIN_OUTPUT_TOKENS=16,MAX_OUTPUT_TOKENS=1000000,MAX_TEMPERATURE=2,MAX_SYSTEM_PROMPT=100000;
 // The stored form: the settings in this order, and only those that are set.
 export function cleanRequestSettings(value:unknown):RequestSettings|undefined{
  if(!value||typeof value!=='object'||Array.isArray(value))return undefined;
@@ -17,6 +21,7 @@ export function cleanRequestSettings(value:unknown):RequestSettings|undefined{
  if(typeof v.maxOutput==='number'&&Number.isInteger(v.maxOutput)&&v.maxOutput>=MIN_OUTPUT_TOKENS&&v.maxOutput<=MAX_OUTPUT_TOKENS)out.maxOutput=v.maxOutput;
  if(v.summary===true)out.summary=true;
  if(v.store===false)out.store=false;
+ if(typeof v.system==='string'&&v.system!==''&&v.system.length<=MAX_SYSTEM_PROMPT)out.system=v.system;
  return Object.keys(out).length?out:undefined;
 }
 // What a request may carry: exactly the stored form, or nothing.
@@ -80,6 +85,7 @@ export function sentRequestSettings(provider:string,model:string,request?:Reques
  if(request.maxOutput!==undefined){const limit=Math.max(request.maxOutput,outputFloor(provider,model,effort));if(limit!==defaultOutputLimit(provider,model))out.maxOutput=limit;}
  if(request.summary&&summarizesReasoning(effort,provider,model))out.summary=true;
  if(request.store===false&&provider==='openai')out.store=false;
+ if(request.system?.trim())out.system=request.system;
  return Object.keys(out).length?out:undefined;
 }
 // The limit a request is sent with, and how long the Lab waits for its reply: longer where a model thinks at
@@ -91,18 +97,19 @@ export const requestTimeout=(provider:string,model:string,sent?:RequestSettings)
 // has placeholders that are filled in for each text (lib/prompt-inserts.ts). The mark then stands at the end of
 // that part, and the rest of the prompt follows in a part of its own; a prompt that begins with a placeholder
 // has nothing to cache and is sent as without the option.
-const cachedParts=(prompt:string,fixed:number|undefined,part:(text:string)=>object,mark:object):object[]|undefined=>{
+export const cachedParts=(prompt:string,fixed:number|undefined,part:(text:string)=>object,mark:object):object[]|undefined=>{
  if(fixed===undefined||fixed>=prompt.length)return [{...part(prompt),...mark}];
  return prompt.slice(0,fixed).trim()?[{...part(prompt.slice(0,fixed)),...mark},part(prompt.slice(fixed))]:undefined;
 };
 // Anthropic: the lifetime of the cache entry is five minutes, refreshed by every text that reads it; one hour
 // in a batch, whose requests may start further apart.
-export const anthropicSystem=(prompt:string,request?:RequestSettings,batch=false,fixed?:number)=>request?.cache&&cachedParts(prompt,fixed,text=>({type:'text',text}),{cache_control:batch?{type:'ephemeral',ttl:'1h'}:{type:'ephemeral'}})||prompt;
+export const anthropicMark=(batch=false)=>({cache_control:batch?{type:'ephemeral',ttl:'1h'}:{type:'ephemeral'}});
+export const anthropicSystem=(prompt:string,request?:RequestSettings,batch=false,fixed?:number)=>request?.cache&&cachedParts(prompt,fixed,text=>({type:'text',text}),anthropicMark(batch))||prompt;
 // OpenAI caches only up to a mark placed in a message, so the prompt is then sent as a developer message that
 // carries the mark, in place of `instructions`, which cannot carry one. The entry lives for 30 minutes.
 // Without the option, explicit mode with no mark switches caching off: every text is new input.
 export const OPENAI_CACHE_MODE={prompt_cache_options:{mode:'explicit'}} as const;
-const OPENAI_MARK={prompt_cache_breakpoint:{mode:'explicit'}} as const;
+export const OPENAI_MARK={prompt_cache_breakpoint:{mode:'explicit'}} as const;
 export function openaiPrompt(prompt:string,input:unknown[],request?:RequestSettings,fixed?:number){
  const content=request?.cache?cachedParts(prompt,fixed,text=>({type:'input_text',text}),OPENAI_MARK):undefined;
  return content?{input:[{role:'developer',content},...input]}:{instructions:prompt,input};
@@ -113,6 +120,7 @@ export function openRouterSystem(prompt:string,model:string,request?:RequestSett
  return cachedParts(prompt,fixed,text=>({type:'text',text}),model.startsWith('anthropic/')?{cache_control:{type:'ephemeral'}}:OPENAI_MARK)||prompt;
 }
 // The settings a request carries, in a few words (the summary line of Processing options, and the list of runs).
+// The system prompt is not among them: it stands under the annotation prompt.
 export function requestSummary(sent:RequestSettings|undefined):string[]{
  return [sent?.cache?'Prompt caching':'',sent?.temperature!==undefined?`temperature ${sent.temperature}`:'',sent?.maxOutput!==undefined?`max ${sent.maxOutput.toLocaleString('en-US')} output tokens`:'',sent?.summary?'reasoning summary':'',sent?.store===false?'not in OpenAI’s logs':''].filter(Boolean);
 }

@@ -4,7 +4,7 @@ import {answersLabel,fieldSpec,PLAIN_FIELD,type AnswerSettings} from '../answer-
 import {fieldsOf,valueOf} from './view';
 import {explanationOf,runLines,sourceOf,subjectField,subjectHeadings,uniqueNames,unitOf,type Dataset,type RunLine} from './export';
 import {costOf,latencyOf,requestLines,rowForRun,shortHash,tokensOf,type ExportStudy,type RequestLine} from './export-data';
-import type {Row} from './runs';
+import {promptKey,setupOf,type Row} from './runs';
 import {removedOn} from './removed';
 import {consistencyOf} from './repeats';
 import {defaultOutputLimit} from '../request-settings';
@@ -27,10 +27,13 @@ function identity(dataset:Dataset,short=false){
 }
 
 // The first 12 hexadecimal digits of each prompt's SHA-256, to tell at a glance whether two runs used the same prompt.
+// A prompt sent with a system prompt of one's own is hashed with it (promptKey in runs.ts); look a hash up with
+// hashOf.
+export const hashOf=(hashes:Map<string,string>,prompt:string,system?:string)=>hashes.get(promptKey(prompt,system))??'';
 export async function promptHashes(dataset:Dataset):Promise<Map<string,string>>{
  const prompts=new Set<string>();
- for(const run of runLines(dataset))prompts.add(run.prompt);
- for(const line of requestLines(dataset))if(typeof line.result.prompt==='string')prompts.add(line.result.prompt);
+ for(const run of runLines(dataset))prompts.add(promptKey(run.prompt,run.system));
+ for(const line of requestLines(dataset))if(typeof line.result.prompt==='string')prompts.add(promptKey(line.result.prompt,setupOf(line.result).system));
  const hashes=new Map<string,string>();
  for(const prompt of prompts)hashes.set(prompt,await shortHash(prompt));
  return hashes;
@@ -107,7 +110,7 @@ export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:M
   const done=result.status==='done',used=tokensOf(result);
   // The reply of a plain-text run is kept for a failed request too (a reply that could not be read as JSON, say).
   const value=(field:string)=>done?valueOf(result,field):field===PLAIN_FIELD&&result.answerSettings?.plain?String(result.rawResponse??result.output??result.answers?.f0??''):'';
-  return [study.name,sourceOf(dataset),run,versions.get(run)??'',hashes.get(String(result.prompt??''))??'',String(result.provider??''),String(result.model??''),String(result.modelReported??''),String(result.effort??''),...lead.cells(row),replicate,attempt,done?'ok':'error',replaced?'yes':'',
+  return [study.name,sourceOf(dataset),run,versions.get(run)??'',hashOf(hashes,String(result.prompt??''),setupOf(result).system),String(result.provider??''),String(result.model??''),String(result.modelReported??''),String(result.effort??''),...lead.cells(row),replicate,attempt,done?'ok':'error',replaced?'yes':'',
    ...fields.map(value),...(explained?[done?explanationOf(result):'']:[]),...(reasoned?[summaryOf(result)]:[]),
    done?'':String(result.error??''),String(result.stopReason??''),used.input,used.output,used.reasoning,used.cacheRead,used.cacheWrite,costOf(result),result.processing==='batch'?'batch':'instant',result.requestSettings?.cache?'on':'off',...(knowledge?[result.webSearch?'yes':'no']:[]),
    latencyOf(result),String(result.startedAt??''),String(result.time??''),String(result.responseId??''),String(result.batchId??''),String(result.requestId??''),String(result.lab??'')];
@@ -116,12 +119,12 @@ export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:M
 
 // One row per run, with its settings, counts, tokens, cost, and full prompt.
 export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
- const {dataset}=study,knowledge=dataset.kind==='knowledge',unit=unitOf(dataset),lines=requestLines(dataset);
- const header=['run','label','data','started_at','finished_at','status','processing','batch_ids','scope','n_'+unit+'s','n_'+unit+'s_with_usable_answer','annotations_per_'+unit,'requests_ok','requests_failed','requests_replaced_by_retries','provider','model_requested','models_reported','reasoning_effort','reasoning_summary_requested','temperature','max_output_tokens',...(knowledge?['web_search']:[]),'prompt_caching','prompt_version','prompt_hash','answer_fields','answer_format','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','cost_usd','cost_known_for','lab_versions','settings','prompt'];
+ const {dataset}=study,knowledge=dataset.kind==='knowledge',unit=unitOf(dataset),lines=requestLines(dataset),system=runLines(dataset).some(run=>run.system);
+ const header=['run','label','data','started_at','finished_at','status','processing','batch_ids','scope','n_'+unit+'s','n_'+unit+'s_with_usable_answer','annotations_per_'+unit,'requests_ok','requests_failed','requests_replaced_by_retries','provider','model_requested','models_reported','reasoning_effort','reasoning_summary_requested','temperature','max_output_tokens',...(knowledge?['web_search']:[]),'prompt_caching','prompt_version','prompt_hash','answer_fields','answer_format','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','cost_usd','cost_known_for','lab_versions','settings','prompt',...(system?['system_prompt']:[])];
  return [header,...runLines(dataset).map(run=>{
   const facts=runFacts(dataset,run,lines),known=facts.tokens.knownFor>0,sum=(n:number)=>known?n:'';
-  return [run.number,run.label??'',sourceOf(dataset),run.startedAt,facts.finished,run.active?'in progress':'finished',facts.processing,facts.batchIds.join('; '),run.scope??'',facts.texts,facts.usable,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,run.provider,run.model,facts.models.join('; '),run.effort,run.summary==='on'?'yes':run.summary==='off'?'no':'in part',run.temperature??'default',run.maxOutput??defaultOutputLimit(run.provider,run.model),...(knowledge?[run.webSearch?'yes':'no']:[]),run.caching,run.promptVersion,hashes.get(run.prompt)??'',run.answerFields.join(' | '),answersLabel(run.answerFields,run.answerSettings,true),
-   sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),facts.cost.knownFor?facts.cost.amount:'',`${facts.cost.knownFor} of ${facts.cost.of}`,facts.labs.join('; '),run.mixed?'vary within this run; see the table of requests':run.recorded?'recorded when the run started':'read from the run’s results',run.prompt];
+  return [run.number,run.label??'',sourceOf(dataset),run.startedAt,facts.finished,run.active?'in progress':'finished',facts.processing,facts.batchIds.join('; '),run.scope??'',facts.texts,facts.usable,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,run.provider,run.model,facts.models.join('; '),run.effort,run.summary==='on'?'yes':run.summary==='off'?'no':'in part',run.temperature??'default',run.maxOutput??defaultOutputLimit(run.provider,run.model),...(knowledge?[run.webSearch?'yes':'no']:[]),run.caching,run.promptVersion,hashOf(hashes,run.prompt,run.system),run.answerFields.join(' | '),answersLabel(run.answerFields,run.answerSettings,true),
+   sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),facts.cost.knownFor?facts.cost.amount:'',`${facts.cost.knownFor} of ${facts.cost.of}`,facts.labs.join('; '),run.mixed?'vary within this run; see the table of requests':run.recorded?'recorded when the run started':'read from the run’s results',run.prompt,...(system?[run.system??'']:[])];
  })];
 }
 

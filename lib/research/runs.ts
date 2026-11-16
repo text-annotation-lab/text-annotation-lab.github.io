@@ -1,6 +1,6 @@
 // Runs. A run is every annotation made with one setup (provider, model,
-// reasoning effort, prompt, answer fields, and, where set, temperature and
-// output limit), numbered in the order the runs were started. Annotating more texts with an unchanged setup adds to the
+// reasoning effort, prompt, answer fields, and, where set, temperature,
+// output limit, and system prompt), numbered in the order the runs were started. Annotating more texts with an unchanged setup adds to the
 // latest run; a changed setup, or annotating a text again, starts a new one.
 // A text keeps its latest result in its own fields (as it always has) and the
 // results of earlier runs in `earlier`, so nothing is overwritten. The run is
@@ -14,8 +14,12 @@ import {cleanRepeats,incomplete,missingRepeats,repeatsOf} from './repeats';
 // temperature, maxOutput: the request settings that can change an answer, as sent (lib/request-settings.ts;
 // absent: the model's own temperature, the Lab's own output limit). The other request settings (prompt caching,
 // reasoning summary, OpenAI's logs) leave the answers alone and are recorded on each result only.
-export type Setup={provider:string;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;repeats?:number;temperature?:number;maxOutput?:number};
-const tuning=(value:{temperature?:unknown;maxOutput?:unknown}|undefined)=>({...(typeof value?.temperature==='number'&&Number.isFinite(value.temperature)?{temperature:value.temperature}:{}),...(typeof value?.maxOutput==='number'&&Number.isInteger(value.maxOutput)?{maxOutput:value.maxOutput}:{})});
+// system: research mode's own system prompt, as sent (absent: none; the annotation prompt is the system prompt).
+export type Setup={provider:string;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;repeats?:number;temperature?:number;maxOutput?:number;system?:string};
+const tuning=(value:{temperature?:unknown;maxOutput?:unknown;system?:unknown}|undefined)=>({...(typeof value?.temperature==='number'&&Number.isFinite(value.temperature)?{temperature:value.temperature}:{}),...(typeof value?.maxOutput==='number'&&Number.isInteger(value.maxOutput)?{maxOutput:value.maxOutput}:{}),...(typeof value?.system==='string'&&value.system.trim()?{system:value.system}:{})});
+// What tells two prompts apart: the prompt, and the system prompt where one was sent. Without one it is the prompt
+// itself, so the versions and hashes of prompts sent without one are what they always were.
+export const promptKey=(prompt:string,system?:string)=>system?JSON.stringify([prompt,system]):prompt;
 // A deleted run keeps its record (marked), so its number is never used again.
 // label: a name the researcher gives the run. scope: which texts each start of the run covered, in words.
 // retries: each time the run's failed requests were sent again (when, and how many requests came back).
@@ -36,11 +40,11 @@ export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','response
 // Field names and their settings together: the same answers are asked for exactly when this is the same.
 const fieldsKey=(setup:{answerFields?:string[];answerSettings?:AnswerSettings})=>JSON.stringify([setup.answerFields||[],setup.answerSettings||null]);
 export function sameSetup(a:Setup,b:Setup){
- return a.provider===b.provider&&a.model===b.model&&a.effort===b.effort&&a.prompt===b.prompt&&fieldsKey(a)===fieldsKey(b)&&(a.repeats||1)===(b.repeats||1)&&a.temperature===b.temperature&&a.maxOutput===b.maxOutput;
+ return a.provider===b.provider&&a.model===b.model&&a.effort===b.effort&&a.prompt===b.prompt&&fieldsKey(a)===fieldsKey(b)&&(a.repeats||1)===(b.repeats||1)&&a.temperature===b.temperature&&a.maxOutput===b.maxOutput&&(a.system||'')===(b.system||'');
 }
 // Results from before providers were recorded name their provider by the model.
 const providerOf=(row:{provider?:string;model?:string})=>row.provider||(row.model?.startsWith('gemini-')?'gemini':row.model?.startsWith('claude-')?'anthropic':'openai');
-export function setupOf(row:{provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[];answerSettings?:AnswerSettings;repeats?:number;requestSettings?:{temperature?:number;maxOutput?:number}}):Setup{
+export function setupOf(row:{provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[];answerSettings?:AnswerSettings;repeats?:number;requestSettings?:{temperature?:number;maxOutput?:number;system?:string}}):Setup{
  const repeats=cleanRepeats(row.repeats);
  return {provider:providerOf(row),model:row.model||'',effort:row.effort||'',prompt:row.prompt||'',answerFields:row.answerFields||[],...(row.answerSettings?{answerSettings:row.answerSettings}:{}),...(repeats?{repeats}:{}),...tuning(row.requestSettings)};
 }
@@ -199,7 +203,7 @@ export function resumable(docs:Row[],runs:RunRecord[]|undefined,setup:Setup):Set
 export function remainingFor<T extends Row>(docs:T[],setup:Setup,resume?:Set<string>):T[]{
  const fields=fieldsKey(setup),prompts=new Map<string,boolean>();
  const samePrompt=(prompt:string)=>{let same=prompts.get(prompt);if(same===undefined){same=prompt===setup.prompt;prompts.set(prompt,same);}return same;};
- const made=(result:ResultFields)=>{const s=setupOf(result);return s.provider===setup.provider&&s.model===setup.model&&s.effort===setup.effort&&fieldsKey(s)===fields&&samePrompt(s.prompt);};
+ const made=(result:ResultFields)=>{const s=setupOf(result);return s.provider===setup.provider&&s.model===setup.model&&s.effort===setup.effort&&fieldsKey(s)===fields&&samePrompt(s.prompt)&&(s.system||'')===(setup.system||'');};
  return docs.filter(doc=>doc.status==='pending'||doc.status==='error'||(doc.status==='done'&&(!completedResults(doc).some(made)||Boolean(resume?.has(doc.id)))));
 }
 
@@ -229,13 +233,13 @@ export function runSummaries(docs:Row[],runs:RunRecord[]=[]):RunSummary[]{
  const records=new Map(runs.map(r=>[r.number,r]));
  const numbers=[...new Set([...counts.keys()])].sort((a,b)=>a-b);
  const prompts:string[]=[];
- const version=(prompt:string)=>{let i=prompts.indexOf(prompt);if(i<0){prompts.push(prompt);i=prompts.length-1;}return i+1;};
+ const version=(run:Setup)=>{const key=promptKey(run.prompt,run.system);let i=prompts.indexOf(key);if(i<0){prompts.push(key);i=prompts.length-1;}return i+1;};
  // Number prompt versions over every run in order, so a deleted run does not renumber them.
- for(const run of [...runs].sort((a,b)=>a.number-b.number))version(run.prompt);
+ for(const run of [...runs].sort((a,b)=>a.number-b.number))version(run);
  return numbers.map(number=>{
   const c=counts.get(number)!,record=records.get(number);
   const base:RunRecord=record||{...setupOf(c.sample||{}),number,startedAt:String(c.sample?.runStartedAt||c.sample?.time||'')};
-  return {...base,done:c.done,failed:c.failed,active:c.active,fewer:c.fewer,promptVersion:version(base.prompt),recorded:Boolean(record)};
+  return {...base,done:c.done,failed:c.failed,active:c.active,fewer:c.fewer,promptVersion:version(base),recorded:Boolean(record)};
  });
 }
 

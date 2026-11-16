@@ -78,7 +78,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert.deepEqual([rebuilt.text.count,rebuilt.rebuilt,rebuilt.total,rebuilt.text.recorded,rebuilt.text.formatUnchanged],[3,3,3,false,true],'A run made before requests were kept has its request built again');
  for(const provider of ['openai','anthropic','gemini','openrouter']){
   const model={openai:'gpt-6-luna',anthropic:'claude-haiku-5-5',gemini:'gemini-4-hydrogen',openrouter:'openai/gpt-6-luna'}[provider],parts=data.requestParts(frames.requestFrame({...setup,provider,model},false));
-  assert.equal(parts.model,model,provider);assert(parts.system.startsWith('Rate the tone of the text.\r\nUse the scale'),provider+': the prompt as sent has CR LF line breaks');assert(parts.limit>=12000);assert.equal(parts.schema.type,provider==='gemini'?'OBJECT':'object',provider);
+  assert.equal(parts.model,model,provider);assert(parts.prompt.startsWith('Rate the tone of the text.\r\nUse the scale'),provider+': the prompt as sent has CR LF line breaks');assert.equal(parts.system,undefined,provider+': no system prompt of one’s own');assert(parts.limit>=12000);assert.equal(parts.schema.type,provider==='gemini'?'OBJECT':'object',provider);
  }
 
  // --- Tables --------------------------------------------------------------------------------------

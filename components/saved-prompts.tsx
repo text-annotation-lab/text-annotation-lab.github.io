@@ -4,14 +4,16 @@ import {listSavedPrompts,savePrompt,deletePrompt,type LibraryPrompt} from '@/lib
 import type {AnswerSettings} from '@/lib/answer-types';
 import {Button} from '@/components/ui/button';
 
-export function SavedPrompts({disabled,prompt,answerFields,answerSettings,onUse}:{disabled:boolean;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;onUse:(prompt:string,fields:string[],settings?:AnswerSettings)=>void}){
+// system: research mode's own system prompt, saved and used with the prompt (absent in the standard Lab, which
+// leaves it out when it saves and uses a prompt).
+export function SavedPrompts({disabled,prompt,answerFields,answerSettings,system,onUse}:{disabled:boolean;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;system?:string;onUse:(prompt:string,fields:string[],settings?:AnswerSettings,system?:string)=>void}){
  const [entries,setEntries]=useState<LibraryPrompt[]>([]),[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[naming,setNaming]=useState(false),[name,setName]=useState('');
  const chosen=entries.find(entry=>entry.id===selected),locked=disabled||busy;
  async function refresh(){try{setEntries(await listSavedPrompts());}catch(error){setMessage(error instanceof Error?error.message:'Could not read saved prompts.');}}
  useEffect(()=>{void refresh();const reload=()=>{void refresh();};window.addEventListener('saved-prompts-changed',reload);window.addEventListener('focus',reload);return()=>{window.removeEventListener('saved-prompts-changed',reload);window.removeEventListener('focus',reload);};},[]);
  async function save(){
   if(locked)return;setBusy(true);setMessage('');
-  try{const updated=await savePrompt(name,prompt,answerFields,answerSettings);setEntries(updated);setSelected(updated[updated.length-1].id);setNaming(false);setName('');setMessage('Prompt saved.');window.dispatchEvent(new Event('saved-prompts-changed'));}catch(error){setMessage(error instanceof Error?error.message:'Could not save prompt.');}finally{setBusy(false);}
+  try{const updated=await savePrompt(name,prompt,answerFields,answerSettings,system);setEntries(updated);setSelected(updated[updated.length-1].id);setNaming(false);setName('');setMessage('Prompt saved.');window.dispatchEvent(new Event('saved-prompts-changed'));}catch(error){setMessage(error instanceof Error?error.message:'Could not save prompt.');}finally{setBusy(false);}
  }
  async function remove(){
   if(!chosen||locked||!confirm(`Delete saved prompt “${chosen.name}”? Existing studies will keep their prompts.`))return;
@@ -23,9 +25,9 @@ export function SavedPrompts({disabled,prompt,answerFields,answerSettings,onUse}
   </select><button type="button" className="textbutton" disabled={locked||!prompt.trim()} onClick={()=>{setNaming(!naming);setMessage('');}}>Save prompt</button></div>
   {naming&&<div className="saved-prompt-actions"><input aria-label="Prompt name" placeholder="Name this prompt" maxLength={80} value={name} disabled={locked} onChange={event=>setName(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();void save();}}}/><Button type="button" variant="outline" disabled={locked||!name.trim()} onClick={()=>void save()}>Save</Button><button type="button" className="textbutton" disabled={locked} onClick={()=>setNaming(false)}>Cancel</button></div>}
   {chosen&&<div className="saved-prompt-actions"><Button type="button" variant="outline" disabled={locked} onClick={()=>{
-   const differs=prompt!==chosen.prompt||JSON.stringify(answerFields)!==JSON.stringify(chosen.answerFields)||JSON.stringify(answerSettings||null)!==JSON.stringify(chosen.answerSettings||null);
+   const differs=prompt!==chosen.prompt||JSON.stringify(answerFields)!==JSON.stringify(chosen.answerFields)||JSON.stringify(answerSettings||null)!==JSON.stringify(chosen.answerSettings||null)||system!==undefined&&system.trim()!==(chosen.system??'').trim();
    if(differs&&(prompt.trim()||answerFields.length)&&!confirm('Replace your current prompt and answer fields with this saved prompt?'))return;
-   onUse(chosen.prompt,[...chosen.answerFields],chosen.answerSettings);setMessage('Prompt loaded.');
+   onUse(chosen.prompt,[...chosen.answerFields],chosen.answerSettings,chosen.system);setMessage('Prompt loaded.');
   }}>Use prompt</Button><button type="button" className="textbutton" disabled={locked} onClick={()=>void remove()}>Delete</button></div>}
   {message&&<p role="status">{message}</p>}
  </div>;

@@ -37,6 +37,7 @@ const Tools=lazy(()=>load().then(module=>({default:module.ResearchTools})));
 const Output=lazy(()=>load().then(module=>({default:module.OutputEditor})));
 const Options=lazy(()=>load().then(module=>({default:module.RequestOptions})));
 const Preview=lazy(()=>load().then(module=>({default:module.RequestPreview})));
+const System=lazy(()=>load().then(module=>({default:module.SystemPrompt})));
 const Model=lazy(()=>load().then(module=>({default:module.ModelChoice})));
 const Filters=lazy(()=>load().then(module=>({default:module.ResearchFilters})));
 const Detail=lazy(()=>load().then(module=>({default:module.ResearchDetail})));
@@ -49,6 +50,7 @@ export function ResearchTools(props:ComponentProps<typeof Tools>){return <Suspen
 export function ResearchAnswerFields(props:ComponentProps<typeof Output>){return <Suspense fallback={null}><Output {...props}/></Suspense>;}
 export function ResearchRequestOptions(props:ComponentProps<typeof Options>){return <Suspense fallback={null}><Options {...props}/></Suspense>;}
 export function ResearchRequestPreview(props:ComponentProps<typeof Preview>){return <Suspense fallback={null}><Preview {...props}/></Suspense>;}
+export function ResearchSystemPrompt(props:ComponentProps<typeof System>){return <Suspense fallback={null}><System {...props}/></Suspense>;}
 // fallback: the standard Lab's model menu, shown until the research screens have loaded.
 export function ResearchModel({fallback,...props}:ComponentProps<typeof Model>&{fallback:ReactNode}){return <Suspense fallback={fallback}><Model {...props}/></Suspense>;}
 export function ResearchFilters(props:ComponentProps<typeof Filters>){return <Suspense fallback={null}><Filters {...props}/></Suspense>;}
