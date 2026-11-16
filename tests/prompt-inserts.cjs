@@ -214,7 +214,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  for(const page of ['app/page.tsx','components/model-knowledge.tsx']){
   const text=source(page);
   assert(text.includes('const insertNames=research?promptInserts(prompt):[],promptFixed=insertNames.length?fixedLength(prompt):undefined;'),page+': the standard Lab fills in nothing');
-  assert(text.includes('promptFixed!==undefined&&!prompt.slice(0,promptFixed).trim()?{...requestSettings,cache:undefined}:requestSettings'),page);
+  assert(text.includes('promptFixed!==undefined&&!prompt.slice(0,promptFixed).trim()&&!requestSettings?.system?.trim()?{...requestSettings,cache:undefined}:requestSettings'),page+': nothing to cache, unless a system prompt of one’s own');
   assert.equal(text.split("if(insertNames.length)form.set('inserts',").length-1,2,page+': a text’s values travel with its request, now and in a batch');
   assert(text.includes('inserts:insertNames.length>0'),page+': the record says whether placeholders were filled in');
  }
@@ -294,7 +294,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  assert.equal(list.length,2,'One recorded request for texts and one for PDFs, whatever the texts’ values');
  const textFrame=frames.requestFrame({...setup,inserts:true},false),pdfFrame=frames.requestFrame({...setup,inserts:true},true);
  assert.deepEqual(tables.corpusColumnNames(dataset),['Year','tone_human','Outlet name','meta_text'],'The corpus table’s names for the study’s columns');assert.deepEqual(tables.corpusColumnNames({...dataset,columns:[]}),[]);
- assert(data.requestParts(textFrame).system.startsWith(E_PROMPT.replace('\n','\r\n')),'The prompt of a request is shown with its placeholders, not with marks');
+ assert(data.requestParts(textFrame).prompt.startsWith(E_PROMPT.replace('\n','\r\n')),'The prompt of a request is shown with its placeholders, not with marks');
  const pack=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:true});
  const corpus=readCsv(await read(pack,'data/corpus.csv'));
  assert.deepEqual(corpus[0],['doc_id','document','filename','text','n_characters','file','Year','tone_human','Outlet name','meta_text']);

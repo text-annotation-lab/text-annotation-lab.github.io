@@ -73,6 +73,7 @@ function RunSettings({dataset,run,facts,state,onClose}:{dataset:PanelData;run:Ru
    </dl>
    <h3>Prompt</h3>
    <pre className="research-preview-text" tabIndex={0}>{run.prompt||'(no prompt recorded)'}</pre>
+   {run.system&&<><h3>System prompt</h3><pre className="research-preview-text" tabIndex={0}>{run.system}</pre></>}
    <h3>Shared request body</h3>
    {frame?<>
     <p className="hint">The request sent for each {unit} of this run, to <code>{frame.url}</code>. Marks stand where the {knowledge?'subject goes':'document and its name go'}. {record}{sent.forms>1?` The run sent ${count(sent.forms)} different bodies (a PDF goes as a file, and a batch is worded differently); this is the one most requests used.`:''} No API key is part of it.</p>

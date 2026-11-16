@@ -1,9 +1,10 @@
 'use client';
-// Research mode: the request settings in Processing options, and "Preview request".
-import {useState} from 'react';
+// Research mode: the request settings in Processing options, the system prompt under the annotation prompt, and
+// "Preview request".
+import {useEffect,useState} from 'react';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {PROVIDERS,type Provider} from '@/lib/providers';
-import {MAX_OUTPUT_TOKENS,budgetedClaude,cleanRequestSettings,defaultOutputLimit,outputFloor,plainOpenAI,sentRequestSettings,summarizesReasoning,takesTemperature,temperatureCeiling,type RequestSettings} from '@/lib/request-settings';
+import {MAX_OUTPUT_TOKENS,MAX_SYSTEM_PROMPT,budgetedClaude,cleanRequestSettings,defaultOutputLimit,outputFloor,plainOpenAI,sentRequestSettings,summarizesReasoning,takesTemperature,temperatureCeiling,type RequestSettings} from '@/lib/request-settings';
 import {PREVIEW_PLACEHOLDER,previewRequest,type RequestView} from '@/lib/research/request-view';
 import type {FrameSettings} from '@/lib/request-frame';
 import {PRICE_DATE,priceFor} from '@/lib/cost-estimate/pricing';
@@ -54,6 +55,18 @@ export function RequestOptions({provider,model,effort,prompt,fixed,value,disable
  </>;
 }
 
+// A system prompt of the researcher's own (lib/request-settings.ts), under the annotation prompt. It opens by itself
+// when the study has one, and stays as the researcher leaves it while they type.
+export function SystemPrompt({id,unit,value,disabled,onChange}:{id:string;unit:'text'|'subject';value:string;disabled?:boolean;onChange:(value:string)=>void}){
+ const filled=value.trim()!=='',[open,setOpen]=useState(filled);
+ useEffect(()=>{if(filled)setOpen(true);},[filled]);
+ return <details className="research-system-prompt" open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
+  <summary>System prompt (optional)</summary>
+  <textarea id={id} aria-label="System prompt" aria-describedby={id+'-help'} rows={4} maxLength={MAX_SYSTEM_PROMPT} value={value} disabled={disabled} placeholder="Rarely needed. Standing instructions sent separately from the prompt, e.g. a role: “You are an expert in educational assessment.”" onChange={event=>onChange(event.target.value)}/>
+  <p id={id+'-help'} className="hint">Sent unchanged with every request as the system prompt; the annotation prompt then goes with each {unit} in the message. Leave empty unless you follow a setup that uses one.</p>
+ </details>;
+}
+
 // "Preview request": the request a run would send for the first text, built by the code that sends it.
 // settings: what the run would be made with. document: the first text (absent: a placeholder stands in).
 // note: a sentence added to the description (Model knowledge with web search).
@@ -77,8 +90,11 @@ export function RequestPreview({unit,source,disabled}:{unit:'text'|'subject';sou
    <DialogContent className="research-dialog research-wide research-preview">
     <DialogTitle>Request preview{view.first?` (first ${view.unit})`:''}</DialogTitle>
     <DialogDescription>This request is sent to {PROVIDERS[view.provider].label} for each {view.unit}{view.first?`, here with the first ${view.unit}`:`. A placeholder stands where the ${view.unit} goes`}. Your API key travels separately in a header and is never part of a request’s record.{view.note?' '+view.note:''}</DialogDescription>
+    {view.system!==undefined&&<><h3>System prompt</h3>
+    <p className="hint">Your own system prompt, sent unchanged.{view.systemCached?' It carries the mark for the provider’s prompt cache.':''}</p>
+    <pre className="research-preview-text" tabIndex={0}>{shown(view.system)}</pre></>}
     <h3>Prompt as sent</h3>
-    <p className="hint">Your prompt with the instructions the Lab adds for the answer format.{view.filled?` Its placeholders hold the values of the first ${view.unit}.`:''}{view.cached?(view.filled?' The part before the first placeholder carries the mark for the provider’s prompt cache.':' It carries the mark for the provider’s prompt cache.'):''}</p>
+    <p className="hint">Your prompt with the instructions the Lab adds for the answer format{view.system!==undefined?`, at the start of the message with the ${view.unit}`:''}.{view.filled?` Its placeholders hold the values of the first ${view.unit}.`:''}{view.cached?(view.filled?' The part before the first placeholder carries the mark for the provider’s prompt cache.':' It carries the mark for the provider’s prompt cache.'):''}</p>
     <pre className="research-preview-text" tabIndex={0}>{shown(view.prompt)}</pre>
     <h3>Message with the {view.unit}</h3>
     <pre className="research-preview-text" tabIndex={0}>{shown(view.message)}</pre>
