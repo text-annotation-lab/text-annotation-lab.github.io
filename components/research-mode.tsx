@@ -26,17 +26,17 @@ const CHANGES=[
  'API keys for each provider, kept in this browser if you choose.',
  'Typed answer fields (scales, categories, numbers, yes/no) that the model must answer in that form.',
  'Request settings: system prompt, temperature, output limit, prompt caching, reasoning summary, and any model ID.',
- 'Texts from a table with their metadata, random samples, and filters.',
+ 'Texts from a table with their metadata (also usable in the prompt), random samples, and filters.',
  'Batches of up to 100,000 requests in one run.',
- 'Runs & agreement: each run kept with its settings, up to 10 annotations per text, and agreement between runs and with human labels.',
- 'An Export tab: Excel workbook, research and supplementary repositories, and a study backup.',
+ 'Runs & agreement: each run kept with its settings, up to 10 annotations per text, a Results panel with figures and 95% intervals, and agreement between runs and with human labels.',
+ 'An Export tab: Excel workbook, a complete research repository, a lean supplementary package for a data deposit (one run, with a rerun script), and a study backup.',
  'One tab at a time, so no request is sent, or paid for, twice.',
 ];
 export function ResearchChanges(){
  return <ul className="research-changes">{CHANGES.map(item=><li key={item}>{item}</li>)}</ul>;
 }
 export function WhatChanges(){
- return <Popover><PopoverTrigger asChild><button type="button" className="what-changes">What changes?</button></PopoverTrigger><PopoverContent align="end" sideOffset={8} className="what-changes-menu" aria-label="What research mode adds"><p className="what-changes-title">Research mode adds</p><ResearchChanges/><p className="what-changes-note">The teaching tabs are hidden while it is on. Your texts, prompt, and results stay as they are.</p></PopoverContent></Popover>;
+ return <Popover><PopoverTrigger asChild><button type="button" className="what-changes">What changes?</button></PopoverTrigger><PopoverContent align="end" sideOffset={8} className="what-changes-menu" aria-label="What research mode adds"><p className="what-changes-title">Research mode adds</p><ResearchChanges/><p className="what-changes-note">The teaching tabs are hidden while it is on, and charts and Excel files come from Runs &amp; agreement and Export. Your texts, prompt, and results stay as they are.</p></PopoverContent></Popover>;
 }
 
 // Research mode works in one tab at a time (lib/research/tab-lock.ts). With openHere: shown instead of the Lab in a tab
