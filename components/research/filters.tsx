@@ -82,7 +82,7 @@ export function ResearchDetail({row,columns,study}:{row:Row;columns:Column[];stu
   {cells.length>0&&<dl className="research-cells">{cells.map(({column,value})=><div key={column.name}><dt>{column.name}{column.role==='label'&&<span className="research-tag">human label</span>}</dt><dd>{value}</dd></div>)}</dl>}
   {made.length===0&&<Reasoning of={row}/>}
   {made.length===0&&answered&&technical(row,runOf(row))}
-  {made.length>0&&<details className="research-earlier"><summary>Annotations of this text ({made.filter(a=>a.status==='done').length} of {repeatsOf(row)})</summary>
+  {made.length>0&&<details className="research-earlier"><summary>Annotations of this {study?.kind==='knowledge'?'subject':'text'} ({made.filter(a=>a.status==='done').length} of {repeatsOf(row)})</summary>
    <p className="hint">The answers above are the combined ones: the value most annotations gave, the median of a scale, the mean of a number. The explanation is that of the annotation closest to them.</p>
    {made.map(a=><div key={a.n} className="research-earlier-entry">
     <p><strong>Annotation {a.n}</strong>{when(a.time)&&` · ${when(a.time)}`}{typeof a.tokens==='number'&&` · ${a.tokens.toLocaleString('en-US')} tokens`}{a.status==='error'&&' · failed'}</p>

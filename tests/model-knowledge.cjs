@@ -128,6 +128,87 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   first.button('Subject 0').props.onClick();await first.flush();assert.throws(()=>first.find(n=>n.type==='DetailSteps'));assert.throws(()=>first.find(n=>n.type==='ResearchDetail'));assert.equal(first.find(n=>n.props?.id==='knowledge-detail').props.onKeyDown,undefined);
   said(first,'Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.');
  }
+ // Research mode, annotations per subject: each subject is sent several times and its answers are combined;
+ // Run all makes the missing ones. Web search makes one annotation per subject. The standard Lab makes one.
+ {
+  const until=async(h,ready)=>{for(let n=0;n<200&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
+  const near=(a,b)=>Math.abs(a-b)<1e-9,said=(h,text)=>h.find(n=>(n.props?.role==='status'||n.props?.role==='alert')&&h.text(n)===text);
+  const three=extra=>({prompt:'Classify',concurrency:1,repeats:3,items:subjects.slice(0,3),...extra});
+  const repeatsSelect=h=>h.find(n=>n.props?.id==='knowledge-repeats').props,runAll=h=>h.text(h.button('Run all'));
+  // The standard Lab: one annotation per subject, whatever the study has stored.
+  const once=harness(three(),async()=>Response.json({score:'ONE',explanation:'Fine'}));await once.flush();
+  once.button('Processing options').props.onClick();await once.flush();assert.throws(()=>once.find(n=>n.props?.id==='knowledge-repeats'),'The setting is research mode’s');
+  await once.button('Run all').props.onClick();await once.flush();
+  assert.equal(once.requests.length,3);assert(once.latest().items.every(item=>item.status==='done'&&!('annotations' in item)&&item.repeats===undefined));assert.equal(once.latest().repeats,3,'The stored number is kept for research mode');
+  // Research mode, one request at a time: the second annotation of the second subject fails, and the run carries on.
+  const plan={'Subject 0':['ONE','TWO','ONE'],'Subject 1':['ONE',null,'ONE','TWO'],'Subject 2':['TWO','TWO','TWO']},sent=new Map();
+  const r=harness(three(),async(url,options)=>{
+   const name=JSON.parse(options.body.get('fields'))[0].value,at=sent.get(name)||0,score=plan[name][at];sent.set(name,at+1);
+   return score?Response.json({score,explanation:`${name} ${at+1}`,tokens:10,usage:{input_tokens:8,output_tokens:2},responseId:`r-${name}-${at+1}`}):Response.json({error:'The reply was cut off.'},{status:422});
+  });r.props.research=true;await r.flush();
+  r.button('Processing options').props.onClick();await r.flush();
+  assert.equal(repeatsSelect(r).value,3);assert.deepEqual(repeatsSelect(r).children.map(option=>String(option.props.value)),['1','2','3','4','5','6','7','8','9','10']);assert(r.text(r.button('Processing options')).includes('3 annotations per subject'));
+  assert.match(r.text(r.find(n=>n.props?.id==='knowledge-repeats-help')),/^Each subject is annotated 3 times, each time with a request of its own\./);
+  assert.equal(r.find(n=>n.type==='input'&&n.props?.type==='checkbox').props.disabled,true,'Web search makes one annotation per subject');assert.match(r.text(r.find(n=>n.props?.id==='knowledge-search-help')),/^Web search makes one annotation per subject; set Annotations per subject to 1 to use it\./);
+  r.button('Run all').props.onClick();await until(r,()=>r.latest()?.items.every(item=>item.status==='done'));
+  let items=r.latest().items;
+  assert.equal(r.requests.length,9);assert(r.requests.every(request=>request.options.body.get('record')==='true'));
+  assert.deepEqual([items[0].score,items[0].explanation,items[0].tokens,items[0].repeats,items[0].runSize],['ONE','Subject 0 1',30,3,9]);assert(near(items[0].consistency.score,2/3));
+  assert.deepEqual(items[0].annotations.map(a=>[a.n,a.status,a.score,a.responseId,a.requestId,a.runId===items[0].runId,a.processing]),[[1,'done','ONE','r-Subject 0-1','q1',true,'instant'],[2,'done','TWO','r-Subject 0-2','q1',true,'instant'],[3,'done','ONE','r-Subject 0-3','q1',true,'instant']]);
+  for(const key of ['usage','responseId','rawResponse'])assert.equal(items[0][key],undefined,key+' belongs to each annotation');assert.deepEqual(items[0].annotations[0].usage,{input_tokens:8,output_tokens:2});
+  assert.deepEqual(items[1].annotations.map(a=>[a.n,a.status,a.error]),[[1,'done',undefined],[2,'error','The reply was cut off.'],[3,'done',undefined]]);assert.deepEqual([items[1].score,items[1].consistency.score],['ONE',1]);
+  assert.equal(r.text(r.find(n=>n.type==='span'&&String(n.props.className).includes('partial'))),'2 of 3 annotations');
+  said(r,'1 of 9 requests failed, and the run carried on. “Run all” sends it again.');
+  assert(runAll(r).includes('Run all (1)'),'The subject with a missing annotation waits');assert.equal(r.button('Repeat study').props.disabled,false);
+  // Run all: the missing annotation only, in the same run.
+  r.button('Run all').props.onClick();await until(r,()=>!r.latest().items.some(item=>item.status==='running')&&r.requests.length===10);await r.flush();
+  items=r.latest().items;
+  assert.equal(r.requests.length,10);assert.deepEqual(items[1].annotations.map(a=>[a.status,a.score]),[['done','ONE'],['done','TWO'],['done','ONE']]);assert.equal(items[1].score,'ONE');assert(near(items[1].consistency.score,2/3));assert.equal(items[1].runNumber,undefined,'The same run');
+  assert.deepEqual(items[1].history.map(attempt=>[attempt.status,attempt.replicate,attempt.error]),[['error',2,'The reply was cut off.']]);assert(runAll(r).includes('Run all (0)'));
+  assert.throws(()=>r.find(n=>n.type==='span'&&String(n.props.className).includes('partial')));assert(r.find(n=>n.props?.className==='research-tag warn'&&r.text(n)==='67%'),'The share of the annotations that gave the value');
+  // Another setup leaves a subject's missing annotations alone.
+  const partial=harness(three({items:[{...items[1],annotations:items[1].annotations.slice(0,2)}]}));partial.props.research=true;await partial.flush();assert(runAll(partial).includes('Run all (1)'));
+  partial.find(n=>n.type==='setup').props.setPrompt('Classify again');await partial.flush();assert(runAll(partial).includes('Run all (0)'));
+  // Repeat study: a new run of every subject, with three annotations each.
+  r.button('Repeat study').props.onClick();await r.flush();said(r,'Run 2: 3 subjects queued, 3 annotations each. Earlier results are kept. Check the current settings, then choose Annotate next or Run all.');
+  // One annotation per subject: nothing of the setting is stored, and web search can be turned on.
+  repeatsSelect(r).onChange({target:{value:'1'}});await r.flush();assert.equal(r.latest().repeats,undefined);assert(!r.text(r.button('Processing options')).includes('annotations per subject'));
+  const web=r.find(n=>n.type==='input'&&n.props?.type==='checkbox');assert.equal(web.props.disabled,false);web.props.onChange({target:{checked:true}});await r.flush();
+  repeatsSelect(r).onChange({target:{value:'3'}});await r.flush();assert.equal(repeatsSelect(r).disabled,true);assert.equal(repeatsSelect(r).value,1);assert.equal(r.text(r.find(n=>n.props?.id==='knowledge-repeats-help')),'Web search makes one annotation per subject. Turn it off to annotate each subject several times.');
+  assert.equal(r.find(n=>n.type==='input'&&n.props?.type==='checkbox').props.disabled,false,'Web search can always be turned off');
+
+  // As a batch: each subject's request is repeated as many times as it has annotations to make.
+  const jobs=[];let returned=()=>[];
+  const b=harness(three({processing:'batch'}),async(url,options)=>{
+   assert.equal(url,'/api/batch');const action=options.body.get('action');
+   if(action==='submit'){jobs.push({ids:JSON.parse(options.body.get('ids')),copies:options.body.get('copies'),subjects:JSON.parse(options.body.get('subjects')).map(fields=>fields[0].value)});return Response.json({id:'batch_'+jobs.length});}
+   if(action==='check')return Response.json({terminal:true,state:'completed',completed:1,total:1});
+   return Response.json({terminal:true,state:'completed',results:returned(jobs.at(-1).ids)});
+  });b.props.research=true;await b.flush();
+  await b.button('Submit batch').props.onClick();await b.flush();
+  assert.deepEqual([jobs[0].copies,jobs[0].ids.length,jobs[0].subjects.join()],['[3,3,3]',9,'Subject 0,Subject 1,Subject 2']);assert.deepEqual([b.latest().batchJob.repeats,b.latest().batchJob.ns,b.latest().batchJob.id],[3,undefined,'batch_1']);
+  assert(b.latest().items.every(item=>item.status==='queued'&&item.repeats===3&&item.annotations.length===0&&item.runSize===9));
+  // Request 4 (the second subject's second annotation) is not returned, and request 7 (the third subject's second) failed.
+  returned=ids=>ids.flatMap((id,i)=>i===4?[]:i===7?[{id,error:'Expired'}]:[{id,score:['ONE','TWO','ONE','ONE','','TWO','TWO','','TWO'][i],explanation:'Reply '+i,tokens:5,usage:{input_tokens:4,output_tokens:1},responseId:'b'+i}]);
+  await b.button('Check status').props.onClick();await b.flush();await b.button('Collect results').props.onClick();await b.flush();
+  items=b.latest().items;
+  assert.equal(b.latest().batchJob,null);assert.deepEqual(items.map(item=>[item.status,item.score,item.tokens,item.processing,item.batchId,item.webSearch]),[['done','ONE',15,'batch','batch_1',false],['done','ONE | TWO',10,'batch','batch_1',false],['done','TWO',10,'batch','batch_1',false]]);
+  assert.deepEqual(items[1].annotations.map(a=>[a.n,a.status,a.error,a.batchId]),[[1,'done',undefined,'batch_1'],[2,'error','No result was returned for this subject. Check the provider’s batch report before retrying.','batch_1'],[3,'done',undefined,'batch_1']]);
+  assert.deepEqual(items[2].annotations.map(a=>[a.status,a.error]),[['done',undefined],['error','Expired'],['done',undefined]]);assert.equal(items[1].consistency.score,0,'A tied vote');assert.equal(items[0].explanation,'Reply 0');
+  // The next batch submits only what is missing: one request for each of the two subjects.
+  assert(b.text(b.button('Submit batch')).includes('Submit batch (2)'));await b.button('Submit batch').props.onClick();await b.flush();
+  assert.deepEqual([jobs[1].copies,jobs[1].ids.length,jobs[1].subjects.join()],['[1,1]',2,'Subject 1,Subject 2']);assert.deepEqual(b.latest().batchJob.ns,[[2],[2]]);
+  assert.deepEqual(b.latest().items.map(item=>[item.status,item.annotations.length]),[['done',3],['queued',3],['queued',3]],'A subject waiting for its missing annotations keeps those it has');
+  returned=ids=>ids.map((id,i)=>({id,score:'ONE',explanation:'Later '+i,tokens:5,responseId:'c'+i}));
+  await b.button('Check status').props.onClick();await b.flush();await b.button('Collect results').props.onClick();await b.flush();
+  items=b.latest().items;
+  assert.deepEqual(items.map(item=>[item.status,item.score,item.runNumber||1,item.annotations.map(a=>a.status).join(),item.annotations[1].batchId]),[['done','ONE',1,'done,done,done','batch_1'],['done','ONE',1,'done,done,done','batch_2'],['done','TWO',1,'done,done,done','batch_2']]);
+  assert.deepEqual(items[1].history.map(attempt=>[attempt.replicate,attempt.batchId,attempt.status]),[[2,'batch_1','error']]);assert(b.text(b.button('Submit batch')).includes('Submit batch (0)'));
+  // A batch that is not accepted leaves a subject with the annotations it had, and one without any waiting.
+  const refused=harness(three({processing:'batch',items:[{...items[0],annotations:items[0].annotations.slice(0,2)},subjects[1]]}),async()=>Response.json({error:'The provider did not accept the batch.',uncertain:false},{status:400}));refused.props.research=true;await refused.flush();
+  await refused.button('Submit batch').props.onClick();await refused.flush();
+  assert.equal(refused.latest().batchJob,null);assert.deepEqual(refused.latest().items.map(item=>[item.status,item.annotations?.length]),[['done',2],['pending',undefined]]);
+ }
  // An error prevents new starts while already active results are still collected.
  const errorReleases=[];const parallelError=harness({prompt:'Classify',concurrency:2,items:subjects},()=>new Promise(resolve=>errorReleases.push(resolve)));await parallelError.flush();const errorRun=parallelError.button('Run all').props.onClick();await parallelError.flush();assert.equal(parallelError.requests.length,2);
  errorReleases[0](Response.json({error:'Quota'},{status:429}));await parallelError.flush();assert.equal(parallelError.requests.length,2);assert.equal(parallelError.find(n=>n.type==='setup').props.locked,true);errorReleases[1](Response.json({score:'KEPT',explanation:'Completed in flight'}));await errorRun;await parallelError.flush();assert.equal(parallelError.latest().items[0].status,'error');assert.equal(parallelError.latest().items[1].score,'KEPT');assert.equal(parallelError.requests.length,2);

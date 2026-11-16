@@ -43,10 +43,14 @@ export function earlyStopNotice(stop:EarlyStop,unit:'text'|'subject'):string{
 // are sent again (the workspace's "Remaining"; in Model knowledge, "Queue failed items for retry"; for requests
 // that "Retry failed" sent again within their run, that button once more).
 // paused: the person paused the run, which says so itself.
-export function carriedOnNotice(failed:number,answered:number,kind:'workspace'|'knowledge'|'retry',paused=false):string{
+// Model knowledge with several annotations per subject: 'knowledge-missing' when the failed requests were
+// annotations of subjects that have others (Run all makes the missing ones), 'knowledge-mixed' when some subjects
+// also have none.
+export function carriedOnNotice(failed:number,answered:number,kind:'workspace'|'knowledge'|'knowledge-missing'|'knowledge-mixed'|'retry',paused=false):string{
  const n=(value:number)=>value.toLocaleString('en-US'),them=failed===1?'it':'them';
  const what=answered===1?'The request failed.':failed===answered?`All ${n(answered)} requests failed.`:`${n(failed)} of ${n(answered)} requests failed${paused?'':', and the run carried on'}.`;
- return `${what} ${kind==='workspace'?`“Remaining” sends ${them} again.`:kind==='retry'?`“Retry failed” under Runs & agreement sends ${them} again.`:`“Queue failed items for retry” makes ${them} ready to run again.`}`;
+ const next=kind==='workspace'?`“Remaining” sends ${them} again.`:kind==='retry'?`“Retry failed” under Runs & agreement sends ${them} again.`:kind==='knowledge-missing'?`“Run all” sends ${them} again.`:kind==='knowledge-mixed'?'“Run all” makes the missing annotations; “Queue failed items for retry” makes the subjects without any ready to run again.':`“Queue failed items for retry” makes ${them} ready to run again.`;
+ return `${what} ${next}`;
 }
 // "Retry failed" sent a run's failed requests again, and every one came back with a usable answer.
 export const retriedNotice=(run:number,answered:number):string=>`Run #${run}: ${answered===1?'the request was sent again and has':`${answered.toLocaleString('en-US')} requests were sent again and all have`} a usable answer now.`;
