@@ -13,7 +13,7 @@ import {missingAnnotationSetup,rateLimitNotice,isRateLimitNotice} from '@/lib/an
 import CostEstimate from '@/lib/cost-estimate/panel';
 import {studentEstimate,countStudentInputs} from '@/lib/student-estimate';
 import {ownPrice,useOwnPrices} from '@/lib/own-prices';
-import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import {MAX_BATCH_ITEMS,MAX_BATCH_SOURCE_BYTES,MAX_KNOWLEDGE_INPUT_CHARS,MAX_SPLIT_REQUESTS,BATCH_CAPACITY,SPLIT_CAPACITY} from '@/lib/batch-limits';
 import {ResultPages} from '@/components/result-pages';
 import {ResultsChart} from '@/components/results-chart';
@@ -28,6 +28,7 @@ import {ArrowRight,Play,Pause,Download,Repeat2} from 'lucide-react';
 import {createWorkspaceStorage} from '@/lib/workspace-storage';
 import {studyWorkspaceKey} from '@/lib/studies';
 import {cleanScoreScale,type ScoreScale} from '@/lib/research/score-scale';
+import {onScaleItems} from '@/lib/research/scale-combine';
 import {knowledgeDuplicates,parseKnowledgeItems,KNOWLEDGE_SAMPLE,KNOWLEDGE_EXAMPLES,KNOWLEDGE_STUDY,knowledgeInstructions,knowledgeItemText,knowledgeAssessment,repeatKnowledgeItems,type KnowledgeMode,type KnowledgeItem,type KnowledgeResearch} from '@/lib/model-knowledge';
 import type {Provider} from '@/lib/providers';
 import {ResearchTools,ResearchDetail,ResearchFilters,ResearchRequestOptions,ResearchRequestPreview,DetailSteps,stepKey} from '@/components/research-mode';
@@ -389,12 +390,17 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   const queuedIds=batchJob.parts?textsIn(batchJob,['unknown']):new Set(batchJob.docIds),rest=batchJob.parts?withParts(batchJob,batchJob.parts.map(part=>part.state==='unknown'?{...part,state:'unsent' as const}:part)):null;
   latest.current=latest.current.map(d=>queuedIds.has(d.id)?unclaimed(d):d);setItems(latest.current);setBatchJob(rest&&!partsDone(rest)?rest:null);setNotice('Local batch reference cleared. Check provider usage before submitting these subjects again.');
  }
- async function download(){if(exporting)return;setExporting(true);try{const {createResultsWorkbook}=await import('@/lib/export-results');const buffer=await createResultsWorkbook(items,{answerFields:sentFields,prompt,model,effort,provider,webSearch,processing,concurrency:parallel,workspace:'model-knowledge',studyName});const url=URL.createObjectURL(new Blob([new Uint8Array(buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const link=document.createElement('a');link.href=url;link.download='model-knowledge-annotations.xlsx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{setNotice('The Excel download failed. Your results are still here; try again.');}finally{setExporting(false);}}
+ async function download(){if(exporting)return;setExporting(true);try{const {createResultsWorkbook}=await import('@/lib/export-results');const buffer=await createResultsWorkbook(viewItems,{answerFields:sentFields,prompt,model,effort,provider,webSearch,processing,concurrency:parallel,workspace:'model-knowledge',studyName});const url=URL.createObjectURL(new Blob([new Uint8Array(buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const link=document.createElement('a');link.href=url;link.download='model-knowledge-annotations.xlsx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{setNotice('The Excel download failed. Your results are still here; try again.');}finally{setExporting(false);}}
  // Research mode: the results table lists one row per subject (its latest result, or that of the run chosen),
  // narrowed by the search and filters, as the Workspace lists texts. The run buttons act on the ticked subjects,
  // else on the subjects the filters leave, else on all.
- const subjects=research?knowledgeRows(items as any):[],summaries=research?runSummaries(subjects):[];
- const shown=research?researchRows(subjects,columns,view):undefined,rows=shown?.rows||[];
+ // Research mode reads the results with the study's scale for the scores: a subject's annotations are combined on it
+ // (scale-combine.ts), deciding per run from all of them, with the subjects removed but kept for their runs (studyItems).
+ // viewItems: the records as the table, the chart, the details, and the Excel download show them.
+ const studyItems=useMemo(()=>{const all=withRemoved(items,removed);return research&&scoreScale?onScaleItems(all,scoreScale):all;},[research,scoreScale,items,removed]);
+ const viewItems=useMemo(()=>removed.length?studyItems.filter(item=>!(item as {removedAt?:string}).removedAt):studyItems,[studyItems,removed]);
+ const subjects=useMemo(()=>research?knowledgeRows(viewItems as any):[],[research,viewItems]),summaries=research?runSummaries(subjects):[];
+ const shown=useMemo(()=>research?researchRows(subjects,columns,view,scoreScale,removed.length?knowledgeRows(studyItems as any):subjects):undefined,[research,subjects,columns,view,scoreScale,removed,studyItems]),rows=shown?.rows||[];
  const narrowed=research&&viewNarrowed(view),checkedIds=new Set(checked),compareSource=research?parseSource(view.compare):undefined;
  const scope=!research?undefined:checked.length?checkedIds:narrowed?new Set(rows.map(row=>row.id)):undefined,scopeWord=checked.length?'selected':narrowed?'shown':'all';
  const inScope=(item:Item)=>!scope||scope.has(item.subjectId||item.id);
@@ -405,7 +411,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // Ticked subjects that are no longer in Model knowledge leave the selection.
  useEffect(()=>{if(!checked.length)return;const present=new Set(items.map(item=>item.subjectId||item.id));if(checked.some(id=>!present.has(id)))setChecked(current=>current.filter(id=>present.has(id)));},[items]);
  // waiting: what Annotate next and Run all would annotate (research mode: also subjects that get their missing annotations).
- const resumeNow=resumable(items),queuedCount=items.filter(item=>item.status==='pending').length,waiting=items.filter(item=>inScope(item)&&(item.status==='pending'||resumeNow.has(item.id))).length,done=items.filter(item=>item.status==='done').length,insufficient=items.filter(item=>item.status==='done'&&knowledgeAssessment(item)!=='Assessed').length,current=items.find(item=>item.id===selected),subjectCount=new Set(items.map(item=>item.subjectId||item.id)).size;
+ const resumeNow=resumable(items),queuedCount=items.filter(item=>item.status==='pending').length,waiting=items.filter(item=>inScope(item)&&(item.status==='pending'||resumeNow.has(item.id))).length,done=items.filter(item=>item.status==='done').length,insufficient=items.filter(item=>item.status==='done'&&knowledgeAssessment(item)!=='Assessed').length,current=viewItems.find(item=>item.id===selected),subjectCount=new Set(items.map(item=>item.subjectId||item.id)).size;
  // Research mode: the share of a subject's annotations that gave its combined value, where not all did.
  const shareTag=(item:Item,key:string)=>{const share=research&&item.status==='done'?item.consistency?.[key]:undefined;return typeof share==='number'&&share<1?<span className="research-tag warn" title={`${Math.round(share*100)}% of this subject’s annotations gave this value`}>{Math.round(share*100)}%</span>:null;};
  const listed=research?rows.length:items.length,resultStart=Math.min(resultPage,Math.max(0,Math.ceil(listed/100)-1))*100;
@@ -415,7 +421,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  const promptVersions=research&&current?new Map(summaries.map(summary=>[summary.number,summary.promptVersion])):undefined;
  useEffect(()=>{const index=research?rows.findIndex(row=>itemOf(row)===selected):items.findIndex(item=>item.id===selected);if(index>=0)setResultPage(Math.floor(index/100));},[selected]);
  // The chart and Excel download; research mode has them beside the filters, with the rarer actions in a menu.
- const resultButtons=<><ResultsChart rows={items} onInspect={viewItem} subjectLabel="Subject" onSaveYears={years=>{latest.current=latest.current.map(item=>years.has(item.id)?{...item,chartYear:years.get(item.id)}:item);setItems(latest.current);}} onSaveGroups={groups=>{latest.current=latest.current.map(item=>groups.has(item.id)?{...item,chartGroup:groups.get(item.id)}:item);setItems(latest.current);}}/><Button className="export" variant="outline" disabled={!items.length||exporting} onClick={download}><Download size={16}/>{exporting?'Preparing Excel…':'Download Excel'}</Button></>;
+ const resultButtons=<><ResultsChart rows={viewItems} onInspect={viewItem} subjectLabel="Subject" onSaveYears={years=>{latest.current=latest.current.map(item=>years.has(item.id)?{...item,chartYear:years.get(item.id)}:item);setItems(latest.current);}} onSaveGroups={groups=>{latest.current=latest.current.map(item=>groups.has(item.id)?{...item,chartGroup:groups.get(item.id)}:item);setItems(latest.current);}}/><Button className="export" variant="outline" disabled={!items.length||exporting} onClick={download}><Download size={16}/>{exporting?'Preparing Excel…':'Download Excel'}</Button></>;
  const hasResults=items.some(row=>row.status==='done'||row.status==='error'||Boolean(row.history?.length))||removed.length>0;
  const resultMenu=[...(hasResults?[{label:'Clear results…',disabled:locked,onSelect:clearResults}]:[]),{label:checked.length?`Delete ${checked.length.toLocaleString('en-US')} selected ${checked.length===1?'subject':'subjects'}…`:'Delete selected subjects…',danger:true,disabled:locked||!checked.length,onSelect:()=>deleteSubjects(checked,'selected')},{label:'Delete all subjects…',danger:true,disabled:locked||!items.length,onSelect:()=>deleteSubjects(items.map(item=>item.subjectId||item.id),'all')},{label:'Clear workspace…',danger:true,disabled:locked||!items.length&&!removed.length,onSelect:clearWorkspace}];
  const repeatPending=current&&items.some(item=>item.status==='pending'&&(item.subjectId||item.id)===(current.subjectId||current.id));

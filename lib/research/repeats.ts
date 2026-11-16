@@ -94,8 +94,9 @@ const agreeing=(values:string[],value:string)=>values.filter(v=>normalizeLabel(v
 // Plain-text replies. JSON replies are combined value by value: a value that is a number in most replies is
 // a score and gets the median of its numbers ("NA" in one reply is left out); any other value, the one most
 // replies gave. A reply that is not JSON has nothing to add to them. Without any JSON, the reply most
-// annotations gave stands (replies that all differ read "a | b | c").
-function combinePlain(ok:Annotation[]):string{
+// annotations gave stands (replies that all differ read "a | b | c"). keep: for a score read on the study's scale
+// (scale-combine.ts), the numbers on it, which alone count when the text has any; leftOut counts the others.
+export function combinePlain(ok:Annotation[],keep?:(key:string)=>((x:number)=>boolean)|undefined,leftOut?:{n:number}):string{
  const replies=ok.map(a=>String(a.answers?.f0??'')),read=replies.map(flattenJsonReply).filter((x):x is Record<string,string>=>Boolean(x));
  if(!read.length)return aggregate(replies,'majority');
  const keys=[...new Set(read.flatMap(reply=>Object.keys(reply)))];
@@ -105,7 +106,10 @@ function combinePlain(ok:Annotation[]):string{
  };
  const labels=keys.filter(key=>!isExplanationKey(key)),scores=labels.filter(isScore),combined:Record<string,string>={};
  for(const key of labels){
-  combined[key]=scores.includes(key)?aggregate(read.map(reply=>toNumber(reply[key]??'')).filter(Number.isFinite).map(String),'median'):aggregate(read.map(reply=>reply[key]??''),'majority');
+  if(!scores.includes(key)){combined[key]=aggregate(read.map(reply=>reply[key]??''),'majority');continue;}
+  const numbers=read.map(reply=>toNumber(reply[key]??'')).filter(Number.isFinite),fits=keep?.(key),on=fits?numbers.filter(fits):numbers,used=on.length?on:numbers;
+  if(leftOut)leftOut.n+=numbers.length-used.length;
+  combined[key]=aggregate(used.map(String),'median');
  }
  for(const key of keys.filter(isExplanationKey))combined[key]=read[closest(read,combined,relevantTo(key,labels,k=>k),new Set(scores))][key]??'';
  // Keys in the order they were first given; scores as numbers.
