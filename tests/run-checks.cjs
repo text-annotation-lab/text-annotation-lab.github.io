@@ -10,7 +10,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const est=load('lib/student-estimate.ts'),pricing=load('lib/cost-estimate/pricing.ts'),providers=load('lib/providers.ts');
  // One rule for the effort when the model changes: the current one where the model takes it, else medium, else the first.
  assert.equal(providers.pickEffort('high',['low','medium','high']),'high');assert.equal(providers.pickEffort('xhigh',['low','medium','high']),'medium');
- assert.equal(providers.pickEffort('medium',['off','1024','4096','8192']),'off');assert.equal(providers.pickEffort('low',[]),'');
+ assert.equal(providers.pickEffort('medium',['off','1024','4096','8192']),'4096');assert.equal(providers.pickEffort('high',['off','1024','4096','8192']),'8192');assert.equal(providers.pickEffort('8192',['low','medium','high']),'high');assert.equal(providers.pickEffort('default',['minimal','low','medium','high']),'medium');assert.equal(providers.pickEffort('dynamic',['off','1024','dynamic']),'dynamic');assert.equal(providers.pickEffort('minimal',['off','1024','8192']),'off');assert.equal(providers.pickEffort('low',[]),'');
  // Context windows: Claude only, directly or through OpenRouter.
  assert.equal(pricing.contextWindow('anthropic','claude-haiku-4-5-20251001'),200000);assert.equal(pricing.contextWindow('anthropic','claude-sonnet-5-5'),1000000);assert.equal(pricing.contextWindow('anthropic','claude-fable-5-2'),1000000);
  assert.equal(pricing.contextWindow('openrouter','anthropic/claude-haiku-5.5'),1000000);assert.equal(pricing.contextWindow('openai','gpt-6-luna'),undefined);assert.equal(pricing.contextWindow('openrouter','openai/gpt-6-luna'),undefined);

@@ -65,9 +65,14 @@ export function defaultEffort(provider:Provider,model:string):string{
  return provider==='anthropic'?(model.startsWith('claude-haiku-4-5')?'off':model==='claude-opus-5-5'||model==='claude-haiku-5-5'?'medium':'high'):'medium';
 }
 // Research mode's choice of effort when the model changes: the current one where the model takes it, else
-// medium, else the first the model offers. One rule for every model, so that a comparison of models is not
-// also a comparison of their own defaults.
-export function pickEffort(current:string,choices:string[]):string{if(!choices.length)return '';if(choices.includes(current))return current;return choices.includes('medium')?'medium':choices[0];}
+// medium, else the first the model offers. A setting is matched by the name the menu shows, so a model that
+// reasons within a token budget gets the budget named medium (4096). One rule for every model, so that a
+// comparison of models is not also a comparison of their own defaults.
+export function pickEffort(current:string,choices:string[]):string{
+ if(!choices.length)return '';if(choices.includes(current))return current;
+ const named=(level:string)=>choices.find(c=>reasoningOptionLabel(c)===reasoningOptionLabel(level));
+ return named(current)??(choices.includes('medium')?'medium':named('medium')??choices[0]);
+}
 // Use one short label throughout the interface. Legacy numeric budgets retain
 // their original API values; the menu presents them as relative levels.
 export function reasoningLabel(_provider:string|undefined,_model:string):string{return 'Reasoning effort';}
