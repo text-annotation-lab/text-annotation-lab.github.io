@@ -4,12 +4,20 @@
 import {lazy,Suspense,useState,type ComponentProps,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {Popover,PopoverContent,PopoverTrigger} from '@/components/ui/popover';
+import {samplingSummary,type RequestSettings} from '@/lib/request-settings';
 import './research/research.css';
 
 // more: shown under the switch's label (the standard Lab's “What changes?”).
 export function ModeSwitch({on,onChange,disabled,more}:{on:boolean;onChange:(on:boolean)=>void;disabled?:boolean;more?:ReactNode}){
  const button=<button type="button" role="switch" aria-checked={on} aria-label="Research mode" className={'mode-switch'+(on?' on':'')} disabled={disabled} onClick={()=>onChange(!on)} title={on?'Back to the standard Lab. Your texts, prompt, and results stay as they are.':'Adds tools for research: several runs per text, agreement with human labels, sampling, and more exports. Your texts, prompt, and results stay as they are.'}><span className="mode-switch-track" aria-hidden="true"><span className="mode-switch-thumb"/></span><span className="mode-switch-label">Research<span className="mode-switch-more"> mode</span></span></button>;
  return more?<span className="mode-switch-group">{button}{more}</span>:button;
+}
+
+// "Sampling & limits" under the model (research mode): temperature, output limit, prices, reasoning summary, and
+// OpenAI's logs, closed until opened. Its line names the settings that change what is sent.
+export function SamplingLimits({sent,children}:{sent?:RequestSettings;children:ReactNode}){
+ const set=samplingSummary(sent);
+ return <details className="research-sampling"><summary>Sampling &amp; limits{set.length?<span className="research-sampling-set"> · {set.join(' · ')}</span>:null}</summary><div className="research-sampling-body">{children}</div></details>;
 }
 
 // What research mode adds to the standard Lab: opened from “What changes?” under the switch, and shown at the top of

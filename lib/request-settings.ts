@@ -120,6 +120,8 @@ export function openRouterSystem(prompt:string,model:string,request?:RequestSett
 }
 // The settings a request carries, in a few words (the summary line of Processing options, and the list of runs).
 // The system prompt is not among them: it stands under the annotation prompt.
+// Under "Sampling & limits" (research mode): everything but prompt caching, which is in Processing options.
+export const samplingSummary=(sent:RequestSettings|undefined)=>requestSummary(sent).filter(part=>part!=='Prompt caching');
 export function requestSummary(sent:RequestSettings|undefined):string[]{
  return [sent?.cache?'Prompt caching':'',sent?.temperature!==undefined?`temperature ${sent.temperature}`:'',sent?.maxOutput!==undefined?`max ${sent.maxOutput.toLocaleString('en-US')} output tokens`:'',sent?.summary?'reasoning summary':'',sent?.store===false?'not in OpenAI’s logs':''].filter(Boolean);
 }
