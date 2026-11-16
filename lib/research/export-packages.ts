@@ -20,6 +20,7 @@ import {rowForRun,type Row} from './runs';
 import {tiedVote} from './repeats';
 import {sampleNote} from './sample';
 import {fieldLabel} from './view';
+import {scaleText} from './score-scale';
 
 // Told each step as it starts: "Computing agreement", or the file about to be written.
 export type Progress=(step:string)=>void|Promise<void>;
@@ -95,7 +96,7 @@ function runRecord(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequests
   ...(dataset.samples.length?{samples:dataset.samples.map(sampleNote)}:{}),
   run:{number:run.number,...(run.label?{label:run.label}:{}),...(run.scope?{scope:run.scope}:{}),started_at:run.startedAt,finished_at:facts.finished||null,status_when_exported:run.active?'in progress':'finished',processing:processingWords(facts),batch_ids:facts.batchIds},
   model:{provider:run.provider,requested:run.model,reported_by_api:facts.models,reasoning_effort:run.effort,reasoning_summary_requested:run.summary==='in part'?'in part':run.summary==='on',temperature:temperatureOf(run,parts),max_output_tokens:parts?.limit??null},
-  prompt:{version:run.promptVersion,sha256_prefix:hash,answer_format:run.answerSettings?.plain?'plain text':'structured',explanation_requested:explanationRequested(facts),answer_fields:run.answerFields,answer_settings:run.answerSettings??null},
+  prompt:{version:run.promptVersion,sha256_prefix:hash,answer_format:run.answerSettings?.plain?'plain text':'structured',explanation_requested:explanationRequested(facts),answer_fields:run.answerFields,answer_settings:run.answerSettings??null,...(run.answerSettings?.plain&&dataset.scoreScale?{score_scale_for_statistics:{...dataset.scoreScale,sent_to_model:false}}:{})},
   options:{annotations_per_text:run.repeats||1,prompt_caching:run.caching,...(dataset.kind==='knowledge'?{web_search:run.webSearch}:{})},
   // The bodies of the run's requests, with marks where each document goes (<<DOCUMENT_FILENAME>>, <<DOCUMENT_TEXT>>, <<FILE_BASE64>>).
   requests_as_sent:{record:requestNote(sent),different_bodies:sent.forms,bodies:[...body('text',sent.text),...body('pdf',sent.pdf)]},
@@ -116,7 +117,7 @@ function settingsTable(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequ
   ['Provider',run.provider],['Model',run.model],['Model reported by the provider',facts.models.join('; ')||'not recorded'],['Reasoning effort',run.effort],['Reasoning summary',summaryWords(run)],['Temperature',temperatureOf(run,parts)],['Max output tokens',parts?.limit??''],[`Annotations per ${unitOf(dataset)}`,(run.repeats||1)>1?`${run.repeats} (the Results sheet has the combined answers; By replicate has each annotation)`:1],
   ['Prompt caching',run.caching],['Processing',processingWords(facts)],...(dataset.kind==='knowledge'?[['Web search',run.webSearch?'yes':'no']]:[]),
   ['Prompt version',`v${run.promptVersion} (${hash})`],['Prompt',run.prompt],...(parts?.system?[['Prompt as sent (with the Lab’s instructions)',parts.system]]:[]),
-  ['Answer fields',run.answerSettings?.plain?'plain text: the whole reply is stored as “response”':run.answerFields.join(' | ')||'Score / category'],['Answer format',parts?.schema?JSON.stringify(parts.schema):run.answerSettings?.plain?'plain text (no answer format was sent)':'not recorded'],
+  ['Answer fields',run.answerSettings?.plain?'plain text: the whole reply is stored as “response”':run.answerFields.join(' | ')||'Score / category'],...(run.answerSettings?.plain&&dataset.scoreScale?[['Scale of the scores (for the statistics)',`${scaleText(dataset.scoreScale)}; set for the study, not sent to the model`]]:[]),['Answer format',parts?.schema?JSON.stringify(parts.schema):run.answerSettings?.plain?'plain text (no answer format was sent)':'not recorded'],
   ['Requests',requestNote(sent)],...dataset.samples.map(sample=>[`Sample ${sample.column} = ${sample.value}`,sampleNote(sample)]),
   ['Text Annotation Lab version (run)',facts.labs.join('; ')||'not recorded'],['Text Annotation Lab version (this export)',study.lab]];
 }
@@ -219,7 +220,7 @@ export function methodsParagraph(study:ExportStudy,report:RunReport,record:RunRe
   `${unit==='text'?'Texts':'Subjects'} (N = ${count(facts.usable)}) were annotated with ${run.model} (${run.provider==='openrouter'?'through the OpenRouter API':(PROVIDER_NAMES[run.provider]||run.provider)+' API'}${reported})${period}, using ${[effort,...(typeof record.model.temperature==='number'?[`temperature ${record.model.temperature}`]:[])].join(', ')}${limit?`${typeof record.model.temperature==='number'?',':''} and a maximum of ${count(limit)} output tokens`:''}.`,
   knowledge?`No source texts were supplied: the model answered from what it has learned, given a few identifying details for each subject (see the prompt and the list of subjects).${facts.webSearch?' Web search results collected beforehand for each subject were supplied with the request.':''}`:'',
   insertedText,
-  run.answerSettings?.plain?'The model returned free-text responses.':`The model was required to return the answer fields listed in the codebook as JSON conforming to a schema (structured outputs)${explanationRequested(facts)?', with an explanation written before the answers':''}.`,
+  run.answerSettings?.plain?`The model returned free-text responses.${study.dataset.scoreScale?` Scores in replies that were JSON were compared on a scale set for them, ${scaleText(study.dataset.scoreScale)} (not sent to the model); a number off the scale was left out of the agreement figures and reported.`:''}`:`The model was required to return the answer fields listed in the codebook as JSON conforming to a schema (structured outputs)${explanationRequested(facts)?', with an explanation written before the answers':''}.`,
   combined,
   retried?`${retried}${failedText?`; after this, ${failedText}`:''}.`:failedText?failedText+'.':'',
   facts.active?`The run was not finished when this was exported: ${units(facts.active)} had no result yet.`:'',
@@ -321,7 +322,7 @@ export async function buildResearchRepository(ctx:ExportContext,options:Research
  // Texts deleted from the study but kept for the runs that used them (lib/research/removed.ts).
  const gone=dataset.rows.filter(row=>row.removedAt).length,inStudy=dataset.rows.length-gone;
  const corpus=await readCorpus(ctx,dataset.rows,name+'/corpus',true);
- await add('study.json',pretty({study:study.name,data:sourceOf(dataset),exported_at:exportedAt,software:{name:'Text Annotation Lab',version:study.lab},[`n_${unit}s`]:inStudy,...(gone?{[`n_${unit}s_deleted_but_kept_for_runs`]:gone}:{}),runs:runs.map(run=>run.number),columns:dataset.columns,samples:dataset.samples}));
+ await add('study.json',pretty({study:study.name,data:sourceOf(dataset),exported_at:exportedAt,software:{name:'Text Annotation Lab',version:study.lab},[`n_${unit}s`]:inStudy,...(gone?{[`n_${unit}s_deleted_but_kept_for_runs`]:gone}:{}),...(dataset.scoreScale?{score_scale_for_plain_text_scores:dataset.scoreScale}:{}),runs:runs.map(run=>run.number),columns:dataset.columns,samples:dataset.samples}));
  let backupNote='';
  if(ctx.backup){
   await ctx.onProgress?.('Writing study-backup.tal-study.json');

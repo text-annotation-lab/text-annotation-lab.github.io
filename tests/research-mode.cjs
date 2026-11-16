@@ -209,6 +209,17 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   const plainForm=typed.calls.at(-1).options.body;assert.equal(plainForm.get('answerFields'),JSON.stringify(['response']));assert.equal(plainForm.get('answerSettings'),JSON.stringify({plain:true}));
   assert.deepEqual(typed.latest().docs.map(doc=>[doc.runNo,doc.answerFields,doc.answers]),Array(3).fill([3,['response'],{f0:'The tone is hopeful.'}]));
   assert(typed.all(n=>n.type==='TableHead').map(n=>typed.text(n)).includes('response'),'The reply is the table’s one answer column');
+  // The scale of the scores: kept with the study and read by Runs & agreement and the exports; never sent.
+  assert.equal(editor().scale,undefined);editor().onScaleChange({min:-3,max:3});await typed.flush();
+  assert.deepEqual(typed.latest().scoreScale,{min:-3,max:3});assert.deepEqual(editor().scale,{min:-3,max:3});
+  typed.find(n=>n.type==='Tabs').props.onValueChange('runs');await typed.flush();
+  assert.deepEqual(typed.find(n=>n.type==='ResearchRuns').props.datasets[0].scoreScale,{min:-3,max:3});
+  typed.find(n=>n.type==='Tabs').props.onValueChange('workspace');await typed.flush();
+  replies.push({score:'',explanation:'',answers:{f0:'{"tone":2}'}});
+  const sentBefore=typed.calls.length;typed.find(n=>n.type==='ResearchFilters').props.onClearChecked?.();await typed.button('All (').props.onClick();await typed.flush();
+  assert(typed.calls.length>sentBefore,'A run was sent');
+  assert(typed.calls.slice(sentBefore).every(call=>!String(call.options.body.get('answerSettings')).includes('-3')&&![...call.options.body.keys()].some(key=>/scale/i.test(key))),'The scale is not sent');
+  editor().onScaleChange(undefined);await typed.flush();assert(!('scoreScale' in typed.latest()));
   // The standard Lab says that the settings still apply, and keeps them.
   mode().onChange(false);await typed.flush();
   assert.deepEqual(notes(),['This study asks for plain-text replies, set in research mode; the answer fields above are not used. Switch to research mode to change this.']);

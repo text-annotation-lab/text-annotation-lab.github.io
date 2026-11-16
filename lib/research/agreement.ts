@@ -7,6 +7,7 @@ import {rowForRun,type Row} from './runs';
 import {cellOf,columnIndex,type Column} from './columns';
 import {fieldLabel,fieldsOf,pickField,sourceResult,valueOf,type CompareSource} from './view';
 import {fieldSpec,type FieldType} from '../answer-types';
+import {onScale,scalePoints,scaleText,type ScoreScale} from './score-scale';
 
 export const sourceLabel=(source:CompareSource)=>source.kind==='run'?'Run #'+source.run+(source.rep?' · annotation '+source.rep:''):source.name;
 // The answer fields a run recorded; a column has none.
@@ -33,12 +34,21 @@ function runSpec(rows:Row[],run:number,field:string):Typed|undefined{
  return found;
 }
 const numbersOf=(values:string[])=>values.map(value=>normalizeLabel(value)).filter(isNumber).map(Number);
+// A run whose replies are plain text (research mode), whose JSON values are read as fields.
+const plainRun=(rows:Row[],run:number)=>rows.some(row=>{const result=rowForRun(row,run);return result.status==='done'&&result.answerSettings?.plain===true;});
+// A plain-text run's value whose numbers are read on the study's scale for scores: mostly numbers, mostly on it.
+function onStudyScale(values:string[],scale:ScoreScale):boolean{
+ const given=values.filter(Boolean),numbers=numbersOf(given);
+ return numbers.length>0&&numbers.length*2>=given.length&&onScale(numbers,scale);
+}
 const byNumber=(values:string[])=>[...new Set(values)].sort((x,y)=>Number(x)-Number(y));
 // `allowed`: the field's own values (a scale's points or its categories), when a run declared them. `scaleSeen`:
 // numbers with no declared scale, whose scale is read from the answers (`range`). `known`: categories with none
-// declared. `basis` says in words what the scale or the categories rest on.
-export type Pairing={ids:string[];names:string[];a:string[];b:string[];rawA:string[];rawB:string[];onlyA:number;onlyB:number;numeric:boolean;level:Level;allowed:string[];scaleSeen:boolean;range?:[number,number];known?:string[];leftOut:'marker'|'number'|'value';basis:string};
-export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:string,b:CompareSource,fieldB:string):Pairing{
+// declared. `basis` says in words what the scale or the categories rest on. `scale`: the study's scale for the
+// scores of plain-text runs (never sent to the model), used when every run compared is a plain-text run whose
+// values for the field mostly lie on it.
+export type Pairing={ids:string[];names:string[];a:string[];b:string[];rawA:string[];rawB:string[];onlyA:number;onlyB:number;numeric:boolean;level:Level;allowed:string[];scaleSeen:boolean;range?:[number,number];known?:string[];leftOut:'marker'|'number'|'value';basis:string;studyScale?:ScoreScale};
+export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:string,b:CompareSource,fieldB:string,scale?:ScoreScale):Pairing{
  const va=sourceValues(rows,columns,a,fieldA),vb=sourceValues(rows,columns,b,fieldB);
  const specA=a.kind==='run'?runSpec(rows,a.run,fieldA):undefined,specB=b.kind==='run'?runSpec(rows,b.run,fieldB):undefined;
  const typed=[specA,specB].filter((spec):spec is Typed=>Boolean(spec)&&spec!.type!=='text'),twoRuns=a.kind==='run'&&b.kind==='run';
@@ -68,9 +78,16 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
   p.allowed=declared;p.leftOut='value';p.basis=`Categories: the field’s ${declared.length} allowed values.`;
   return p;
  }
+ // The study's scale for the scores of plain-text runs: when every run compared is one, with its values on it.
+ const runs=[[a,va],[b,vb]].filter(([source])=>(source as CompareSource).kind==='run') as [{kind:'run';run:number},string[]][];
+ const studyScale=scale&&!type&&runs.length>0&&runs.every(([source,values])=>plainRun(rows,source.run)&&onStudyScale(values,scale))?scale:undefined;
  // Numbers: a declared scale, or every answer of the run is a number, and so are most of the labels it is compared with.
- p.numeric=type==='ordinal'||(type!=='category'&&answers.length>0&&answers.every(isNumber)&&labels.filter(isNumber).length*2>labels.length);
- if(p.numeric){
+ p.numeric=type==='ordinal'||Boolean(studyScale)||(type!=='category'&&answers.length>0&&answers.every(isNumber)&&labels.filter(isNumber).length*2>labels.length);
+ if(p.numeric&&studyScale){
+  // As an ordinal field's allowed values: every point counts, and a number off the scale is left out and reported.
+  p.level='ordinal';p.allowed=scalePoints(studyScale);p.studyScale=studyScale;
+  p.basis=`Scale: the scale set for the scores, ${scaleText(studyScale)} (not sent to the model).`;
+ }else if(p.numeric){
   p.level='ordinal';
   // The range of the answers is read from every answer of the run, not only the paired ones.
   const seen=numbersOf(answersAll);

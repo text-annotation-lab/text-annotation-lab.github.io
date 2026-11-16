@@ -14,6 +14,7 @@ import {BOOTSTRAP_RESAMPLES,type Agreement,type CiStat} from './metrics';
 import {rowForRun,runState,type Row} from './runs';
 import {fieldLabel,valueOf} from './view';
 import {LAB_VERSION} from '../version';
+import {scaleText} from './score-scale';
 
 export type ReportOptions={tolerance:number;groupBy?:string;intervals?:Intervals;onProgress?:(note:string)=>void;now?:Date};
 type Cells=Record<string,string|number|null>;
@@ -99,7 +100,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
  const compared:{field:string;p:Pairing;all:Stats;nonZero:Stats|null}[]=[];
  for(const [i,field] of fields.entries()){
   options.onProgress?.(`field ${i+1} of ${fields.length}`);
-  const p=pairSources(both,dataset.columns,{kind:'run',run:first},field,{kind:'run',run:second},field);
+  const p=pairSources(both,dataset.columns,{kind:'run',run:first},field,{kind:'run',run:second},field,dataset.scoreScale);
   const job=agreementJob(p,'auto',tolerance),all=await ciOf(job,runJob(job,false));
   // Shared zeros (“no evaluation” from both runs) raise agreement: also report the texts where at least one run is
   // not 0, when some texts got 0 from both.
@@ -210,14 +211,14 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
 
  const date=(options.now||new Date()).toISOString().slice(0,10),labsA=factsA.labs.join('; '),labsB=factsB.labs.join('; ');
  const unfinished=(run:RunLine)=>{const state=runState(dataset.rows,run);return state==='running'||state==='submitted'?[{note:`Run #${run.number} was not finished when this report was made (${state==='running'?'it was still running':'its batch was still being processed'}): the figures are those of its results so far and may change once it is done.`}]:[];};
- const plain=compared.some(({p})=>p.scaleSeen);
+ const plain=compared.some(({p})=>p.scaleSeen),scaled=compared.find(({p})=>p.studyScale)?.p.studyScale;
  const notes:Cells[]=[
   {note:`Exported from the Text Annotation Lab ${LAB_VERSION} on ${date}${labsA&&labsA===labsB?`; both runs were made with ${labsA}`:labsA&&labsB?`; the runs were made with ${labsA} and ${labsB}`:''}.`},
   {note:`First: ${name(runA)}. Second: ${name(runB)}. ${Many} compared: those with a usable value for the field in both runs. n_${many}_in_both_runs: ${many} sent in both runs, including those whose request failed in one (no usable answer).`},
   ...unfinished(runA),...unfinished(runB),
   {note:`Exact agreement: share of ${many} with the same value.${tolerance>0?` Within ${tolerance} point${tolerance===1?'':'s'}: share whose scores differ by at most that much.`:''} Differ by 2 or more points and opposite direction (one below the middle of the scale, the other above): serious disagreements.`},
   {note:`“At least one non-zero” rows repeat the statistics on ${many} where at least one run gave a score other than 0, because many shared zeros raise exact agreement and Gwet’s AC1 and AC2. The subset is chosen by the scores themselves, so read these rows as descriptive.`},
-  {note:`Weighted kappa (linear or quadratic weights by the distance between values over the field’s scale${plain?'; for scores with no declared scale, over the range of scores seen in either run':''}), Gwet’s AC2 (linear weights), and Krippendorff’s alpha give partial credit for near misses; Cohen’s kappa and Gwet’s AC1 treat values as categories. AC1 and AC2 stay steady when one score (such as 0) dominates, where kappa can drop sharply. AC1 and AC2 are not given for Number fields, which have no fixed scale, and unlike kappa and alpha they depend on the number of points on the scale${plain?': where the scale is read from the scores seen, a field where no text got the scale’s end points is computed over fewer points and gets a lower AC1 and AC2 than over the full scale':''}.`},
+  {note:`Weighted kappa (linear or quadratic weights by the distance between values over the field’s scale${scaled?`; for the scores in plain-text replies, over the scale set for them, ${scaleText(scaled)}`:''}${plain?'; for scores with no declared scale, over the range of scores seen in either run':''}), Gwet’s AC2 (linear weights), and Krippendorff’s alpha give partial credit for near misses; Cohen’s kappa and Gwet’s AC1 treat values as categories. AC1 and AC2 stay steady when one score (such as 0) dominates, where kappa can drop sharply. AC1 and AC2 are not given for Number fields, which have no fixed scale, and unlike kappa and alpha they depend on the number of points on the scale${plain?': where the scale is read from the scores seen, a field where no text got the scale’s end points is computed over fewer points and gets a lower AC1 and AC2 than over the full scale':''}.`},
   {note:'Mean difference: second minus first (positive: the second run scores higher on average). Mean absolute difference: the average distance, whatever the direction.'},
   {note:`_ci_low and _ci_high: 95% intervals. Shares (exact agreement, within the tolerance, 2 or more points, opposite direction): Wilson score intervals. Coefficients and differences: bootstrap intervals (${count(BOOTSTRAP_RESAMPLES)} resamples of ${many}, fixed seed, so the same data gives the same interval). Fewer than 10 compared ${many}: no intervals.`},
   {note:`Review sheet: every compared score, opposite directions first, then the largest differences. Each score is in one category there, so opposite-direction rows are not also listed as “2+ points” (the Summary’s share of 2 or more points includes them). To draw at random within a category (for example 30 opposite-direction cases), sort by category and then by “random,” and take the first rows; the numbers never change, so the draw can be repeated. The judgment and note columns are for your own labels.`},
