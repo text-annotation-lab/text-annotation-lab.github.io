@@ -13,6 +13,13 @@ import {fieldSpec,type AnswerSettings} from '../answer-types';
 import {flattenJsonReply,isExplanationKey} from '../json-reply';
 
 export const MAX_REPEATS=10;
+// What several annotations per text (or subject) do, in a sentence, beside the setting.
+export function repeatsHint(repeats:number,settings:AnswerSettings|undefined,unit:'text'|'subject'):string{
+ if(repeats<2)return 'Use 2 or more to measure how consistent the model is.';
+ const each=`Each ${unit} is annotated ${repeats} times, each time with a request of its own.`;
+ if(settings?.plain)return `${each} Scores in JSON answers are combined by their median, other values by majority. Compare the repeats with each other under Runs & agreement (choose single annotations on both sides).${repeats%2===0?' Use an odd number: with an even one the median of two middle scores can be a half point (for example, 0.5), which never counts as the same score.':''}`;
+ return `${each} Results show the majority (categories), the median (ordinal scales), or the mean (numbers), and how consistent the repeats were.${settings?.fields?.some(field=>field.type==='ordinal')&&repeats%2===0?' Use an odd number so the median of an ordinal scale is a whole number.':''}`;
+}
 // The number as stored with a study, a run, or a result: only 2 to 10 is ever stored (absent: one).
 export const cleanRepeats=(value:unknown):number|undefined=>typeof value==='number'&&Number.isInteger(value)&&value>=2&&value<=MAX_REPEATS?value:undefined;
 export const repeatsOf=(result:{repeats?:unknown})=>cleanRepeats(result.repeats)??1;
@@ -46,6 +53,15 @@ export const incomplete=(result:Result)=>result.status==='done'&&repeatsOf(resul
 export function annotationCount(result:Result):{ok:number;of:number}|undefined{
  const of=repeatsOf(result);
  return of>1?{ok:of-missingRepeats(result).length,of}:undefined;
+}
+
+// What claiming a text (or a subject) sets when a run makes several annotations of it: the number, the
+// annotations it keeps (those it has, when missing ones are filled in), and none of a single annotation's own
+// fields. One annotated once gets none of this (only what an earlier result left of it is cleared).
+type Claim={repeats?:number;annotations?:Annotation[];consistency?:Record<string,number>;score?:string;explanation?:string;tokens?:number;responseId?:string;rawResponse?:string};
+export function claimRepeats(result:Result,times:number):Claim{
+ if(times>1)return {repeats:times,annotations:result.status==='pending'?[]:result.annotations,consistency:undefined,score:undefined,explanation:undefined,tokens:undefined,responseId:undefined,rawResponse:undefined};
+ return 'repeats' in result||'annotations' in result||'consistency' in result?{repeats:undefined,annotations:undefined,consistency:undefined}:{};
 }
 
 // Every request behind a result, each read as a result of its own: the result itself, or one per annotation
