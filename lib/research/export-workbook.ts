@@ -20,7 +20,6 @@ function sheetName(taken:Set<string>,wanted:string):string{
 }
 export async function buildWorkbook(sheets:Sheet[]):Promise<ArrayBuffer>{
  const ExcelJS=(await import('exceljs')).default,workbook=new ExcelJS.Workbook(),taken=new Set<string>();
- workbook.creator='Text Annotation Lab';
  for(const sheet of sheets){
   const table=sheet.table.length>1?sheet.table:[['note'],['No data']],header=table[0].map(String),prose=sheet.prose||isProse;
   const body=table.slice(1).map(row=>header.map((column,i)=>{

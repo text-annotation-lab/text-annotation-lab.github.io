@@ -10,8 +10,10 @@ export type SampleOptions={size:number;strata:string[];exclude:{column:string;va
 // Named `stratum`, not `key`: a study backup leaves out any field called `key`.
 export type Stratum={stratum:string;available:number;drawn:number};
 export type SampleResult={ids:string[];strata:Stratum[];eligible:number;taken:{value:string;n:number}[]};
-// Recorded with each draw, so a later reader knows which rules made the sample from the seed.
-export const SAMPLING_METHOD='Text Annotation Lab sampling method 1';
+// Recorded with each draw, so a later reader knows which rules made the sample from the seed. Draws made
+// before November 16, 2026 recorded it with the site's name, which plainMethod leaves out.
+export const SAMPLING_METHOD='sampling method 1';
+export const plainMethod=(method:string)=>method.replace(/^Text Annotation Lab (?=sampling method)/,'');
 export type SampleRecord={column:string;value:string;date:string;size:number;eligible:number;seed:number;strata:string[];allocation:Stratum[];exclude:{column:string;value:string}|null;taken:{value:string;n:number}[];method:string};
 
 // The same small seeded generator (mulberry32) as the statistics use.
@@ -86,7 +88,7 @@ export function sampleNote(r:SampleRecord):string{
  const left=r.taken.length?`, not from ${r.taken.reduce((n,t)=>n+t.n,0)} texts already marked ${r.taken.map(t=>`${r.column} = ${t.value}`).join(' or ')}`:'';
  return `Sample ${r.column} = ${r.value} (${r.date}): ${r.size} of ${r.eligible} texts drawn at random`+
   (r.strata.length?` within ${r.strata.join(' × ')} strata (${allocationNote(r.allocation)})`:'')+
-  (r.exclude?`, excluding ${r.exclude.column} = ${r.exclude.value}`:'')+left+`; seed ${r.seed} (${r.method}).`;
+  (r.exclude?`, excluding ${r.exclude.column} = ${r.exclude.value}`:'')+left+`; seed ${r.seed} (${plainMethod(r.method)}).`;
 }
 export function sampleRecord(o:SampleOptions&{markedAs:{column:string;value:string}},r:SampleResult,date:string):SampleRecord{
  return {column:o.markedAs.column,value:o.markedAs.value,date,size:r.ids.length,eligible:r.eligible,seed:o.seed,strata:orderStrata(o.strata),allocation:r.strata,exclude:o.exclude,taken:r.taken,method:SAMPLING_METHOD};
@@ -104,6 +106,6 @@ export function cleanSamples(value:unknown):SampleRecord[]{
   allocation:Array.isArray(s.allocation)?s.allocation.filter((x:any)=>x&&typeof x==='object').map((x:any)=>({stratum:text(x.stratum),available:count(x.available),drawn:count(x.drawn)})):[],
   exclude:s.exclude&&typeof s.exclude==='object'&&text(s.exclude.column)?{column:text(s.exclude.column),value:text(s.exclude.value)}:null,
   taken:Array.isArray(s.taken)?s.taken.filter((x:any)=>x&&typeof x==='object').map((x:any)=>({value:text(x.value),n:count(x.n)})):[],
-  method:text(s.method)||SAMPLING_METHOD,
+  method:plainMethod(text(s.method))||SAMPLING_METHOD,
  }));
 }

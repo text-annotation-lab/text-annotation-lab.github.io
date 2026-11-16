@@ -133,7 +133,8 @@ export function runFacts(dataset:Dataset,run:RunLine,all:RequestLine[]=requestLi
 // and failed requests; then the reply of a plain-text run that answered in JSON (its values come first), the
 // text where asked for, and the columns only the Lab has. A text is in the run when the run sent a request
 // for it; a text whose requests all failed has empty answers.
-export function resultsTable(study:ExportStudy,run:number,options:{texts?:Map<string,string>;explanation?:boolean}={}):Table{
+// columns: the places in dataset.columns of the label and metadata columns to include (all by default).
+export function resultsTable(study:ExportStudy,run:number,options:{texts?:Map<string,string>;explanation?:boolean;columns?:number[]}={}):Table{
  const {dataset}=study,counts=new Map<string,[number,number]>();
  for(const line of requestLines(dataset))if(line.run===run){const count=counts.get(line.row.id)||[0,0];count[line.result.status==='done'?0:1]++;counts.set(line.row.id,count);}
  const rows=dataset.rows.filter(row=>counts.has(row.id)),results=rows.map(row=>rowForRun(row,run)),extra=textExtras(dataset);
@@ -142,12 +143,13 @@ export function resultsTable(study:ExportStudy,run:number,options:{texts?:Map<st
  const rationale=options.explanation!==false&&done.some(asksRationale);
  const shared=new Set(middle.filter(p=>done.some(result=>consistencyOf(result,p.field)!==undefined)).map(p=>p.field));
  const taken=new Set(['doc_id','text','n_ok','n_error',...(rationale?['rationale']:[]),...(reply?[PLAIN_FIELD]:[]),...middle.flatMap(p=>[p.key,...(shared.has(p.field)?[p.key+'_replicate_agreement']:[])]),...extra.header].map(lower));
- const meta=named(dataset.columns.map(column=>column.name),taken,'meta_');
+ const kept=options.columns?dataset.columns.map((_,c)=>c).filter(c=>options.columns!.includes(c)):dataset.columns.map((_,c)=>c);
+ const meta=named(dataset.columns.map(column=>column.name),taken,'meta_').filter((_,c)=>kept.includes(c));
  const header=['doc_id',...middle.flatMap(p=>[p.key,...(shared.has(p.field)?[p.key+'_replicate_agreement']:[])]),...(rationale?['rationale']:[]),...meta,'n_ok','n_error',...(reply?[PLAIN_FIELD]:[]),...(options.texts?['text']:[]),...extra.header];
  const share=(result:Row,field:string):number|''=>{const value=result.status==='done'?consistencyOf(result,field):undefined;return value===undefined?'':Math.round(value*1000)/1000;};
  return [uniqueNames(header),...rows.map((row,i)=>{
   const result=results[i],ok=result.status==='done',[usable,failed]=counts.get(row.id)!;
-  return [docIdOf(dataset,row),...middle.flatMap(p=>[ok?valueOf(result,p.field):'',...(shared.has(p.field)?[share(result,p.field)]:[])]),...(rationale?[ok?explanationOf(result):'']:[]),...dataset.columns.map((_,c)=>row.cells?.[c]??''),usable,failed,
+  return [docIdOf(dataset,row),...middle.flatMap(p=>[ok?valueOf(result,p.field):'',...(shared.has(p.field)?[share(result,p.field)]:[])]),...(rationale?[ok?explanationOf(result):'']:[]),...kept.map(c=>row.cells?.[c]??''),usable,failed,
    ...(reply?[ok?valueOf(result,PLAIN_FIELD):'']:[]),...(options.texts?[options.texts.get(row.id)??'']:[]),...extra.cells(row)];
  })];
 }
@@ -179,37 +181,46 @@ export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:M
  })];
 }
 
-// One row per run, with its settings, counts, and tokens (Model knowledge adds web_search at the end).
+// One row per run, with its settings, counts, and tokens (Model knowledge adds web_search at the end); a column no
+// run has a value in is left out.
 export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
  const {dataset}=study,knowledge=dataset.kind==='knowledge',lines=requestLines(dataset);
- const header=['run','label','started_at','finished_at','status','mode','batch_id','scope','n_texts','replicates','requests_ok','requests_failed','requests_retried','requests_replaced_by_retries','provider','model_requested','models_reported','effort','thinking','temperature','max_output_tokens','caching','prompt_version','prompt_hash','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','app_version','error','notes',
+ const header=['run','label','started_at','finished_at','status','mode','batch_id','scope','n_texts','replicates','requests_ok','requests_failed','requests_retried','requests_replaced_by_retries','provider','model_requested','models_reported','effort','thinking','temperature','max_output_tokens','caching','prompt_version','prompt_hash','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','error','notes',
   ...(knowledge?['web_search']:[])];
- return [header,...runLines(dataset).map(run=>{
+ return withoutBlankColumns([header,...runLines(dataset).map(run=>{
   const facts=runFacts(dataset,run,lines),known=facts.tokens.knownFor>0,sum=(n:number)=>known?n:'';
   const notes=run.mixed?'Settings vary within this run; see the table of requests.':run.recorded?'':'Settings read from the run’s results (the run has no record of its own).';
   return [run.number,run.label??'',run.startedAt,facts.finished,run.active?(facts.processing==='instant'?'running':'submitted'):'completed',modeOf(facts.processing),facts.batchIds.join('; '),run.scope??'',facts.texts,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,facts.requests.replaced,
    run.provider,run.model,facts.models.join('; '),run.effort||'default',thinkingOf(run),run.temperature??'default',run.maxOutput??defaultOutputLimit(run.provider,run.model),run.caching,run.promptVersion,hashOf(hashes,run.prompt,run.system),
-   sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),facts.labs.join('; '),'',notes,
+   sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),'',notes,
    ...(knowledge?[run.webSearch?'yes':'no']:[])];
- })];
+ })]);
+}
+// A table without the columns that no row has a value in (a label, batch ID, scope, or note no run has).
+export function withoutBlankColumns(table:Table):Table{
+ const keep=table[0].map((_,i)=>i).filter(i=>table.slice(1).some(row=>row[i]!==''&&row[i]!==null&&row[i]!==undefined));
+ return table.map(row=>keep.map(i=>row[i]));
 }
 
 // The corpus: one row per text, with the text as it was sent, its length, the name each request gave for it
 // (source), the date it was deleted from the study where it was (kept for the runs that used it; only when the
 // study has such texts), and its labels and metadata; then the columns only the Lab has, and `file`, the path
 // of a PDF in the package (a PDF is sent as a file, so it has no text here).
-function corpusHeader(dataset:Dataset,withFiles:boolean){
+function corpusHeader(dataset:Dataset,withFiles:boolean,kept:number[]=dataset.columns.map((_,c)=>c),source=true){
  const extra=textExtras(dataset),removed=dataset.rows.some(row=>row.removedAt);
  const taken=new Set(['doc_id','text','n_characters','source','removed_from_study',...extra.header,...(withFiles?['file']:[])].map(lower));
- return {extra,removed,header:uniqueNames(['doc_id','text','n_characters','source',...(removed?['removed_from_study']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_'),...extra.header,...(withFiles?['file']:[])])};
+ return {extra,removed,header:uniqueNames(['doc_id','text','n_characters',...(source?['source']:[]),...(removed?['removed_from_study']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_').filter((_,c)=>kept.includes(c)),...extra.header,...(withFiles?['file']:[])])};
 }
 // The names the corpus table gives the study's label and metadata columns, in the columns' order.
 export const corpusColumnNames=(dataset:Dataset):string[]=>{if(!dataset.columns.length)return [];const {header,removed}=corpusHeader(dataset,false),from=4+(removed?1:0);return header.slice(from,from+dataset.columns.length);};
-export function corpusTable(dataset:Dataset,rows:Row[],texts:Map<string,string>,files:Map<string,string>):Table{
- const {extra,removed,header}=corpusHeader(dataset,files.size>0);
+// options.columns: the places of the label and metadata columns to include (all by default); options.source: false
+// leaves out `source` (the supplementary repository, where it only repeats the doc_id with the file's extension).
+export function corpusTable(dataset:Dataset,rows:Row[],texts:Map<string,string>,files:Map<string,string>,options:{columns?:number[];source?:boolean}={}):Table{
+ const kept=options.columns?dataset.columns.map((_,c)=>c).filter(c=>options.columns!.includes(c)):dataset.columns.map((_,c)=>c),source=options.source!==false;
+ const {extra,removed,header}=corpusHeader(dataset,files.size>0,kept,source);
  return [header,...rows.map(row=>{
   const text=texts.get(row.id);
-  return [docIdOf(dataset,row),text??'',text===undefined?'':text.length,sourceName(dataset,row),...(removed?[removedOn(row)]:[]),...dataset.columns.map((_,c)=>row.cells?.[c]??''),...extra.cells(row),...(files.size?[files.get(row.id)??'']:[])];
+  return [docIdOf(dataset,row),text??'',text===undefined?'':text.length,...(source?[sourceName(dataset,row)]:[]),...(removed?[removedOn(row)]:[]),...kept.map(c=>row.cells?.[c]??''),...extra.cells(row),...(files.size?[files.get(row.id)??'']:[])];
  })];
 }
 // The same corpus as JSON Lines, for software that reads one record per line: doc_id, text, source, and meta
@@ -234,7 +245,7 @@ export function codebook(answerFields:string[],settings:AnswerSettings|undefined
   const spec=fieldSpec(settings,name);
   lines.push(`| ${escape(name)} | ${escape(columns[i])} | ${spec?TYPES[spec.type]:'text'} | ${spec?escape((spec.type==='boolean'?['yes','no']:spec.values).join(', ')):'as the prompt defines'} | ${escape(spec?.description||'')} | ${isNamed?escape(keys[i]):'answers.f'+i} |`);
  });
- lines.push('',isNamed?'Each field was sent under its key in the schema and its type: a scale as a whole number, a number as a number, yes / no as true or false, anything else as text. Nothing about the answer format was added to the prompt. The Lab stores each answer as text (a scale’s 3 as 3, true and false as yes and no).':'The Lab sent each named field under a short key (f0, f1, …), as text, with a paragraph on the answer format after the prompt (see `prompt_as_sent.txt`).');
+ if(isNamed)lines.push('','Each field was sent under its key in the schema and its type: a scale as a whole number, a number as a number, yes / no as true or false, anything else as text. The results give each answer as text (a scale’s 3 as 3, true and false as yes and no).');
  if(settings?.rationale===false&&!isNamed)lines.push('','No explanation was requested; the key `explanation` was returned empty.');
  lines.push('','A field named like one of a table’s own columns (status, error, …) is written there as `answer_<name>`.');
  if(knowledge)lines.push('','Model knowledge: each field also accepts INSUFFICIENT_KNOWLEDGE, for a judgment the model cannot make reliably.'+(isNamed?' A scale, a number, or yes / no is therefore sent as text, limited to its values and INSUFFICIENT_KNOWLEDGE.':''));

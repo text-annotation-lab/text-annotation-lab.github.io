@@ -36,14 +36,15 @@ export function pyLiteral(value:unknown,indent=0):string{
 const docLine=(text:string)=>text.replace(/\\/g,'\\\\').replace(/"""/g,"'''").replace(/\s*[\r\n]+\s*/g,' ');
 
 export const SCRIPT_TEMPLATE=String.raw`"""
-LLM annotation script exported from the Text Annotation Lab ({{LAB_VERSION}}).
+LLM annotation script.
 
 Study:  {{STUDY_NAME}}
 Run:    {{RUN_DESCRIPTION}}
 
 This script sends the requests of the run above again: the same model, prompt,
 answer format, and request settings, to the same address. It holds the body of
-the run's requests as the Lab sent it, with marks where each document goes.
+the run's requests as sent in the original run, with marks where each
+document goes.
 Values marked with {{...}} in annotate_template.py are inserted from the study.
 It needs Python 3.9 or later and no other packages.{{SCRIPT_NOTE}}
 
@@ -95,8 +96,8 @@ URL = {{URL}}
 # The environment variable that holds your API key.
 API_KEY_ENV = {{API_KEY_ENV_NAME}}
 
-# The body of the run's requests, as the Lab sent it: the model, the prompt with
-# the Lab's instructions, the answer format, and every request setting. Three
+# The body of the run's requests, as sent in the original run: the model, the
+# prompt, the answer format, and every request setting. Three
 # marks stand for the document: <<DOCUMENT_FILENAME>>, <<DOCUMENT_TEXT>>, and
 # <<FILE_BASE64>> (the data of a PDF). None: the run sent only PDFs.
 REQUEST = {{REQUEST}}
@@ -133,7 +134,7 @@ PLAIN_TEXT = {{PLAIN_TEXT}}
 # How many times the run annotated each document (its annotations per text).
 REPLICATES = {{REPLICATES}}
 
-# Seconds to wait for a reply, as in the Lab.
+# Seconds to wait for a reply, as in the original run.
 TIMEOUT = {{TIMEOUT}}
 
 # ==================== END OF STUDY CONFIGURATION ==========================
@@ -195,7 +196,7 @@ def headers(key):
 
 def send(url, body, key):
     """Send one request; return (HTTP status, the provider's response read as JSON, or None)."""
-    # Written as the Lab writes it: no spaces, and every character as it is.
+    # Written as in the original run: no spaces, and every character as it is.
     data = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     for attempt in range(5):
         request = urllib.request.Request(url, data=data, headers=headers(key), method="POST")
@@ -220,7 +221,7 @@ def send(url, body, key):
 
 
 def read_reply(out):
-    """What a response holds, read as the Lab reads it: (text, model, stop reason, usage, response id, complete)."""
+    """What a response holds, read as in the original run: (text, model, stop reason, usage, response id, complete)."""
     if PROVIDER == "openai":
         parts = [c for item in out.get("output") or [] for c in item.get("content") or []]
         refused = any(c.get("type") == "refusal" for c in parts)
@@ -267,7 +268,7 @@ def read_json(text):
 
 
 def parse_answer(text):
-    """The answers of one reply, checked as the Lab checks them: (values by column, problem or "")."""
+    """The answers of one reply, checked as in the original run: (values by column, problem or "")."""
     if PLAIN_TEXT:
         reply = text.strip()
         if not reply:
@@ -322,8 +323,8 @@ def parse_answer(text):
 
 
 def as_text(value):
-    """An answer as the Lab keeps it: text as it is, a number as JavaScript writes it
-    (3, 2.5), true and false as yes and no. None: not an answer."""
+    """An answer as the original results keep it: text as it is, a number as 3 or
+    2.5, true and false as yes and no. None: not an answer."""
     if isinstance(value, bool):
         return "yes" if value else "no"
     if isinstance(value, int):
@@ -391,13 +392,13 @@ def main():
     answers = ["response"] if PLAIN_TEXT else (FIELDS or ["score"])
     explained = not PLAIN_TEXT and "explanation" not in [name.lower() for name in answers]
     own = ["doc_id", "replicate", "status", "error", "model_reported", "stop_reason", "input_tokens", "output_tokens", "latency_s", "completed_at", "response_id"]
-    # As in the Lab's exports: a field named like one of these columns is written as answer_<name>.
+    # As in the original results: a field named like one of these columns is written as answer_<name>.
     column_of = {name: "answer_" + name if name in own else name for name in answers}
     if explained:
         column_of["explanation"] = "explanation"
     columns = [*own[:3], *column_of.values(), *own[3:]]
     now = lambda: dt.datetime.now(dt.timezone.utc).isoformat()
-    # With a byte-order mark, like the Lab's CSV files, so Excel reads letters such as æ, ø, and å correctly.
+    # With a byte-order mark, so Excel reads letters such as æ, ø, and å correctly.
     with open(args.out, "w", newline="", encoding="utf-8-sig") as out_file, open(args.log, "a", encoding="utf-8") as log:
         writer = csv.DictWriter(out_file, fieldnames=columns, extrasaction="ignore")
         writer.writeheader()
@@ -418,8 +419,12 @@ def main():
                             record.update(status="error", error="The provider answered with an error (HTTP %d%s)" % (status, ": " + code if code else ""))
                         else:
                             text, model, stop, usage, response_id, complete = read_reply(out)
-                            # As in the Lab: a cut-off, refused, empty, or unreadable answer counts as failed.
+                            # As in the original run: a cut-off, refused, empty, or unreadable answer counts as failed.
                             values, problem = parse_answer(text) if complete else ({}, "Incomplete answer (stop reason: %s)" % (stop or "none"))
+                            # As in the original results: a failed answer's values are left blank (the answer is in
+                            # the log), except a plain-text reply.
+                            if problem:
+                                values = {"response": values["response"]} if PLAIN_TEXT and "response" in values else {}
                             tokens_in, tokens_out = token_counts(usage)
                             record.update({column_of.get(name, name): value for name, value in values.items()})
                             record.update(status="error" if problem else "ok", error=problem, model_reported=model, stop_reason=stop,
@@ -461,11 +466,11 @@ function allowedValues(frame:RequestFrame,fields:string[],keys?:string[]):Record
 // repeats: the run's annotations per text (absent: one). inserts: for each placeholder of the prompt that was
 // filled in, the corpus column that holds its values (null: the study no longer has the column).
 // settings: the run's answer settings (for the named format).
-export type ScriptInput={lab:string;studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;settings?:AnswerSettings;repeats?:number;note?:string;inserts?:[string,string|null][]};
+export type ScriptInput={studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;settings?:AnswerSettings;repeats?:number;note?:string;inserts?:[string,string|null][]};
 export function scriptValues(input:ScriptInput):Record<string,string>{
  const frame=(input.text||input.pdf)!,model=requestParts(frame).model,named=!input.plain&&input.settings?.named===true,keys=named?wireKeys(input.fields,input.settings):undefined;
  return {
-  LAB_VERSION:docLine(input.lab),STUDY_NAME:docLine(input.studyName),RUN_DESCRIPTION:docLine(input.runDescription),
+  STUDY_NAME:docLine(input.studyName),RUN_DESCRIPTION:docLine(input.runDescription),
   SCRIPT_NOTE:input.note?'\n\n'+input.note.split('\n').map(docLine).join('\n'):'',
   API_KEY_ENV:keyVariable(input.provider),API_KEY_ENV_NAME:JSON.stringify(keyVariable(input.provider)),
   PROVIDER:JSON.stringify(input.provider),URL:JSON.stringify(frame.url),

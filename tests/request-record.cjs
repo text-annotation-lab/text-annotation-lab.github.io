@@ -192,7 +192,8 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
  const encoded=await backup.encodeStudyBackup({name:'Study',createdAt:new Date().toISOString(),texts:workspace,knowledge:{items:[]}});
  const restored=backup.decodeStudyBackup(encoded).texts;
  assert.deepEqual(restored.requests,workspace.requests,'The requests travel with a study backup, whole');
- assert.deepEqual(records.RECORDED_KEYS.map(key=>restored.docs[0][key]),['q1','claude-sonnet-5-5-20260901','end_turn','{"score":"A"}','Compared the text with each category.','2026-11-16 abc1234',undefined]);assert.equal(restored.docs[0].history[0].stopReason,'max_tokens');
+ assert.deepEqual(records.RECORDED_KEYS.map(key=>restored.docs[0][key]),['q1','claude-sonnet-5-5-20260901','end_turn','{"score":"A"}','Compared the text with each category.',undefined,undefined],'A backup keeps the record of each request but not the build that sent it');assert(!encoded.includes('abc1234')&&JSON.parse(encoded).format==='text-annotation-study','Nothing in a backup names the Lab or its build');
+ const older=JSON.parse(encoded);older.format='text-annotation-lab-study';assert.equal(backup.decodeStudyBackup(JSON.stringify(older)).texts.docs[0].requestId,'q1','A backup made before still imports');assert.equal(restored.docs[0].history[0].stopReason,'max_tokens');
  const tampered=JSON.parse(encoded);tampered.workspaces.texts.requests[0].id='../q1';
  assert.throws(()=>backup.decodeStudyBackup(JSON.stringify(tampered)),/Invalid texts workspace at requests/);
  const longNote=JSON.parse(encoded);longNote.workspaces.texts.docs[0].stopReason='x'.repeat(201);

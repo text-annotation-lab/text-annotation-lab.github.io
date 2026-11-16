@@ -3,7 +3,7 @@
 import {recordedCost} from '../cost-estimate/run-cost';
 import {rowForRun,runSummaries,setupOf,sameSetup,type Row,type RunRecord,type RunSummary} from './runs';
 import {requestsOf} from './repeats';
-import type {Column} from './columns';
+import {docIdOf,stem,type Column} from './columns';
 import type {SampleRecord} from './sample';
 import type {ScoreScale} from './score-scale';
 
@@ -48,6 +48,16 @@ export function uniqueNames(names:string[]):string[]{
 }
 // doc_id, the key that joins the tables, also fills in {{id}}: see lib/research/columns.ts.
 export {docIds,docIdOf} from './columns';
+// The label and metadata columns a supplementary repository can include (their places in dataset.columns): all
+// but a column named file that only repeats each text's file name or doc_id (doc_id is the name without its
+// extension).
+export function publicColumns(dataset:Dataset):number[]{
+ return dataset.columns.map((_,i)=>i).filter(i=>{
+  if(dataset.kind==='knowledge'||dataset.columns[i].name.trim().toLowerCase()!=='file')return true;
+  const values=dataset.rows.map(row=>({value:String(row.cells?.[i]??'').trim(),row})).filter(item=>item.value);
+  return !values.length||!values.every(({value,row})=>{const id=docIdOf(dataset,row);return value===String(row.name??'')||value===id||stem(value)===id;});
+ });
+}
 // A study's or run's name for a file or folder: lower case, accents dropped, words joined by hyphens, at most 48
 // characters (“Villains: Pilot 2” → villains-pilot-2).
 export const slugName=(name:string)=>name.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g,'').trim().replace(/[\s_-]+/g,'-').slice(0,48);

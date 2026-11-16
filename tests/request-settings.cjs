@@ -173,7 +173,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const dataset={kind:'texts',rows,runs:[{...setup,temperature:0.2,maxOutput:4000,number:1,startedAt:'2026-11-16T10:00:00Z'},{...setup,model:'gpt-6-sol',number:2,startedAt:'2026-11-16T11:00:00Z'},{...setup,number:3,startedAt:'2026-11-16T12:00:00Z'}],columns:[],samples:[]};
  const lines=exporting.runLines(dataset);assert.deepEqual(lines.map(line=>line.summary),['on','off','in part']);assert.deepEqual(lines.map(line=>[line.temperature,line.maxOutput]),[[0.2,4000],[undefined,undefined],[undefined,undefined]]);
  const exported={name:'Settings',dataset,lab:'test'},overview=tables.runsOverview(exported,new Map()),col=name=>overview[0].indexOf(name);
- assert.deepEqual(overview[0].slice(col('effort'),col('effort')+5),['effort','thinking','temperature','max_output_tokens','caching'],'The run’s model settings together');assert.equal(overview[0].at(-1),'notes','No column after the shared ones');
+ assert.deepEqual(overview[0].slice(col('effort'),col('effort')+4),['effort','temperature','max_output_tokens','caching'],'The run’s model settings together (thinking: no run has a value)');assert(!overview[0].includes('app_version'),'No build');
  assert.deepEqual(overview.slice(1).map(line=>[line[col('temperature')],line[col('max_output_tokens')]]),[[0.2,4000],['default',12000],['default',12000]]);
  const long=tables.requestsTable(exported,undefined,new Map()),at=long[0].indexOf('reasoning_summary');
  assert.equal(long[0][at-1],'rationale');assert.equal(long[0][at+1],'parse_error');assert.deepEqual(long.slice(1).map(line=>line[at]),['Read the text, chose A.','Stopped early.','','',''],'A failed request keeps its summary');

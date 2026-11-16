@@ -64,10 +64,11 @@ const scoredSet={kind:'texts',rows:scored,runs:[{...setup('gpt-6-luna'),number:1
   assert(!('texts' in groups[0]));
   const runs=Object.fromEntries(records(s.Runs).map(r=>[r.setting,[r.first,r.second]]));
   assert.deepEqual([runs.run,runs.provider,runs.model_reported_by_api,runs.texts_in_run,runs.texts_with_results,runs.status],[['#1 (Pilot)','#2'],['openai','anthropic'],['gpt-sim','claude-sim'],['12','12'],['12','12'],['completed','completed']]);
-  assert.deepEqual(records(s.Runs).map(r=>r.setting),['run','provider','model','model_reported_by_api','effort','max_output_tokens','prompt_version','mode','started','status','texts_in_run','texts_with_results','annotations_per_text','app_version'],'The runs’ settings in a fixed order, and no others');assert.match(runs.prompt_version[0],/^v\d+ \([0-9a-f]{12}\)$/);
+  assert.deepEqual(records(s.Runs).map(r=>r.setting),['run','provider','model','model_reported_by_api','effort','max_output_tokens','prompt_version','mode','started','status','texts_in_run','texts_with_results','annotations_per_text'],'The runs’ settings in a fixed order, and no others');assert.match(runs.prompt_version[0],/^v\d+ \([0-9a-f]{12}\)$/);
   const table=s['Table Score / category'];
   assert.deepEqual(table[0],['first \\ second','1','2','3','4','5']);assert.deepEqual(table[2],['2',0,2,1,0,0]);
   const notes=records(s.Notes).map(r=>r.note).join(' ');
+  assert(notes.startsWith('Exported on ')&&!/Text Annotation Lab|the Lab/.test(notes),'The notes name neither the Lab nor its build');
   assert(notes.includes('First: gpt-6-luna (run #1). Second: claude-haiku-5-5 (run #2).')&&notes.includes('“By decade” sheet')&&notes.includes('10,000 resamples'),notes);
   // The workbook itself.
   const bytes=await report.comparisonReport(scoredSet,1,2,{tolerance:1});
