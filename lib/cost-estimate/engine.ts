@@ -1,8 +1,9 @@
 import {priceFor,type Provider,type Price,PRICE_DATE,SOURCES} from './pricing';
+import {cacheSupport} from '../request-settings';
 export type Range={low:number;high:number};
 export type Input={tokens:Range;pdf?:boolean;requestTokens?:number};
 export type Sample={input?:number;output:number;reasoning?:number;visible?:number};
-export type EstimateConfig={provider:Provider;model:string;prompt:string;system?:string;schema?:string;effort:string;maxTokens?:number;thinkingBudget?:number;fields?:{name:string;type:string;description?:string}[];defaultExplanation?:boolean;cache?:boolean;webSearch?:boolean;rates?:Price;date?:string};
+export type EstimateConfig={provider:Provider;model:string;prompt:string;system?:string;schema?:string;effort:string;maxTokens?:number;thinkingBudget?:number;fields?:{name:string;type:string;description?:string}[];defaultExplanation?:boolean;cache?:boolean;batch?:boolean;webSearch?:boolean;rates?:Price;date?:string};
 export type Estimate={count:number;inputBasis?:'provider'|'approximate';total:Range;batch?:Range;input:Range;visible:Range;reasoning:Range;inputCost:Range;visibleCost:Range;reasoningCost:Range;searchCost:Range;notes:string[];samples:number;outputAssumption:string;priceDate:string;source:string;unknown?:string};
 export const add=(a:Range,b:Range):Range=>({low:a.low+b.low,high:a.high+b.high});
 export const scale=(a:Range,n:number):Range=>({low:a.low*n,high:a.high*n});
@@ -72,7 +73,12 @@ export function estimate(c:EstimateConfig,inputs:Input[],samples:Sample[]=[]):Es
  const promptTokens=textTokens((c.system||'')+'\n'+c.prompt,multiplier);
  const fieldTokens=c.schema?textTokens(c.schema,multiplier):c.fields?.length?textTokens(JSON.stringify(c.fields),multiplier):zero();
  const overhead=add(promptTokens,add(fieldTokens,range(35,100)));
- for(const item of inputs){
+ // Prompt caching (research mode): the prompt, the same for every text, is what the provider caches, when
+ // the model's provider caches at a mark and the prompt is not shorter than the model's minimum.
+ const support=c.cache?cacheSupport(c.provider,c.model):undefined,marked=support?.kind==='marked'?support:undefined;
+ const tooShort=Boolean(marked?.minTokens&&promptTokens.high<marked.minTokens),caching=Boolean(marked)&&!tooShort;
+ const write=(c.batch?marked?.batchWrite:marked?.write)??1.25;
+ for(const [index,item] of inputs.entries()){
   let input=finite(item.requestTokens)?range(item.requestTokens,item.requestTokens):add(scale(item.tokens,multiplier),overhead),visible={...answer},reasoning=calibrated(valid.flatMap(s=>finite(s.reasoning)?[s.reasoning]:[]),reasoningAssumption(c,input));
   const combined=valid.filter(s=>s.reasoning===undefined);
   if(combined.length){
@@ -92,15 +98,24 @@ export function estimate(c:EstimateConfig,inputs:Input[],samples:Sample[]=[]):Es
    const base=output?price.output:price.input,long=output?price.longOutput:price.longInput;
    return range(tokens.low*(price.threshold&&input.low>price.threshold?long??base:base)/1e6,tokens.high*(price.threshold&&input.high>price.threshold?long??base:base)/1e6);
   };
-  // Cache writes can cost more than ordinary input. Hits depend on timing and
-  // provider routing, so the conservative high edge includes a fresh write.
-  const inputCost=cost(input);if(c.cache)inputCost.high*=1.25;
+  // Cache writes cost more than ordinary input, and hits depend on timing and provider routing. The upper
+  // edge therefore assumes no cache read and a fresh write of the prompt for every text; the lower edge that
+  // the first text writes the prompt and every later one reads it.
+  const inputCost=cost(input);
+  if(caching){
+   const rate=(edge:'low'|'high')=>(price.threshold&&input[edge]>price.threshold?price.longInput??price.input:price.input)/1e6;
+   inputCost.high+=Math.min(promptTokens.high,input.high)*rate('high')*(write-1);
+   if(price.cacheRead!==undefined)inputCost.low+=Math.min(promptTokens.low,input.low)*rate('low')*(index?price.cacheRead-1:write-1);
+  }
   result.input=add(result.input,input);result.visible=add(result.visible,visible);result.reasoning=add(result.reasoning,reasoning);
   result.inputCost=add(result.inputCost,inputCost);result.visibleCost=add(result.visibleCost,cost(visible,true));result.reasoningCost=add(result.reasoningCost,cost(reasoning,true));
  }
  result.total=add(add(result.inputCost,result.visibleCost),add(result.reasoningCost,result.searchCost));
  if(price.batch&&!c.webSearch)result.batch=scale(result.total,.5);
- notes.push(c.cache?'Cache hits are not assumed. The upper estimate allows for fresh cache writes; actual reuse may lower the cost.':'No cache savings are assumed.');
+ if(caching){
+  notes.push(price.cacheRead!==undefined?'Prompt caching is on. The lower estimate assumes that the first text stores the prompt and every later text reads it from the cache; the upper estimate assumes no cache reads and a cache write for every text.'+(c.batch?' In a batch, requests can start together, and each of those stores the prompt.':''):'Prompt caching is on, but the Lab lists no cache rate for this model, so no cache savings are assumed. The upper estimate allows for a cache write for every text.');
+  if(marked?.minTokens&&promptTokens.low<marked.minTokens)notes.push(`The prompt is close to the shortest this model caches (${marked.minTokens.toLocaleString('en-US')} tokens). A shorter prompt is not cached; then neither the savings nor the cache writes apply.`);
+ }else notes.push(tooShort?`Prompt caching is on, but the prompt (about ${tokens(promptTokens)} tokens) is shorter than the ${marked!.minTokens!.toLocaleString('en-US')} tokens this model caches from, so nothing is cached. No cache savings are assumed.`:'No cache savings are assumed.');
  result.inputBasis=inputs.every(i=>finite(i.requestTokens))?'provider':'approximate';
  if(result.inputBasis==='provider')notes.push(c.webSearch?'The provider counted the original request inputs. Additional web-research text is still estimated.':'Input uses the provider’s count for each complete request, including instructions and response formatting. The billed count can still differ slightly.');
  else if(c.provider==='openrouter')notes.push('Input is a rough local estimate; provider token counting is unavailable through OpenRouter in this Lab.');

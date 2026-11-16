@@ -11,21 +11,25 @@ export type Dataset={kind:'texts'|'knowledge';rows:Row[];runs:RunRecord[];column
 export const unitOf=(dataset:{kind:string})=>dataset.kind==='knowledge'?'subject':'text';
 export const sourceOf=(dataset:{kind:string})=>dataset.kind==='knowledge'?'model knowledge (no texts supplied)':'uploaded texts';
 
-export type RunLine=RunSummary&{cost:number;costKnown:number;costCount:number;mixed:boolean;webSearch:boolean};
+// caching: whether the run's results were made with prompt caching (all, none, or some of them).
+export type RunLine=RunSummary&{cost:number;costKnown:number;costCount:number;mixed:boolean;webSearch:boolean;caching:'on'|'off'|'in part'};
 // One line per run: its settings, how many texts it covers, and what it cost.
 export function runLines(dataset:Dataset):RunLine[]{
  return runSummaries(dataset.rows,dataset.runs).map(run=>{
-  let cost=0,costKnown=0,costCount=0,mixed=false,webSearch=false;
+  let cost=0,costKnown=0,costCount=0,mixed=false,webSearch=false,cached=0,started=0;
   for(const row of dataset.rows){
    const result=rowForRun(row,run.number);
+   // A text waiting in a batch already carries the settings it was sent with.
+   if(result.status==='queued'||result.status==='running'){started++;if(result.requestSettings?.cache)cached++;}
    if(result.status!=='done'&&result.status!=='error')continue;
-   costCount++;const charge=recordedCost(result as any);
+   costCount++;started++;const charge=recordedCost(result as any);
    if(charge){cost+=charge.amount;costKnown++;}
    if(result.webSearch)webSearch=true;
+   if(result.requestSettings?.cache)cached++;
    // A run without a record of its own (Model knowledge) may hold results made with different settings.
    if(!run.recorded&&result.prompt!==undefined&&!sameSetup(setupOf(result),run))mixed=true;
   }
-  return {...run,cost,costKnown,costCount,mixed,webSearch};
+  return {...run,cost,costKnown,costCount,mixed,webSearch,caching:!cached?'off':cached===started?'on':'in part'};
  });
 }
 const explanationOf=(row:Row)=>{const text=String(row.explanation??'').trim();return text&&!Object.values(row.answers||{}).some(value=>String(value).trim()===text)?text:'';};
@@ -59,22 +63,22 @@ export function wideTable(dataset:Dataset):(string|number)[][]{
 // One row per text, run, and answer field (tidy data for R, Python, or a pivot table).
 export function longTable(dataset:Dataset):(string|number)[][]{
  const lead=leading(dataset),runs=runSummaries(dataset.rows,dataset.runs),knowledge=dataset.kind==='knowledge';
- const header=uniqueNames([...lead.header,'run','field','value','explanation','provider','model','reasoning_effort','prompt_version',...(knowledge?['web_search']:[]),'processing','annotated_at','tokens','cost_usd']);
+ const header=uniqueNames([...lead.header,'run','field','value','explanation','provider','model','reasoning_effort','prompt_version',...(knowledge?['web_search']:[]),'processing','prompt_caching','annotated_at','tokens','cost_usd']);
  const out:(string|number)[][]=[header];
  for(const row of dataset.rows){
   const first=lead.cells(row);
   for(const run of runs){
    const result=rowForRun(row,run.number);if(result.status!=='done')continue;
    const fields=fieldsOf([result]),charge=recordedCost(result as any);
-   for(const field of fields)out.push([...first,run.number,fieldLabel(field),valueOf(result,field),explanationOf(result),String(result.provider??run.provider),String(result.model??run.model),String(result.effort??run.effort),run.promptVersion,...(knowledge?[result.webSearch?'yes':'no']:[]),result.processing==='batch'?'batch':'instant',String(result.time??''),typeof result.tokens==='number'?result.tokens:'',charge?Number(charge.amount.toFixed(6)):'']);
+   for(const field of fields)out.push([...first,run.number,fieldLabel(field),valueOf(result,field),explanationOf(result),String(result.provider??run.provider),String(result.model??run.model),String(result.effort??run.effort),run.promptVersion,...(knowledge?[result.webSearch?'yes':'no']:[]),result.processing==='batch'?'batch':'instant',result.requestSettings?.cache?'on':'off',String(result.time??''),typeof result.tokens==='number'?result.tokens:'',charge?Number(charge.amount.toFixed(6)):'']);
   }
  }
  return out;
 }
 // One row per run, with its full prompt: the settings record of the study.
 export function runsTable(dataset:Dataset):(string|number)[][]{
- const header=['run','data','started_at','provider','model','reasoning_effort','prompt_version','answer_fields','answer_format',...(dataset.kind==='knowledge'?['web_search']:[]),unitOf(dataset)+'s_completed',unitOf(dataset)+'s_failed','cost_usd','cost_known_for','settings','prompt'];
- return [header,...runLines(dataset).map(run=>[run.number,sourceOf(dataset),run.startedAt,run.provider,run.model,run.effort,run.promptVersion,run.answerFields.join(' | '),answersLabel(run.answerFields,run.answerSettings,true),...(dataset.kind==='knowledge'?[run.webSearch?'yes':'no']:[]),run.done,run.failed,run.costKnown?Number(run.cost.toFixed(6)):'',`${run.costKnown} of ${run.costCount}`,run.mixed?'vary within this run; see the long results table':run.recorded?'recorded when the run started':'read from the run’s results',run.prompt])];
+ const header=['run','data','started_at','provider','model','reasoning_effort','prompt_version','answer_fields','answer_format',...(dataset.kind==='knowledge'?['web_search']:[]),'prompt_caching',unitOf(dataset)+'s_completed',unitOf(dataset)+'s_failed','cost_usd','cost_known_for','settings','prompt'];
+ return [header,...runLines(dataset).map(run=>[run.number,sourceOf(dataset),run.startedAt,run.provider,run.model,run.effort,run.promptVersion,run.answerFields.join(' | '),answersLabel(run.answerFields,run.answerSettings,true),...(dataset.kind==='knowledge'?[run.webSearch?'yes':'no']:[]),run.caching,run.done,run.failed,run.costKnown?Number(run.cost.toFixed(6)):'',`${run.costKnown} of ${run.costCount}`,run.mixed?'vary within this run; see the long results table':run.recorded?'recorded when the run started':'read from the run’s results',run.prompt])];
 }
 export function samplesTable(samples:SampleRecord[]):(string|number)[][]{
  return [['column','value','drawn_on','size','eligible','seed','stratified_by','allocation','excluded','method','note'],...samples.map(s=>[s.column,s.value,s.date,s.size,s.eligible,s.seed,s.strata.join(' × '),s.allocation.map(a=>`${a.stratum}: ${a.drawn} of ${a.available}`).join('; '),s.exclude?`${s.exclude.column} = ${s.exclude.value}`:'',s.method,sampleNote(s)])];
