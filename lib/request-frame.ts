@@ -4,7 +4,7 @@
 import {annotationSchema,answerInstructions,type AnswerSettings} from './answer-fields';
 import type {Provider} from './providers';
 import {anthropicMark,anthropicSystem,cachedParts,openaiPrompt,openRouterSystem,OPENAI_CACHE_MODE,OPENAI_MARK,sentRequestSettings,outputLimit,budgetedClaude,marksOpenAICache,type RequestSettings} from './request-settings';
-import {knowledgeInstructions} from './model-knowledge';
+import {knowledgeAddition} from './model-knowledge';
 import {fixedLength,markInserts,fillPlaces,INSERT_MARK} from './prompt-inserts';
 
 // The document of one request: its text, or a whole PDF (base64) sent as a file.
@@ -164,7 +164,7 @@ export type RequestFrame={url:string;body:string};
 // The request of one result, with marks for its document. The Lab's own instructions are added to the prompt
 // here exactly as the request handlers add them.
 export function requestFrame(s:FrameSettings,pdf:boolean):RequestFrame{
- const knowledge=Boolean(s.knowledge),written=formText(s.prompt),framed=s.placed&&s.layout===LAYOUT?fillPlaces(written,(name,whole)=>s.inserts?`<<INSERT:${name}>>`:whole):{prompt:s.inserts?markInserts(written):written,spots:undefined},added=knowledge?'\n\n'+knowledgeInstructions(Boolean(s.webSearch)&&!s.batch,Boolean(s.answerSettings?.named)):'';
+ const knowledge=Boolean(s.knowledge),written=formText(s.prompt),framed=s.placed&&s.layout===LAYOUT?fillPlaces(written,(name,whole)=>s.inserts?`<<INSERT:${name}>>`:whole):{prompt:s.inserts?markInserts(written):written,spots:undefined},added=knowledge?knowledgeAddition(Boolean(s.webSearch)&&!s.batch,s.answerSettings):'';
  const body=providerBody({provider:s.provider,model:s.model,effort:s.effort,prompt:framed.prompt+added+answerInstructions(s.answerFields,s.answerSettings),schemaPrompt:s.batch?written+added:written,answerFields:s.answerFields,settings:s.answerSettings,request:s.requestSettings,knowledge,batch:s.batch,inserts:s.inserts,earlier:s.layout!==LAYOUT,spots:framed.spots},pdf?{filename:REQUEST_MARKS.filename,pdf:REQUEST_MARKS.file}:{filename:REQUEST_MARKS.filename,text:REQUEST_MARKS.text});
  return {url:requestUrl(s.provider,s.model),body:JSON.stringify(body)};
 }

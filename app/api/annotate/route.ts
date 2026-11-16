@@ -8,7 +8,7 @@ import { extractText, TextEncodingError, supportedFile as supported } from "@/li
 import {GEMINI_ENABLED,validModelId,reasoningOptions} from '@/lib/providers';
 import {annotateGemini} from '@/lib/gemini';
 import {annotateAnthropic} from '@/lib/anthropic';
-import {knowledgeInstructions,knowledgeDocumentText,validKnowledgeFields,type KnowledgeFields,type KnowledgeResearch} from '@/lib/model-knowledge';
+import {knowledgeAddition,knowledgeDocumentText,validKnowledgeFields,type KnowledgeFields,type KnowledgeResearch} from '@/lib/model-knowledge';
 import {researchKnowledge,KnowledgeWebError} from '@/lib/knowledge-web';
 import {readRequestSettings,sentRequestSettings,requestTimeout,type RequestSettings} from '@/lib/request-settings';
 import {providerBody,requestUrl,replyCode,replyText,reasoningSummary,formText,type RequestDocument} from '@/lib/request-frame';
@@ -63,7 +63,7 @@ export async function POST(request:Request){
   if(!validKnowledgeFields(fields))return json({error:'Provide one subject with unique, nonempty field headings and at least one value.'},400);
   subjectFields=fields;
   file=new File([knowledgeDocumentText(fields,undefined,earlier)],'subject.txt',{type:'text/plain'});
-  prompt+='\n\n'+knowledgeInstructions(webSearch,Boolean(answerSettings?.named));
+  prompt+=knowledgeAddition(webSearch,answerSettings);
  }
  const provider=f.get('provider')||'openai';
  if(provider!=='openai'&&provider!=='gemini'&&provider!=='anthropic'&&provider!=='openrouter')return json({error:'Unsupported provider.'},400);

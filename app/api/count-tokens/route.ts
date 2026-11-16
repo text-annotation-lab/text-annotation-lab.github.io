@@ -5,7 +5,7 @@ import {PROVIDERS,validModelId,GEMINI_ENABLED,reasoningOptions,type Provider} fr
 import {buildBatchBody} from '@/lib/batch-provider';
 import {readRequestSettings,type RequestSettings} from '@/lib/request-settings';
 import {supportedFile} from '@/lib/extract-text';
-import {knowledgeInstructions,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
+import {knowledgeAddition,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
 const reply=(x:unknown,status=200)=>Response.json(x,{status,headers:{'Cache-Control':'no-store'}});
 const MAX_BYTES=22*1024*1024;
 // The destination and method are fixed here. This route cannot generate an
@@ -33,7 +33,7 @@ export async function POST(request:Request){try{
  // Research mode's own system prompt, counted where the request sends it. It comes as JSON, as in a request, so
  // that its line breaks stay as typed.
  let settings:RequestSettings|undefined;try{settings=readRequestSettings(f.get('requestSettings'));}catch(error){return reply({error:(error as Error).message},400);}
- const body:any=await buildBatchBody(provider,file,prompt+(knowledge?'\n\n'+knowledgeInstructions(web,Boolean(answerSettings?.named)):''),model,effort,knowledge,web,answerFields,answerSettings,settings?.system?{system:settings.system}:undefined);
+ const body:any=await buildBatchBody(provider,file,prompt+(knowledge?knowledgeAddition(web,answerSettings):''),model,effort,knowledge,web,answerFields,answerSettings,settings?.system?{system:settings.system}:undefined);
  let url:string,payload:any,headers:Record<string,string>={'Content-Type':'application/json'};
  if(provider==='openai'){url='https://api.openai.com/v1/responses/input_tokens';headers.Authorization=auth;payload={model, input:body.input,instructions:body.instructions,text:body.text,reasoning:body.reasoning};}
  else if(provider==='anthropic'){url='https://api.anthropic.com/v1/messages/count_tokens';headers['x-api-key']=key;headers['anthropic-version']='2023-06-01';headers['anthropic-dangerous-direct-browser-access']='true';payload={model,system:body.system,messages:body.messages,thinking:body.thinking,output_config:body.output_config};}

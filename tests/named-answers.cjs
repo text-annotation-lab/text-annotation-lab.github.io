@@ -49,6 +49,12 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.equal(fields.answerInstructions(names,sent.settings),'');assert(fields.answerInstructions(names,standard.settings).includes('Lab response format'));
  assert(!knowledgeLib.knowledgeInstructions(false,true).includes('score'));assert(knowledgeLib.knowledgeInstructions(false,true).includes('answer "INSUFFICIENT_KNOWLEDGE" for each judgment that cannot be assessed reliably'));assert(!knowledgeLib.knowledgeInstructions(true,true).includes('score'));
  assert.equal(knowledgeLib.knowledgeInstructions(false),knowledgeLib.KNOWLEDGE_INSTRUCTIONS,'Unchanged without the named format');
+ // inPrompt (Model knowledge in research mode): the prompt box holds the paragraph, and the Lab adds nothing.
+ const ownSettings=types.sentAnswers(names,editor,true,true).settings;assert.equal(ownSettings.inPrompt,true);assert.equal(types.sentAnswers(names,ownSettings).settings.inPrompt,true,'A recorded run keeps it');
+ assert.deepEqual(types.sentAnswers([],{plain:true},false,true).settings,{plain:true,inPrompt:true});assert.deepEqual(types.cleanAnswerSettings({plain:true,inPrompt:true}),{plain:true,inPrompt:true});assert.equal(types.cleanAnswerSettings({inPrompt:'yes'}),undefined);
+ assert.equal(types.sentAnswers(names,editor,true).settings.inPrompt,undefined,'Texts never carry it');
+ assert.equal(knowledgeLib.knowledgeAddition(false,ownSettings),'');assert.equal(knowledgeLib.knowledgeAddition(true,ownSettings),'');assert.equal(knowledgeLib.knowledgeAddition(false,sent.settings),'\n\n'+knowledgeLib.knowledgeInstructions(false,true));assert.equal(knowledgeLib.knowledgeAddition(true),'\n\n'+knowledgeLib.KNOWLEDGE_WEB_INSTRUCTIONS);
+ assert.equal(knowledgeLib.recordedInstructions({}),knowledgeLib.KNOWLEDGE_INSTRUCTIONS);assert.equal(knowledgeLib.recordedInstructions({webSearch:true}),knowledgeLib.KNOWLEDGE_WEB_INSTRUCTIONS);assert.equal(knowledgeLib.recordedInstructions({instructions:''}),'');
 
  // --- Reading a reply ------------------------------------------------------------------------
  const reply={rationale:'Dry wording.',Tone:'neutral',Intensity:-1,Sarcasm:true,word_count:120.5,Notes:'Short.'},answers={f0:'neutral',f1:'-1',f2:'yes',f3:'120.5',f4:'Short.'};
@@ -97,6 +103,9 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
   response=await route.POST(request(provider,names,sent.settings,true));out=await response.json();
   assert.equal(response.status,200,provider+' knowledge: '+out.error);assert.deepEqual(out.answers,{...answers,f1:'INSUFFICIENT_KNOWLEDGE',f2:'INSUFFICIENT_KNOWLEDGE',f3:'INSUFFICIENT_KNOWLEDGE'});
   body=JSON.parse(calls[0].options.body);assert(words(provider,body).includes(knowledgeLib.knowledgeInstructions(false,true)),provider);assert(!words(provider,body).includes('return score'));
+  // With the paragraph in the prompt box, the request carries the prompt as written and nothing after it.
+  calls=[];response=await route.POST(request(provider,names,ownSettings,true));out=await response.json();
+  assert.equal(response.status,200,provider+' knowledge, in the prompt: '+out.error);body=JSON.parse(calls[0].options.body);assert(!words(provider,body).includes('Experimental latent-knowledge'),provider+': nothing added');assert(words(provider,body).includes(PROMPT),provider);
   // The standard Lab's requests are as they were.
   calls=[];mock=async()=>Response.json(wrap(provider,JSON.stringify({score:'',explanation:'E',answers:{f0:'neutral',f1:'0',f2:'no',f3:'3',f4:'Fine.'}})));
   response=await route.POST(request(provider,names,standard.settings));out=await response.json();
@@ -118,6 +127,8 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.equal(JSON.parse(frame.body).messages[0].content.map(part=>part.text).join(''),PROMPT+'\n\n<text>\n<<DOCUMENT_TEXT>>\n</text>');
  const knownFrame=frames.requestFrame({provider:'anthropic',model:'claude-sonnet-5-5',effort:'medium',prompt:PROMPT,answerFields:names,answerSettings:sent.settings,knowledge:true,layout:frames.LAYOUT},false);
  assert(JSON.parse(knownFrame.body).messages[0].content.map(part=>part.text).join('').includes(knowledgeLib.knowledgeInstructions(false,true)),'Model knowledge’s paragraph is in the recorded request');
+ const ownFrame=frames.requestFrame({provider:'anthropic',model:'claude-sonnet-5-5',effort:'medium',prompt:PROMPT,answerFields:names,answerSettings:ownSettings,knowledge:true,layout:frames.LAYOUT},false);
+ assert(JSON.parse(ownFrame.body).messages[0].content.map(part=>part.text).join('').startsWith(PROMPT+'\n\n<entry>'),'With the paragraph in the prompt, the recorded request has the prompt and then the subject');
 
  // --- Exports ------------------------------------------------------------------------------
  const codebook=tables.codebook(names,sent.settings,false);
