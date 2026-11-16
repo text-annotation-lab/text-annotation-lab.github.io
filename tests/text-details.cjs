@@ -34,10 +34,10 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
  const {Technical}=load('components/research/technical.tsx'),{ResearchDetail}=load('components/research/filters.tsx'),wrappers=load('components/research-mode.tsx');
  const frames=load('lib/request-frame.ts'),records=load('lib/research/requests.ts'),providers=load('lib/providers.ts'),data=load('lib/research/export-data.ts');
  const model=providers.defaultModel('openai'),PROMPT='Rate the speech from 1 to 5.';
- const settings={provider:'openai',model,effort:'medium',prompt:PROMPT,answerFields:[]};
+ const settings={provider:'openai',model,effort:'medium',prompt:PROMPT,answerFields:[],layout:frames.LAYOUT};
  const kept=records.recordRequest(undefined,frames.requestFrame(settings,false));
  const usage={input_tokens:1000,output_tokens:264,output_tokens_details:{reasoning_tokens:64},input_tokens_details:{cached_tokens:512}};
- const result=extra=>({status:'done',provider:'openai',model,effort:'medium',prompt:PROMPT,answerFields:[],score:'4',explanation:'Because.',processing:'instant',requestId:kept.id,modelReported:model+'-2026-10-01',stopReason:'completed',output:'{"explanation":"Because.","score":"4"}',responseId:'resp_1',usage,tokens:1264,startedAt:'2026-11-16T07:00:00.000Z',time:'2026-11-16T07:00:02.000Z',runNo:2,...extra});
+ const result=extra=>({status:'done',provider:'openai',model,effort:'medium',prompt:PROMPT,answerFields:[],score:'4',explanation:'Because.',processing:'instant',requestId:kept.id,modelReported:model+'-2026-10-01',stopReason:'completed',output:'{"explanation":"Because.","score":"4"}',responseId:'resp_1',usage,tokens:1264,startedAt:'2026-11-16T07:00:00.000Z',time:'2026-11-16T07:00:02.000Z',runNo:2,layout:'message',...extra});
  const file=new File(['Speech 1. We observe today not a victory of party.'],'speech-001.txt');
  const row={id:'a',name:'speech-001.txt',file,...result()};
  const study={kind:'texts',requests:kept.list,versions:new Map([[1,1],[2,2]])};
@@ -77,7 +77,13 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
  assert.deepEqual(fields(tree),{'Model (requested)':model,'Model (reported)':'not recorded','Stop reason':'not recorded','Tokens in / out':'— / —','Cache read / write':'— / —','Response ID':'—','Run':'#1 · instant · prompt v1'});
  assert.equal(text(nodes(nodes(tree).find(n=>n.props?.className==='research-technical-part')).find(n=>n.type==='pre')),'{"explanation":"Because.","score":"4"}','The reply kept with an older result');
  button(tree,'Show full request and response').props.onClick();await settle();tree=older.tree();
- assert.match(JSON.parse(text(nodes(tree).find(n=>n.type==='pre'&&nodes(tree).indexOf(n)>nodes(tree).findIndex(x=>x.props?.className==='research-technical-full')))).recorded,/^built again from the result’s settings/);
+ const rebuilt=JSON.parse(text(nodes(tree).find(n=>n.type==='pre'&&nodes(tree).indexOf(n)>nodes(tree).findIndex(x=>x.props?.className==='research-technical-full'))));
+ assert.match(rebuilt.recorded,/^built again from the result’s settings/);assert.equal(JSON.stringify(rebuilt.request),JSON.stringify(sent),'Built again in the layout the result was sent in');
+ // A result sent before the prompt and the text went in one message is built again in that earlier layout.
+ const earlier=result({requestId:undefined,layout:undefined,runNo:1}),earliest=mount(Technical,{row:{...row,...earlier},of:earlier,run:1,study});
+ button(earliest.tree(),'Show full request and response').props.onClick();await settle();
+ const earlierText=text(nodes(nodes(earliest.tree()).find(n=>n.props?.className==='research-technical-full')).filter(n=>n.type==='pre')[0]);
+ assert(earlierText.includes('Document filename: speech-001.txt')&&earlierText.includes('"instructions"'),'An earlier result keeps its earlier layout');
  // A failed request: no reply to show; a batch names its batch.
  const failed=result({status:'error',error:'OpenAI reported a server error. (HTTP 500.)',score:undefined,explanation:undefined,output:undefined,modelReported:undefined,stopReason:undefined,usage:undefined,responseId:undefined,processing:'batch',batchId:'batch_9'});
  const broken=mount(Technical,{row:{...row,...failed},of:failed,run:2,study});tree=broken.tree();

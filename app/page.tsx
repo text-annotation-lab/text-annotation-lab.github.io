@@ -44,7 +44,7 @@ import {priceFor} from '@/lib/cost-estimate/pricing';
 import {ownPrice,useOwnPrices} from '@/lib/own-prices';
 import {ModeSwitch,OtherTabNotice,ResearchKeys,ResearchTools,ResearchAnswerFields,ResearchRequestOptions,ResearchRequestPreview,ResearchSystemPrompt,ResearchModel,ResearchFilters,ResearchDetail,ResearchRuns,ResearchExport,DetailSteps,stepKey} from '@/components/research-mode';
 import {cleanRequestSettings,sentRequestSettings,requestSummary,type RequestSettings} from '@/lib/request-settings';
-import {requestFrame} from '@/lib/request-frame';
+import {requestFrame,LAYOUT} from '@/lib/request-frame';
 import {cleanRequests,recordRequest,usedRequests,replyNotes,NOT_RECORDED,type RecordedRequest,type Recorded} from '@/lib/research/requests';
 import {promptInserts,fixedLength,insertMap} from '@/lib/prompt-inserts';
 import {insertValues,insertNotes} from '@/lib/research/inserts';
@@ -63,7 +63,7 @@ import {DEFAULT_VIEW,researchRows,viewNarrowed,runTag,pickRandom,parseSource,typ
 import {knowledgeRows} from '@/lib/research/knowledge';
 // runNo, earlier, and cells belong to research mode: the run a result was made in, the results of earlier runs, and labels or metadata.
 // So does the record of a result's request (Recorded).
-type Doc={runNo?:number;earlier?:Earlier[];removedAt?:string;removedPlace?:number;cells?:string[];requestSettings?:RequestSettings;repeats?:number;annotations?:Annotation[];consistency?:Record<string,number>}&Recorded&{chartYear?:number|null;chartGroup?:string|null}&NamedAnswers&Partial<ChunkInfo>&{inputMode?:string;runId?:string;runStartedAt?:string;runSize?:number;history?:Attempt[];startedAt?:string;concurrency?:number;processing?:string;batchId?:string;provider?:Provider;id:string;name:string;file:File;status:string;score?:string;explanation?:string;error?:string;model?:string;prompt?:string;effort?:string;tokens?:number;usage?:any;time?:string;responseId?:string};
+type Doc={runNo?:number;earlier?:Earlier[];removedAt?:string;removedPlace?:number;cells?:string[];requestSettings?:RequestSettings;layout?:string;repeats?:number;annotations?:Annotation[];consistency?:Record<string,number>}&Recorded&{chartYear?:number|null;chartGroup?:string|null}&NamedAnswers&Partial<ChunkInfo>&{inputMode?:string;runId?:string;runStartedAt?:string;runSize?:number;history?:Attempt[];startedAt?:string;concurrency?:number;processing?:string;batchId?:string;provider?:Provider;id:string;name:string;file:File;status:string;score?:string;explanation?:string;error?:string;model?:string;prompt?:string;effort?:string;tokens?:number;usage?:any;time?:string;responseId?:string};
 const SAMPLE='Classify the document’s overall tone as POSITIVE (mainly favorable or hopeful), NEGATIVE (mainly critical or pessimistic), MIXED (substantial positive and negative tone), or NEUTRAL (primarily factual, with no clear positive or negative tone). Choose one label. If the tone cannot be judged from the document, return UNCLEAR instead. Use only the document as evidence. Give a brief explanation with a supporting phrase, and note any uncertainty.';
 
 const BRAND=<div className="brand"><img className="brand-icon" src="/favicon.svg?v=58" width="40" height="40" alt=""/><div className="brandtext"><span>Text Annotation Lab</span><small>Department of English &amp; American Studies Center Aarhus · Aarhus University</small></div></div>;
@@ -163,10 +163,11 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // How many annotations a run makes of each text: always one in the standard Lab.
  const times=research?repeats:1;
  // The setup a run is made with (lib/research/runs.ts).
- const setupNow={provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,...(times>1?{repeats:times}:{}),...(sentRequest?.temperature!==undefined?{temperature:sentRequest.temperature}:{}),...(sentRequest?.maxOutput!==undefined?{maxOutput:sentRequest.maxOutput}:{}),...(sentRequest?.system?{system:sentRequest.system}:{})};
+ const setupNow={provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,...(times>1?{repeats:times}:{}),...(sentRequest?.temperature!==undefined?{temperature:sentRequest.temperature}:{}),...(sentRequest?.maxOutput!==undefined?{maxOutput:sentRequest.maxOutput}:{}),...(sentRequest?.system?{system:sentRequest.system}:{}),layout:LAYOUT};
  // What a run reads of the settings. "Retry failed" (research mode) sends a run's failed requests again with
  // that run's own. scopeNote: which texts the next start covers, in words, for the run's record.
- const useNow={provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,key};
+ // layout: where the prompt goes in a request (lib/request-frame.ts); a run made before it is retried in its own.
+ const useNow={provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,key,layout:LAYOUT as string|undefined};
  // The study's answer fields (the prompt's and its runs'): a column named after one is a guess for human labels.
  const studyFields=research?[...new Set([...sentFields,...(sentSettings?.fields||[]).map(field=>field.name),...runs.flatMap(run=>[...(run.answerFields||[]),...(run.answerSettings?.fields||[]).map(field=>field.name)])])]:[];
  const scopeNote=useRef('');
@@ -355,7 +356,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
    if(!research)return {};
    const pdf=/\.pdf$/i.test(d.file.name);let noted=made.get(pdf);
    if(!noted){
-    const kept=recordRequest(requestsNow.current,requestFrame({provider:use.provider,model:use.model,effort:use.effort,prompt:use.prompt,answerFields:use.sentFields,answerSettings:use.sentSettings,requestSettings:use.sentRequest,batch,inserts:use.insertNames.length>0},pdf));
+    const kept=recordRequest(requestsNow.current,requestFrame({provider:use.provider,model:use.model,effort:use.effort,prompt:use.prompt,answerFields:use.sentFields,answerSettings:use.sentSettings,requestSettings:use.sentRequest,batch,inserts:use.insertNames.length>0,layout:use.layout},pdf));
     if(kept.list!==requestsNow.current){requestsNow.current=kept.list;setRequests(kept.list);}
     noted={...NOT_RECORDED,requestId:kept.id,lab:LAB_VERSION};made.set(pdf,noted);
    }
@@ -368,7 +369,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // `retryOf` (research mode, "Retry failed"): the run whose requests without a usable answer are sent again, with
  // the settings of that run. Inside this function the names of the settings stand for whichever settings apply.
  async function run(all:boolean,only?:Set<string>,newRun=false,resume?:Set<string>,retryOf?:{number:number;use:typeof useNow}){
-  const {provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,key}=retryOf?.use||useNow;
+  const {provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,key,layout}=retryOf?.use||useNow;
   const scope=scopeNote.current;scopeNote.current='';
   if(lock.current||batchJob||!ready||storageConflict||(keyRejected&&!retryOf))return;
   if(!retryOf&&!setupReady())return;
@@ -429,7 +430,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      claimed++;
      // n: the number of the annotation; 0 for a text's single annotation, which is written on the text itself.
      const ns=times===1?[0]:d.status==='pending'?Array.from({length:times},(_,i)=>i+1):missingRepeats(d);
-     update(d.id,{inputMode:provider==='openrouter'?(/\.pdf$/i.test(d.file.name)?'pdf-native':'text'):undefined,status:'running',runNo,runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,concurrency:all?parallel:1,processing:'instant',batchId:undefined,...recorded(d),...claimRepeats(d,times)});
+     update(d.id,{inputMode:provider==='openrouter'?(/\.pdf$/i.test(d.file.name)?'pdf-native':'text'):undefined,status:'running',runNo,runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout,concurrency:all?parallel:1,processing:'instant',batchId:undefined,...recorded(d),...claimRepeats(d,times)});
      if(times>1){open.set(d.id,{before:failedBefore.get(d.id)||d,left:ns.length,came:0});waitingTasks.push(...ns.slice(1).map(n=>({d,n})));}
      if(claimed===1)setSelected(d.id);
      return {d,n:ns[0]};
@@ -443,7 +444,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      // back: a reply came back (a request that did not get as far as a reply may have had no connection).
      let shared:string|undefined,back=false;
      try{
-      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,d,columns)));
+      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,d,columns)));if(layout!==LAYOUT)form.set('layout','earlier');
       const sent=await sendAnnotation(()=>fetch('/api/annotate',{method:'POST',headers:{Authorization:`Bearer ${key.trim()}`},body:form}),place);
       // The run stopped while this text waited out a rate limit: it was not annotated and waits again as before.
       if(!sent){if(n)close(d.id);else{latest.current=latest.current.map(x=>x.id===d.id?failedBefore.get(d.id)||d:x);setDocs(latest.current);}return;}
@@ -508,9 +509,9 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   if(research&&(count>MAX_SPLIT_REQUESTS||sourceBytes>MAX_SPLIT_SOURCE_BYTES)){setNotice(times>1?'Submit up to 100,000 requests (texts × annotations per text) and 1 GB of files in one run. Submit fewer texts when this limit is exceeded.':'Submit up to 100,000 texts and 1 GB of files in one run. Submit fewer or smaller files when this limit is exceeded.');return;}
   if(!research&&(count>MAX_BATCH_ITEMS||sourceBytes>MAX_BATCH_SOURCE_BYTES)){setNotice(times>1?'Submit up to 10,000 requests (texts × annotations per text) and 50 MB of files together. Submit fewer texts when this limit is exceeded.':'Submit up to 10,000 texts and 50 MB of files together. Submit fewer or smaller files when this limit is exceeded.');return;}
   lock.current=true;setBatchBusy(true);setNotice('');
-  const job:BatchJob={responseFormat:annotationFormatRecord(sentFields,prompt,false,sentSettings),answerFields:sentFields,...(sentSettings?{answerSettings:sentSettings}:{}),...(sentRequest?{requestSettings:sentRequest}:{}),runId:'lab_'+newId(),provider,model,prompt,effort,docIds:pending.map(d=>d.id),createdAt,state:'submitting',...(times>1?{repeats:times,...(ns.some(list=>list.length!==times)?{ns}:{})}:{})};
+  const job:BatchJob={responseFormat:annotationFormatRecord(sentFields,prompt,false,sentSettings),answerFields:sentFields,...(sentSettings?{answerSettings:sentSettings}:{}),...(sentRequest?{requestSettings:sentRequest}:{}),runId:'lab_'+newId(),provider,model,prompt,effort,layout:LAYOUT,docIds:pending.map(d=>d.id),createdAt,state:'submitting',...(times>1?{repeats:times,...(ns.some(list=>list.length!==times)?{ns}:{})}:{})};
   const queuedIds=new Set(job.docIds),recorded=recorder(true);
-  const queued=begun.docs.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runNo:begun.number,runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,concurrency:undefined,processing:'batch',...recorded(d),...claimRepeats(d,times)}:d);
+  const queued=begun.docs.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runNo:begun.number,runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout:LAYOUT,concurrency:undefined,processing:'batch',...recorded(d),...claimRepeats(d,times)}:d);
   const save=(next:BatchJob|null,docs:Doc[]=queued)=>storage.current.save({provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,customModel,chunkWords,chunkMethod,processing,concurrency,repeats:storedRepeats,requestSettings,requests:requestsNow.current,batchJob:next,runs:begun.runs,columns,samples,...(removed.length?{removed}:{}),...(scoreScale?{scoreScale}:{})});
   const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns))));pending.forEach(d=>form.append('files',d.file));
   // Research mode: one batch of the prepared run goes up.
@@ -566,7 +567,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   const collectedAt=new Date().toISOString(),notReturned='No result was returned for this document. Check the provider’s batch report before retrying.';
   // Several annotations per text: each result is kept as an annotation, and the text's own fields are worked out from them.
   const gathered=(d:Doc,slot:{at:number;ns:number[]}):Doc=>{
-   let row:Doc={...d,answerFields:job.answerFields,answerSettings:job.answerSettings,responseFormat:job.responseFormat,provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,processing:'batch',batchId};
+   let row:Doc={...d,answerFields:job.answerFields,answerSettings:job.answerSettings,responseFormat:job.responseFormat,provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',batchId};
    slot.ns.forEach((n,k)=>{
     const r=checked(results.get(job.runId+'_'+(slot.at+k)));
     const got={...(r?{answers:collectedAnswers(r,job.answerFields).answers,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),error:r?.error||(!r?notReturned:undefined),runId:job.runId,runStartedAt:job.createdAt,runSize:d.runSize,processing:'batch',batchId,requestId:d.requestId,lab:d.lab,inserts:d.inserts,startedAt:d.startedAt,time:collectedAt};
@@ -574,7 +575,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
    });
    return {...row,...settle(row)};
   };
-  return docs.map(d=>{const slot=slots.get(d.id);if(!slot)return d;if(several)return gathered(d,slot);const r=checked(results.get(job.runId+'_'+slot.at));return {...d,...(r?{...collectedAnswers(r,job.answerFields),answerSettings:job.answerSettings,responseFormat:job.responseFormat,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),status:r&&!r.error?'done':'error',error:r?.error||(!r?notReturned:undefined),provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,processing:'batch',batchId,time:new Date().toISOString()};});
+  return docs.map(d=>{const slot=slots.get(d.id);if(!slot)return d;if(several)return gathered(d,slot);const r=checked(results.get(job.runId+'_'+slot.at));return {...d,...(r?{...collectedAnswers(r,job.answerFields),answerSettings:job.answerSettings,responseFormat:job.responseFormat,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),status:r&&!r.error?'done':'error',error:r?.error||(!r?notReturned:undefined),provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',batchId,time:new Date().toISOString()};});
  }
  async function manageBatch(action:'check'|'collect'|'cancel',idOverride?:string){
   if(lock.current||!batchJob||storageConflict)return;
@@ -686,7 +687,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   if(errors.prompt||errors.model){setNotice(`The requests of run #${number} cannot be sent again: ${errors.model?'its model or reasoning setting is not one this version of the Lab offers':'it has no prompt'}.`);return;}
   // The request settings the run's results recorded, with the temperature and output limit of the run's record.
   const recorded=cleanRequestSettings(runRequestSettings(latest.current,number)),tuned={...recorded,...(record.temperature!==undefined?{temperature:record.temperature}:{}),...(record.maxOutput!==undefined?{maxOutput:record.maxOutput}:{})};
-  const runTimes=record.repeats||1,use={provider:runProvider,model:record.model,effort:record.effort,prompt:record.prompt,sentFields:record.answerFields,sentSettings:record.answerSettings,sentRequest:sentRequestSettings(runProvider,record.model,Object.keys(tuned).length?tuned:undefined,record.effort),times:runTimes,insertNames:promptInserts(record.prompt),key:runKey};
+  const runTimes=record.repeats||1,use={provider:runProvider,model:record.model,effort:record.effort,prompt:record.prompt,sentFields:record.answerFields,sentSettings:record.answerSettings,sentRequest:sentRequestSettings(runProvider,record.model,Object.keys(tuned).length?tuned:undefined,record.effort),times:runTimes,insertNames:promptInserts(record.prompt),key:runKey,layout:record.layout};
   // Each text concerned gets its result of this run back as its current one; a later result moves to its earlier ones.
   const ids=new Set(targets.ids);latest.current=raiseRun(latest.current,number,ids);setDocs(latest.current);
   void run(true,ids,false,runTimes>1?new Set(latest.current.filter(d=>ids.has(d.id)&&incomplete(d)).map(d=>d.id)):undefined,{number,use});

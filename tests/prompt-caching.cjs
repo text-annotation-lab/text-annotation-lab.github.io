@@ -44,11 +44,13 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
   return new Request('https://lab.test/api/annotate',{method:'POST',headers:{origin:'https://lab.test',authorization:'Bearer '+(provider==='openrouter'?'sk-or-v1-fake-test':provider==='openai'?'sk-test':'key-test')},body:form});
  }
  async function sent(provider,setting,model,knowledge){calls=[];mock=async()=>Response.json(reply(provider));const response=await route.POST(request(provider,setting,model,knowledge));assert.equal(response.status,200,provider);assert.equal(calls.length,1);return {body:JSON.parse(calls[0].options.body),out:await response.json()};}
- // The request with the mark removed again: it must be the standard request, to the letter.
+ // The request with the mark removed again: it must be the standard request, to the letter. The mark divides the
+ // message with the text: the prompt with the opening <text> tag, which every text shares, and the rest.
+ const joined=content=>({type:content[0].type,text:content.map(part=>part.text).join('')});
  const unmarked={
-  openai:body=>{const [first,...input]=body.input;assert.deepEqual(Object.keys(first.content[0]).sort(),['prompt_cache_breakpoint','text','type']);return {...body,instructions:first.content[0].text,input};},
-  anthropic:body=>({...body,system:body.system[0].text}),
-  openrouter:body=>({...body,messages:[{role:'system',content:body.messages[0].content[0].text},...body.messages.slice(1)]}),
+  openai:body=>{const content=body.input[0].content;assert.deepEqual(Object.keys(content[0]).sort(),['prompt_cache_breakpoint','text','type']);return {...body,input:[{role:'user',content:[joined(content)]}]};},
+  anthropic:body=>({...body,messages:[{role:'user',content:[joined(body.messages[0].content)]}]}),
+  openrouter:body=>({...body,messages:[{role:'user',content:body.messages[0].content.map(part=>part.text).join('')}]}),
  };
  for(const provider of Object.keys(models)){
   const off=(await sent(provider)).body,on=(await sent(provider,{cache:true})).body;
@@ -56,20 +58,21 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
   assert.notDeepEqual(on,off,provider);assert.deepEqual(unmarked[provider](on),off,provider+': only the mark differs');
  }
  let body=(await sent('openai')).body;
- assert.equal(typeof body.instructions,'string');assert.deepEqual(body.prompt_cache_options,{mode:'explicit'});assert(!JSON.stringify(body).includes('prompt_cache_breakpoint'),'Without the option OpenAI caching stays off: explicit mode, no mark');
+ assert.equal(body.instructions,undefined,'No system prompt');assert.deepEqual(body.prompt_cache_options,{mode:'explicit'});assert(!JSON.stringify(body).includes('prompt_cache_breakpoint'),'Without the option OpenAI caching stays off: explicit mode, no mark');
  body=(await sent('openai',{cache:true})).body;
- assert(!('instructions' in body),'A top-level instruction cannot carry the mark');assert.deepEqual(body.prompt_cache_options,{mode:'explicit'});
- assert.equal(body.input.length,2);assert.equal(body.input[0].role,'developer');assert.equal(body.input[1].role,'user');
- assert.deepEqual(body.input[0].content,[{type:'input_text',text:body.input[0].content[0].text,prompt_cache_breakpoint:{mode:'explicit'}}]);
- assert(body.input[0].content[0].text.startsWith(PROMPT),'The marked message is the prompt with its answer instructions');
- assert(!JSON.stringify(body.input[1]).includes('prompt_cache_breakpoint'),'The text is never marked');
- body=(await sent('anthropic')).body;assert.equal(typeof body.system,'string');assert(!JSON.stringify(body).includes('cache_control'));
- let anthropic=await sent('anthropic',{cache:true});body=anthropic.body;
- assert.deepEqual(body.system,[{type:'text',text:body.system[0].text,cache_control:{type:'ephemeral'}}],'Five-minute entry for texts sent now');assert(body.system[0].text.startsWith(PROMPT));
- assert(!JSON.stringify(body.messages).includes('cache_control'));assert.equal(anthropic.out.usage.cache_read_input_tokens,900,'The usage a result keeps names the cached tokens');assert.equal(anthropic.out.tokens,912);
- body=(await sent('anthropic',{cache:true},undefined,true)).body;assert.equal(body.system[0].cache_control.type,'ephemeral','Model knowledge requests are marked the same way');assert(body.system[0].text.includes(PROMPT));
- body=(await sent('openrouter',{cache:true})).body;assert.deepEqual(body.messages[0].content,[{type:'text',text:body.messages[0].content[0].text,cache_control:{type:'ephemeral'}}]);assert(!('prompt_cache_options' in body));
- body=(await sent('openrouter',{cache:true},'openai/gpt-6-luna')).body;assert.deepEqual(body.messages[0].content,[{type:'text',text:body.messages[0].content[0].text,prompt_cache_breakpoint:{mode:'explicit'}}]);assert.deepEqual(body.prompt_cache_options,{mode:'explicit'});
+ assert(!('instructions' in body));assert.deepEqual(body.prompt_cache_options,{mode:'explicit'});
+ assert.equal(body.input.length,1);assert.equal(body.input[0].role,'user');
+ let [shared,own]=body.input[0].content;
+ assert.deepEqual(shared,{type:'input_text',text:shared.text,prompt_cache_breakpoint:{mode:'explicit'}});
+ assert(shared.text.startsWith(PROMPT)&&shared.text.endsWith('\n\n<text>\n'),'The marked part is the prompt with its answer instructions and the opening tag');
+ assert.deepEqual(own,{type:'input_text',text:'A document.\n</text>'},'The text is never marked');
+ body=(await sent('anthropic')).body;assert.equal(body.system,undefined);assert(!JSON.stringify(body).includes('cache_control'));
+ let anthropic=await sent('anthropic',{cache:true});body=anthropic.body;[shared,own]=body.messages[0].content;
+ assert.deepEqual(shared,{type:'text',text:shared.text,cache_control:{type:'ephemeral'}},'Five-minute entry for texts sent now');assert(shared.text.startsWith(PROMPT)&&shared.text.endsWith('\n\n<text>\n'));
+ assert.deepEqual(own,{type:'text',text:'A document.\n</text>'});assert.equal(anthropic.out.usage.cache_read_input_tokens,900,'The usage a result keeps names the cached tokens');assert.equal(anthropic.out.tokens,912);
+ body=(await sent('anthropic',{cache:true},undefined,true)).body;[shared]=body.messages[0].content;assert.equal(shared.cache_control.type,'ephemeral','Model knowledge requests are marked the same way');assert(shared.text.startsWith(PROMPT)&&shared.text.endsWith('\n\n<entry>\n'));
+ body=(await sent('openrouter',{cache:true})).body;assert.equal(body.messages.length,1);assert.deepEqual(body.messages[0].content[0],{type:'text',text:body.messages[0].content[0].text,cache_control:{type:'ephemeral'}});assert(!('prompt_cache_options' in body));
+ body=(await sent('openrouter',{cache:true},'openai/gpt-6-luna')).body;assert.deepEqual(body.messages[0].content[0],{type:'text',text:body.messages[0].content[0].text,prompt_cache_breakpoint:{mode:'explicit'}});assert.deepEqual(body.prompt_cache_options,{mode:'explicit'});
  body=(await sent('openrouter',undefined,'openai/gpt-6-luna')).body;assert.equal(typeof body.messages[0].content,'string');assert.deepEqual(body.prompt_cache_options,{mode:'explicit'});
  const google=(await sent('openrouter',{cache:true},'google/gemini-3.1-flash-lite')).body;assert.equal(typeof google.messages[0].content,'string','A Gemini model through OpenRouter gets no mark');
  for(const provider of Object.keys(models))for(const bad of ['{','{"cache":false}','{"cache":true,"x":1}']){calls=[];assert.equal((await route.POST(request(provider,bad))).status,400,provider+' '+bad);assert.equal(calls.length,0,'Nothing is sent with an unreadable setting');}
@@ -79,8 +82,8 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
  for(const provider of ['openai','anthropic','gemini']){
   const off=await batch.buildBatchBody(provider,file(),PROMPT,...models[provider],false,false,[]),on=await batch.buildBatchBody(provider,file(),PROMPT,...models[provider],false,false,[],undefined,{cache:true});
   if(provider==='gemini'){assert.deepEqual(on,off);continue;}
-  if(provider==='anthropic'){assert.deepEqual(on.system[0].cache_control,{type:'ephemeral',ttl:'1h'},'One-hour entry in a batch, whose requests may start far apart');assert.deepEqual({...on,system:on.system[0].text},off);}
-  else{assert.deepEqual(on.input[0],{role:'developer',content:[{type:'input_text',text:on.input[0].content[0].text,prompt_cache_breakpoint:{mode:'explicit'}}]});assert.deepEqual(unmarked.openai(on),off);assert.deepEqual(on.prompt_cache_options,{mode:'explicit'});}
+  if(provider==='anthropic'){assert.deepEqual(on.messages[0].content[0].cache_control,{type:'ephemeral',ttl:'1h'},'One-hour entry in a batch, whose requests may start far apart');assert.deepEqual(unmarked.anthropic(on),off);}
+  else{assert.deepEqual(on.input[0].content[0].prompt_cache_breakpoint,{mode:'explicit'});assert.deepEqual(unmarked.openai(on),off);assert.deepEqual(on.prompt_cache_options,{mode:'explicit'});}
  }
  const batchRequest=(provider,extra={})=>{const f=new FormData();for(const [k,v]of Object.entries({provider,action:'submit',model:models[provider][0],effort:models[provider][1],prompt:PROMPT,runId:'lab_test',ids:JSON.stringify(['lab_test_0']),answerFields:'[]',...extra}))f.set(k,v);f.append('files',new File(['one'],'one.txt'));return new Request('https://lab.test/api/batch',{method:'POST',headers:{origin:'https://lab.test',authorization:'Bearer '+(provider==='openai'?'sk-test':'provider-test')},body:f});};
  for(const provider of ['openai','anthropic']){
@@ -149,8 +152,8 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
  assert.deepEqual(notes.cacheNote('anthropic','claude-sonnet-5-5',''),{available:true,text:'Anthropic stores the prompt for 5 minutes (1 hour in a batch); later texts read it at 5% of the input price, and storing it costs 25% extra (100% in a batch). Prompts under 512 tokens are not cached.'});
  assert.equal(notes.cacheNote('anthropic','claude-fable-5-2','').text.includes('at 2.5% of the input price'),true);
  const openaiNote=notes.cacheNote('openai','gpt-6-luna',long).text;
- assert(openaiNote.startsWith('OpenAI stores the prompt for 30 minutes; later texts read it at 10% of the input price, and storing it costs 25% extra. Prompts under 1,024 tokens are not cached. This prompt: about '));assert(openaiNote.endsWith(' tokens. It is then sent as a developer message instead of as instructions.'));
- assert.equal(notes.cacheNote('openai','gpt-6-sol','').text,'OpenAI stores the prompt for 30 minutes; later texts read it at a lower price, and storing it costs 25% extra. Prompts under 1,024 tokens are not cached. It is then sent as a developer message instead of as instructions.');
+ assert(openaiNote.startsWith('OpenAI stores the prompt for 30 minutes; later texts read it at 10% of the input price, and storing it costs 25% extra. Prompts under 1,024 tokens are not cached. This prompt: about '));assert(openaiNote.endsWith(' tokens.'));
+ assert.equal(notes.cacheNote('openai','gpt-6-sol','').text,'OpenAI stores the prompt for 30 minutes; later texts read it at a lower price, and storing it costs 25% extra. Prompts under 1,024 tokens are not cached.');
  assert.deepEqual(notes.cacheNote('gemini','gemini-3.8-flash',long),{available:false,text:'Gemini caches repeated prompts by itself, from 4,096 tokens on this model. There is nothing to switch on or off.'});
  assert.equal(notes.cacheNote('gemini','gemini-3.1-flash-lite',long).text,'Gemini caches repeated prompts by itself. There is nothing to switch on or off.');
  assert.equal(notes.cacheNote('openrouter','anthropic/claude-haiku-5.5','').text,'Anthropic stores the prompt for 5 minutes; later texts read it at a lower price, and storing it costs 25% extra. Prompts under 512 tokens are not cached.');

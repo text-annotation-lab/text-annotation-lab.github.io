@@ -68,11 +68,11 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
  const doc={filename:'a.txt',text:'A document.'},body=(provider,model,effort,extra={})=>frame.providerBody({provider,model,effort,prompt:'P',schemaPrompt:'P',answerFields:[],...extra},doc);
  // OpenAI: "default" sends no reasoning setting; an earlier model takes no cache mode.
  let sent=body('openai','gpt-5.5','default');
- assert(!('reasoning' in sent));assert(!('prompt_cache_options' in sent));assert.equal(sent.instructions,'P');assert.equal(sent.model,'gpt-5.5');assert.equal(sent.max_output_tokens,12000);
+ assert(!('reasoning' in sent));assert(!('prompt_cache_options' in sent));assert.equal(sent.instructions,undefined);assert.equal(sent.input[0].content[0].text,'P\n\n<text>\nA document.\n</text>');assert.equal(sent.model,'gpt-5.5');assert.equal(sent.max_output_tokens,12000);
  sent=body('openai','gpt-5.5','high');assert.deepEqual(sent.reasoning,{effort:'high'});
  sent=body('openai','gpt-5.5','default',{request:{summary:true}});assert.deepEqual(sent.reasoning,{summary:'auto'},'A summary can be asked for without naming an effort');
- sent=body('openai','gpt-4.1','default',{request:{summary:true,temperature:0.2,cache:true}});assert(!('reasoning' in sent),'No summary from a model without reasoning');assert.equal(sent.temperature,0.2);assert.equal(sent.instructions,'P','No cache mark for a model that caches by itself');assert(!('prompt_cache_options' in sent));
- sent=body('openai','gpt-6.1-sol-2026-10-01','medium',{request:{cache:true}});assert.deepEqual(sent.prompt_cache_options,{mode:'explicit'});assert.equal(sent.input[0].role,'developer','A dated snapshot of a current model caches at the mark');
+ sent=body('openai','gpt-4.1','default',{request:{summary:true,temperature:0.2,cache:true}});assert(!('reasoning' in sent),'No summary from a model without reasoning');assert.equal(sent.temperature,0.2);assert.equal(sent.input[0].content.length,1,'No cache mark for a model that caches by itself');assert(!JSON.stringify(sent).includes('prompt_cache_breakpoint'));assert(!('prompt_cache_options' in sent));
+ sent=body('openai','gpt-6.1-sol-2026-10-01','medium',{request:{cache:true}});assert.deepEqual(sent.prompt_cache_options,{mode:'explicit'});assert.deepEqual(sent.input[0].content[0].prompt_cache_breakpoint,{mode:'explicit'},'A dated snapshot of a current model caches at the mark');
  sent=body('openai','gpt-5.5','default',{batch:true});assert(!('reasoning' in sent)&&!('prompt_cache_options' in sent));
  // Claude: an earlier model reasons within a budget or not at all; a later one adaptively.
  sent=body('anthropic','claude-sonnet-4-5-20250929','off');assert.deepEqual(sent.thinking,{type:'disabled'});assert.deepEqual(Object.keys(sent.output_config),['format']);
@@ -87,9 +87,9 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
  sent=body('gemini','gemini-2.5-flash','dynamic');assert.deepEqual(sent.generationConfig.thinkingConfig,{thinkingBudget:-1});
  assert.equal(frame.requestUrl('gemini','gemini-3.7-flash'),'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent');
  // OpenRouter: "default" sends no reasoning setting, so a model without one still finds a provider.
- sent=body('openrouter','mistralai/mistral-small','default');assert(!('reasoning' in sent));assert.deepEqual(sent.provider,{require_parameters:true});assert(!('prompt_cache_options' in sent));assert.equal(sent.messages[0].content,'P');
- sent=body('openrouter','qwen/qwen4-max','high',{request:{summary:true,cache:true}});assert.deepEqual(sent.reasoning,{effort:'high',exclude:false});assert.equal(sent.messages[0].content,'P','No cache mark where the Lab does not know the vendor’s caching');
- sent=body('openrouter','openai/gpt-4.1','default',{request:{cache:true}});assert(!('prompt_cache_options' in sent));assert.equal(sent.messages[0].content,'P');
+ sent=body('openrouter','mistralai/mistral-small','default');assert(!('reasoning' in sent));assert.deepEqual(sent.provider,{require_parameters:true});assert(!('prompt_cache_options' in sent));assert.equal(sent.messages[0].content,'P\n\n<text>\nA document.\n</text>');
+ sent=body('openrouter','qwen/qwen4-max','high',{request:{summary:true,cache:true}});assert.deepEqual(sent.reasoning,{effort:'high',exclude:false});assert.equal(sent.messages[0].content,'P\n\n<text>\nA document.\n</text>','No cache mark where the Lab does not know the vendor’s caching');
+ sent=body('openrouter','openai/gpt-4.1','default',{request:{cache:true}});assert(!('prompt_cache_options' in sent));assert.equal(sent.messages[0].content,'P\n\n<text>\nA document.\n</text>');
  sent=body('openrouter','openai/gpt-6.1-sol-pro','medium',{request:{cache:true}});assert.deepEqual(sent.prompt_cache_options,{mode:'explicit'});assert.equal(typeof sent.messages[0].content,'object');
  sent=body('openrouter','anthropic/claude-opus-4.6','medium',{request:{cache:true}});assert.deepEqual(sent.messages[0].content[0].cache_control,{type:'ephemeral'});
 
@@ -126,8 +126,13 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
   assert.equal(response.status,200,provider+' '+JSON.stringify(out));assert.equal(calls.length,1);assert.equal(out.score,'A');
   const sentBody=JSON.parse(calls[0].options.body);
   if(provider==='gemini')assert(calls[0].url.includes('/models/gemini-3.7-flash:generateContent'));else assert.equal(sentBody.model,model);
-  assert.equal(JSON.stringify(sentBody),JSON.stringify(frame.fillRequest(frame.requestFrame({provider,model,effort,prompt:'Label the document A or B.',answerFields:[]},false).body,{filename:'text.txt',text:'A document.'})),provider+': the record of the request is the request');
+  assert.equal(JSON.stringify(sentBody),JSON.stringify(frame.fillRequest(frame.requestFrame({provider,model,effort,prompt:'Label the document A or B.',answerFields:[],layout:'message'},false).body,{filename:'text.txt',text:'A document.'})),provider+': the record of the request is the request');
+  // "Retry failed" on a run made before the current layout sends its requests in their own layout.
+  calls=[];const earlier=await route.POST(request(provider,model,effort,{record:'true',layout:'earlier'}));assert.equal(earlier.status,200);
+  assert.equal(calls[0].options.body,JSON.stringify(frame.fillRequest(frame.requestFrame({provider,model,effort,prompt:'Label the document A or B.',answerFields:[]},false).body,{filename:'text.txt',text:'A document.'})),provider+': the earlier layout');
+  assert(calls[0].options.body.includes('Document filename: text.txt'));
  }
+ calls=[];assert.equal((await route.POST(request('openai','gpt-5.5','default',{layout:'system'}))).status,400,'Only the earlier layout can be asked for');assert.equal(calls.length,0);
  // What is not a model of the provider, or not a setting of the model's family, is refused before anything is sent.
  for(const [provider,model,effort] of [['openai','claude-opus-5-5','high'],['openai','gpt 5','default'],['openai','gpt-4.1','medium'],['anthropic','gpt-6-sol','high'],['anthropic','claude-opus-4-6','off'],['anthropic','claude-sonnet-4-5','high'],['gemini','gpt-6-luna','default'],['gemini','gemini-3.7-flash','dynamic'],['openrouter','gpt-6-luna','default'],['openai','gpt-6-luna','default'],['anthropic','claude-opus-5-5','default'],['openrouter','openai/gpt-6-luna','default']]){
   calls=[];const response=await route.POST(request(provider,model,effort));

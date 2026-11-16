@@ -93,14 +93,16 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
   return new Request('https://lab.test/api/annotate',{method:'POST',headers:{origin:'https://lab.test',authorization:'Bearer '+(provider==='openrouter'?'sk-or-v1-fake-test':provider==='openai'?'sk-test':'key-test')},body:form});
  }
  async function sent(provider,setting,extra){calls=[];mock=async()=>Response.json(replies[provider]);const response=await route.POST(request(provider,setting,extra));assert.equal(response.status,200,provider);assert.equal(calls.length,1);return {body:JSON.parse(calls[0].options.body),out:await response.json()};}
+ // The prompt as sent: the message with the text, up to the text (lib/request-frame.ts).
+ const promptIn=body=>{const content=body.input?.[0].content??body.messages?.at(-1).content??body.contents[0].parts,text=typeof content==='string'?content:content.map(part=>part.text||'').join('');return text.slice(0,text.lastIndexOf('\n\n<text>\n'));};
  for(const provider of Object.keys(models)){
   const kept=await sent(provider,{temperature:0.3,maxOutput:4000,summary:true},{record:'true'});
   assert.equal(kept.out.reasoningSummary,'Read the text.\n\nChose A.',provider);assert.equal(kept.out.score,'A',provider+': the answer is read as before');assert.equal(kept.out.output,answer,provider+': the reply’s text holds no reasoning');
   assert.equal(provider==='gemini'?kept.body.generationConfig.temperature:kept.body.temperature,provider==='anthropic'?undefined:0.3,provider);
-  assert.deepEqual(kept.body,frame.providerBody(options(provider,models[provider][0],models[provider][1],{temperature:0.3,maxOutput:4000,summary:true},{prompt:kept.body.instructions??(typeof kept.body.system==='string'?kept.body.system:undefined)??kept.body.systemInstruction?.parts[0].text??kept.body.messages[0].content}),doc),provider+': the handler sends the body the record is made from');
+  assert.deepEqual(kept.body,frame.providerBody(options(provider,models[provider][0],models[provider][1],{temperature:0.3,maxOutput:4000,summary:true},{prompt:promptIn(kept.body)}),doc),provider+': the handler sends the body the record is made from');
   assert(!('reasoningSummary' in (await sent(provider,{maxOutput:4000},{record:'true'})).out),provider+': no summary unless one was asked for');
   assert(!('reasoningSummary' in (await sent(provider,{summary:true})).out),provider+': nothing is kept without a record (the standard Lab)');
-  const plain=await sent(provider);assert(!('reasoningSummary' in plain.out));assert.deepEqual(plain.body,frame.providerBody(options(provider,models[provider][0],models[provider][1],undefined,{prompt:plain.body.instructions??plain.body.system??plain.body.systemInstruction?.parts[0].text??plain.body.messages[0].content}),doc));
+  const plain=await sent(provider);assert(!('reasoningSummary' in plain.out));assert.deepEqual(plain.body,frame.providerBody(options(provider,models[provider][0],models[provider][1],undefined,{prompt:promptIn(plain.body)}),doc));
  }
  calls=[];assert.equal((await route.POST(request('openai','{"temperature":5}'))).status,400);assert.equal(calls.length,0,'An unreadable setting is refused before anything is sent');
  // A failed request can still carry a summary (a reply cut short at the output limit).
@@ -111,7 +113,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const file=()=>new File(['A document.'],'text.txt');
  for(const provider of ['openai','anthropic','gemini']){
   const body=await batch.buildBatchBody(provider,file(),PROMPT,...models[provider],false,false,[],undefined,{temperature:0.3,maxOutput:4000,summary:true,store:false});
-  assert.deepEqual(body,frame.providerBody(options(provider,models[provider][0],models[provider][1],{temperature:0.3,maxOutput:4000,summary:true,store:false},{batch:true,prompt:body.instructions??body.system??body.systemInstruction.parts[0].text}),doc),provider);
+  assert.deepEqual(body,frame.providerBody(options(provider,models[provider][0],models[provider][1],{temperature:0.3,maxOutput:4000,summary:true,store:false},{batch:true,prompt:promptIn(body)}),doc),provider);
   assert.equal(batch.parseBatchAnnotation(provider,replies[provider],false,true,true).reasoningSummary,'Read the text.\n\nChose A.',provider);
   assert(!('reasoningSummary' in batch.parseBatchAnnotation(provider,replies[provider],false,true,false)),provider);assert(!('reasoningSummary' in batch.parseBatchAnnotation(provider,replies[provider],false,false,true)),provider+': never without a record');
   assert.equal(batch.parseBatchAnnotation(provider,replies[provider],false,true,true).score,'A');
@@ -133,19 +135,20 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
 
  // --- "Preview request" ------------------------------------------------------------------------------
  for(const [provider,model,effort] of cases){
-  const settings={provider,model,effort,prompt:PROMPT,answerFields:[],requestSettings:rs.sentRequestSettings(provider,model,{cache:true,temperature:0.3,maxOutput:4000,summary:true},effort)};
+  const settings={provider,model,effort,prompt:PROMPT,answerFields:[],requestSettings:rs.sentRequestSettings(provider,model,{cache:true,temperature:0.3,maxOutput:4000,summary:true},effort),layout:'message'};
   const shown=view.previewRequest(settings,{filename:'first.txt',text:'The first text.'}),name=provider+' '+model;
   assert.deepEqual(shown.body,frame.fillRequest(frame.requestFrame(settings,false).body,{filename:'first.txt',text:'The first text.'}),name+': the preview is the request a run sends');
-  assert(shown.prompt.startsWith(PROMPT)&&shown.prompt.length>PROMPT.length,name+': the prompt with the Lab’s instructions');
-  assert(shown.message.includes('Document filename: first.txt')&&shown.message.endsWith('The first text.'),name);
+  assert(shown.message.startsWith(PROMPT)&&shown.message.endsWith('\n\n<text>\nThe first text.\n</text>')&&shown.message.includes('Lab response format'),name+': the prompt with the Lab’s instructions, then the text');
+  assert.equal(shown.system,undefined,name+': no system prompt');assert(!shown.message.includes('first.txt'),name+': no file name');
+  assert.deepEqual(view.previewRequest({...settings,layout:undefined},{filename:'first.txt',text:'The first text.'}).body,shown.body,name+': a preview is always of the current layout');
   assert.equal(shown.cached,rs.marksCache(provider,model,{cache:true}),name);
   assert(!JSON.stringify(shown.settings).includes('The first text.')&&!JSON.stringify(shown.settings).includes(PROMPT),name+': the settings hold neither the prompt nor the text');
   assert.equal(shown.settings.max_output_tokens??shown.settings.max_tokens??shown.settings.generationConfig?.maxOutputTokens,provider==='anthropic'&&effort==='4096'?4097:4000,name);
   assert.equal(shown.url,frame.requestUrl(provider,model));
-  const pdf=view.previewRequest(settings,{filename:'scan.pdf',pdf:true});assert(pdf.message.includes('[The PDF file is attached here.]'),name);assert(JSON.stringify(pdf.body).includes('[the PDF file, base64-encoded]'),name);
+  const pdf=view.previewRequest(settings,{filename:'scan.pdf',pdf:true});assert(pdf.message.startsWith(PROMPT)&&pdf.message.endsWith('\n\n[The PDF file is attached here.]'),name);assert(JSON.stringify(pdf.body).includes('[the PDF file, base64-encoded]'),name);
  }
- assert.equal(view.previewRequest({provider:'openai',model:'gpt-6-luna',effort:'low',prompt:PROMPT,answerFields:[],knowledge:true},{filename:'subject.txt',text:view.PREVIEW_PLACEHOLDER.subject}).message.split('\n\n').at(-1),'(your subject’s fields appear here)');
- assert.deepEqual(view.splitRequest(undefined),{prompt:'',message:'',settings:{},cached:false});
+ assert.equal(view.previewRequest({provider:'openai',model:'gpt-6-luna',effort:'low',prompt:PROMPT,answerFields:[],knowledge:true},{filename:'subject.txt',text:view.PREVIEW_PLACEHOLDER.subject}).message.split('\n\n').at(-1),'<entry>\n(your subject’s fields appear here)\n</entry>');
+ assert.deepEqual(view.splitRequest(undefined),{message:'',settings:{},cached:false});
 
  // --- The cost estimate allows for the limit -----------------------------------------------------------
  assert(/maxTokens:maxOutput\?\?annotationOutputLimit\(provider,model\)/.test(fs.readFileSync(path.join(root,'lib/student-estimate.ts'),'utf8')),'The estimate’s upper edge follows the output limit');

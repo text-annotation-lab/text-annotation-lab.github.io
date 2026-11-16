@@ -59,7 +59,7 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
      for(const cacheOn of [false,true]){
       for(const kind of ['txt','pdf','knowledge']){
        const knowledge=kind==='knowledge',label=[provider,model,effort,formatName,cacheOn?'cache':'no cache',kind].join(' | ');
-       const settings={provider,model,effort,prompt:PROMPT,answerFields:format.fields,answerSettings:format.settings,requestSettings:cacheOn?{cache:true}:undefined,knowledge};
+       const settings={provider,model,effort,prompt:PROMPT,answerFields:format.fields,answerSettings:format.settings,requestSettings:cacheOn?{cache:true}:undefined,knowledge,layout:'message'};
        const doc=knowledge?{filename:'subject.txt',text:knowledgeLib.knowledgeDocumentText(SUBJECT)}:kind==='pdf'?{filename:pdf.name,file:pdfData}:{filename:txt.name,text:txtText};
        calls=[];mock=async()=>Response.json(providerReply(provider));
        await annotate(provider,model,effort,format,{cacheOn,kind,record:'true'});
@@ -72,7 +72,7 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
        if(provider!=='openrouter'){
         const file=knowledge?new File([knowledgeLib.knowledgeDocumentText(SUBJECT)],'subject.txt',{type:'text/plain'}):kind==='pdf'?pdf:txt;
         const sent=JSON.stringify(await batch.buildBatchBody(provider,file,knowledge?SENT_PROMPT+'\n\n'+knowledgeLib.knowledgeInstructions(false):SENT_PROMPT,model,effort,knowledge,false,format.fields,format.settings,cacheOn?{cache:true}:undefined));
-        assert.equal(sent,JSON.stringify(frames.fillRequest(frames.requestFrame({...settings,batch:true},kind==='pdf').body,doc)),'Sent in a batch: '+label);
+        assert.equal(sent,JSON.stringify(frames.fillRequest(frames.requestFrame({layout:'message',...settings,batch:true},kind==='pdf').body,doc)),'Sent in a batch: '+label);
         compared++;
        }
       }
@@ -84,7 +84,7 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
  assert(compared>2000,'Every listed model was compared');
  // The prompt is recorded with the line breaks it was sent with, whatever form it was written in.
  assert.equal(frames.formText('a\nb\r\nc\rd'),'a\r\nb\r\nc\r\nd');
- for(const written of ['One.\nTwo.','One.\r\nTwo.','One.\rTwo.'])assert.equal(frames.requestFrame({provider:'gemini',model:providers.PROVIDERS.gemini.models[0],effort:providers.reasoningOptions('gemini',providers.PROVIDERS.gemini.models[0])[0],prompt:written,answerFields:[]},false).body,frames.requestFrame({provider:'gemini',model:providers.PROVIDERS.gemini.models[0],effort:providers.reasoningOptions('gemini',providers.PROVIDERS.gemini.models[0])[0],prompt:'One.\r\nTwo.',answerFields:[]},false).body);
+ for(const written of ['One.\nTwo.','One.\r\nTwo.','One.\rTwo.'])assert.equal(frames.requestFrame({layout:'message',provider:'gemini',model:providers.PROVIDERS.gemini.models[0],effort:providers.reasoningOptions('gemini',providers.PROVIDERS.gemini.models[0])[0],prompt:written,answerFields:[]},false).body,frames.requestFrame({layout:'message',provider:'gemini',model:providers.PROVIDERS.gemini.models[0],effort:providers.reasoningOptions('gemini',providers.PROVIDERS.gemini.models[0])[0],prompt:'One.\r\nTwo.',answerFields:[]},false).body);
  // A batch as the batch handler submits it: each request is the recorded form filled with its document.
  for(const provider of ['openai','anthropic','gemini']){
   const model=providers.PROVIDERS[provider].models[0],effort=providers.reasoningOptions(provider,model)[0],form=new FormData();
@@ -94,11 +94,11 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
   const response=await batchRoute.POST(new Request('https://lab.test/api/batch',{method:'POST',headers:{origin:'https://lab.test',authorization:'Bearer '+keyOf(provider)},body:form}));
   assert.equal(response.status,200,provider+': '+JSON.stringify(await response.clone().json()));
   const payload=calls[0].options.body,rows=provider==='openai'?(await payload.get('file').text()).split('\n').map(line=>JSON.parse(line).body):provider==='anthropic'?JSON.parse(await payload.text()).requests.map(row=>row.params):JSON.parse(await payload.text()).batch.input_config.requests.requests.map(row=>row.request);
-  const settings={provider,model,effort,prompt:PROMPT,answerFields:[],requestSettings:{cache:true},batch:true};
+  const settings={provider,model,effort,prompt:PROMPT,answerFields:[],requestSettings:{cache:true},batch:true,layout:'message'};
   assert.deepEqual(rows.map(row=>JSON.stringify(row)),[JSON.stringify(frames.fillRequest(frames.requestFrame(settings,false).body,{filename:txt.name,text:txtText})),JSON.stringify(frames.fillRequest(frames.requestFrame(settings,true).body,{filename:pdf.name,file:pdfData}))],provider+': a submitted batch');
  }
  // A mark inside a document's own text stays text.
- assert(JSON.stringify(frames.fillRequest(frames.requestFrame({provider:'anthropic',model:providers.PROVIDERS.anthropic.models[0],effort:providers.reasoningOptions('anthropic',providers.PROVIDERS.anthropic.models[0])[0],prompt:PROMPT,answerFields:[]},false).body,{filename:'a.txt',text:'See <<DOCUMENT_FILENAME>>.'})).includes('See <<DOCUMENT_FILENAME>>.'));
+ assert(JSON.stringify(frames.fillRequest(frames.requestFrame({layout:'message',provider:'anthropic',model:providers.PROVIDERS.anthropic.models[0],effort:providers.reasoningOptions('anthropic',providers.PROVIDERS.anthropic.models[0])[0],prompt:PROMPT,answerFields:[]},false).body,{filename:'a.txt',text:'See <<DOCUMENT_FILENAME>>.'})).includes('See <<DOCUMENT_FILENAME>>.'));
  // Web-assisted Model knowledge: the search is its own request; the annotation request carries what the search found.
  const found='A source-supported fact.';
  const search=provider=>provider==='openai'?{id:'search_oai',status:'completed',usage:{total_tokens:20},output:[{type:'web_search_call',status:'completed',action:{query:'Jaws',sources:[{url:'https://example.org/jaws',title:'Jaws'}]}},{content:[{type:'output_text',text:found,annotations:[{type:'url_citation',url:'https://example.org/jaws',title:'Jaws',start_index:0,end_index:found.length}]}]}]}:provider==='anthropic'?{id:'search_claude',stop_reason:'end_turn',usage:{input_tokens:12,output_tokens:8},content:[{type:'server_tool_use',name:'web_search',input:{query:'Jaws'}},{type:'web_search_tool_result',content:[{url:'https://example.org/jaws',title:'Jaws'}]},{type:'text',text:found,citations:[{type:'web_search_result_location',url:'https://example.org/jaws',title:'Jaws'}]}]}:{responseId:'search_gemini',usageMetadata:{totalTokenCount:20},candidates:[{finishReason:'STOP',content:{parts:[{text:found}]},groundingMetadata:{webSearchQueries:['Jaws'],groundingChunks:[{web:{uri:'https://example.org/jaws',title:'Jaws'}}],groundingSupports:[{segment:{endIndex:found.length},groundingChunkIndices:[0]}]}}]};
@@ -107,10 +107,10 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
   calls=[];mock=async(url,options)=>Response.json(/"tools":|"google_search"/.test(options.body)?search(provider):providerReply(provider,{text:JSON.stringify({explanation:'Supported by [1].',score:'A'})}));
   const response=await annotate(provider,model,effort,formats.standard,{kind:'knowledge',record:'true',web:true}),out=await response.json();
   assert.equal(response.status,200,provider+': '+JSON.stringify(out));assert.equal(calls.length,2);
-  const frame=frames.requestFrame({provider,model,effort,prompt:PROMPT,answerFields:[],knowledge:true,webSearch:true},false);
+  const frame=frames.requestFrame({layout:'message',provider,model,effort,prompt:PROMPT,answerFields:[],knowledge:true,webSearch:true},false);
   assert.equal(calls[1].options.body,JSON.stringify(frames.fillRequest(frame.body,{filename:'subject.txt',text:knowledgeLib.knowledgeDocumentText(SUBJECT,out.research)})),provider+': the annotation request of a web-assisted run is rebuilt from the stored research');
   // In a batch no search is made, whatever the workspace's setting.
-  assert.equal(frames.requestFrame({provider,model,effort,prompt:PROMPT,answerFields:[],knowledge:true,webSearch:true,batch:true},false).body,frames.requestFrame({provider,model,effort,prompt:PROMPT,answerFields:[],knowledge:true,webSearch:false,batch:true},false).body);
+  assert.equal(frames.requestFrame({layout:'message',provider,model,effort,prompt:PROMPT,answerFields:[],knowledge:true,webSearch:true,batch:true},false).body,frames.requestFrame({layout:'message',provider,model,effort,prompt:PROMPT,answerFields:[],knowledge:true,webSearch:false,batch:true},false).body);
  }
 
  // --- What a reply carries when recording is on, and that the standard Lab's reply is unchanged ----------

@@ -6,9 +6,8 @@
 // summary: the provider is asked for a readable summary of the model's reasoning, which is kept with the result.
 // store: false asks OpenAI not to keep the request in its logs (the Lab otherwise asks OpenAI to keep it).
 // system: a system prompt of the researcher's own, sent unchanged with every request in the provider's place for
-// one. The annotation prompt then opens the message that carries the text (lib/request-frame.ts); without one,
-// the annotation prompt is itself the system prompt. The box keeps what was typed; a request carries it only
-// where it holds more than spaces.
+// one, ahead of the message with the annotation prompt and the text (lib/request-frame.ts). Without one, no system
+// prompt is sent. The box keeps what was typed; a request carries it only where it holds more than spaces.
 // This file imports nothing, so anything may import it.
 export type RequestSettings={cache?:true;temperature?:number;maxOutput?:number;summary?:true;store?:false;system?:string};
 export const MIN_OUTPUT_TOKENS=16,MAX_OUTPUT_TOKENS=1000000,MAX_TEMPERATURE=2,MAX_SYSTEM_PROMPT=100000;
@@ -105,9 +104,9 @@ export const cachedParts=(prompt:string,fixed:number|undefined,part:(text:string
 // in a batch, whose requests may start further apart.
 export const anthropicMark=(batch=false)=>({cache_control:batch?{type:'ephemeral',ttl:'1h'}:{type:'ephemeral'}});
 export const anthropicSystem=(prompt:string,request?:RequestSettings,batch=false,fixed?:number)=>request?.cache&&cachedParts(prompt,fixed,text=>({type:'text',text}),anthropicMark(batch))||prompt;
-// OpenAI caches only up to a mark placed in a message, so the prompt is then sent as a developer message that
-// carries the mark, in place of `instructions`, which cannot carry one. The entry lives for 30 minutes.
-// Without the option, explicit mode with no mark switches caching off: every text is new input.
+// OpenAI caches only up to a mark placed in a message, and `instructions` cannot carry one: a system prompt that
+// carries the mark is sent as a developer message. The entry lives for 30 minutes. Without the option, explicit
+// mode with no mark switches caching off: every text is new input.
 export const OPENAI_CACHE_MODE={prompt_cache_options:{mode:'explicit'}} as const;
 export const OPENAI_MARK={prompt_cache_breakpoint:{mode:'explicit'}} as const;
 export function openaiPrompt(prompt:string,input:unknown[],request?:RequestSettings,fixed?:number){

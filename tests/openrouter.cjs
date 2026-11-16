@@ -55,7 +55,7 @@ const good=(extra={})=>({id:'test-response',choices:[{finish_reason:'stop',messa
  mock=async()=>Response.json(good());
  for(const model of providers.PROVIDERS.openrouter.models){
   const bytes='%PDF-synthetic-unchanged-bytes';r=await annotate(req({model,file:new File([bytes],'scan.pdf')}));assert.equal(r.status,200);assert.equal((await r.json()).inputMode,'pdf-native');
-  const body=calls.at(-1).body;assert.deepEqual(body.plugins,[{id:'file-parser',pdf:{engine:'native'}}]);assert.equal(body.messages[1].content[1].type,'file');assert.equal(body.messages[1].content[1].file.filename,'scan.pdf');assert.equal(atob(body.messages[1].content[1].file.file_data.split(',')[1]),bytes);assert.equal(destroyed,0,'Whole PDFs are never locally stripped to text');
+  const body=calls.at(-1).body;assert.deepEqual(body.plugins,[{id:'file-parser',pdf:{engine:'native'}}]);assert.equal(body.messages.length,1,'No system message unless the box is filled');assert.equal(body.messages[0].content.at(-1).type,'file');assert.equal(body.messages[0].content.at(-1).file.filename,'scan.pdf');assert.equal(atob(body.messages[0].content.at(-1).file.file_data.split(',')[1]),bytes);assert.equal(destroyed,0,'Whole PDFs are never locally stripped to text');
  }
  let before=calls.length;
 

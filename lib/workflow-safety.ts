@@ -19,7 +19,7 @@ export function setupErrors(provider:Provider,apiKey:string,prompt:string,model:
 }
 export type Attempt = {status:string;[key:string]:any};
 export type RetryRecord={id:string;status:string;history?:Attempt[];[key:string]:any};
-const attemptKeys=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','requestSettings','answers','status','error','provider','model','effort','prompt','processing','concurrency','batchId','instructions','webSearch','webUsed','research','score','explanation','tokens','usage','responseId','time','startedAt','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts','repeats','annotations','consistency'];
+const attemptKeys=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','requestSettings','answers','status','error','provider','model','effort','prompt','processing','concurrency','batchId','instructions','webSearch','webUsed','research','score','explanation','tokens','usage','responseId','time','startedAt','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts','repeats','annotations','consistency','layout'];
 // Preserve failed attempts before requeuing; successful records never change.
 // noted: more to copy onto the attempt and leave on the record (research mode: the run of the attempt).
 export function queueRetries<T extends RetryRecord>(records:T[],id?:string,noted:string[]=[]):T[]{

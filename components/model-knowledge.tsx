@@ -33,7 +33,7 @@ import {knowledgeDuplicates,parseKnowledgeItems,KNOWLEDGE_SAMPLE,KNOWLEDGE_EXAMP
 import type {Provider} from '@/lib/providers';
 import {ResearchTools,ResearchDetail,ResearchFilters,ResearchRequestOptions,ResearchRequestPreview,DetailSteps,stepKey} from '@/components/research-mode';
 import {cleanRequestSettings,sentRequestSettings,requestSummary,type RequestSettings} from '@/lib/request-settings';
-import {requestFrame} from '@/lib/request-frame';
+import {requestFrame,LAYOUT} from '@/lib/request-frame';
 import {cleanRequests,recordRequest,usedRequests,replyNotes,NOT_RECORDED,type RecordedRequest,type Recorded} from '@/lib/research/requests';
 import {carriedOnNotice,connectionFailure,earlyStopNotice,earlyStopper,takeShared} from '@/lib/research/early-stop';
 import {promptInserts,fixedLength,insertMap} from '@/lib/prompt-inserts';
@@ -151,7 +151,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // list) and the build of the Lab. The standard Lab records nothing.
  function recorded(batch:boolean):Recorded{
   if(!research)return {};
-  const kept=recordRequest(requestsNow.current,requestFrame({provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,knowledge:true,webSearch,batch,inserts:insertNames.length>0},false));
+  const kept=recordRequest(requestsNow.current,requestFrame({provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,knowledge:true,webSearch,batch,inserts:insertNames.length>0,layout:LAYOUT},false));
   if(kept.list!==requestsNow.current){requestsNow.current=kept.list;setRequests(kept.list);}
   return {...NOT_RECORDED,requestId:kept.id,lab:LAB_VERSION};
  }
@@ -209,7 +209,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
     taken.add(item.id);claimed++;
     // n: the number of the annotation; 0 for a subject's single annotation, which is written on the subject itself.
     const ns=times===1?[0]:item.status==='pending'?Array.from({length:times},(_,i)=>i+1):missingRepeats(item);
-    update(item.id,{status:'running',runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,effort,prompt,webSearch,processing:'instant',concurrency:all?parallel:1,batchId:undefined,instructions:knowledgeInstructions(webSearch),research:undefined,webUsed:undefined,time:undefined,score:undefined,explanation:undefined,...noted,...insertsOf(item),...claimRepeats(item,times)});
+    update(item.id,{status:'running',runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,effort,prompt,layout:LAYOUT,webSearch,processing:'instant',concurrency:all?parallel:1,batchId:undefined,instructions:knowledgeInstructions(webSearch),research:undefined,webUsed:undefined,time:undefined,score:undefined,explanation:undefined,...noted,...insertsOf(item),...claimRepeats(item,times)});
     if(times>1){open.set(item.id,{before:item,left:ns.length,came:0});waitingTasks.push(...ns.slice(1).map(n=>({item,n})));}
     if(claimed===1)setSelected(item.id);
     return {item,n:ns[0]};
@@ -266,9 +266,9 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   if(research&&(count>MAX_SPLIT_REQUESTS||fieldBytes>MAX_BATCH_SOURCE_BYTES)){setNotice(times>1?'Submit up to 100,000 requests (subjects × annotations per subject) and 50 MB of fields in one run. Submit fewer subjects when this limit is exceeded.':'Submit up to 100,000 subjects and 50 MB of fields in one run. Submit fewer subjects when this limit is exceeded.');return;}
   if(!research&&(count>MAX_BATCH_ITEMS||fieldBytes>MAX_BATCH_SOURCE_BYTES)){setNotice(times>1?'Submit up to 10,000 requests (subjects × annotations per subject) and 50 MB of fields together. Submit fewer subjects when this limit is exceeded.':'Submit up to 10,000 subjects and 50 MB of fields together. Submit fewer subjects when this limit is exceeded.');return;}
   lock.current=true;setBatchBusy(true);setNotice('');
-  const job:BatchJob={responseFormat:annotationFormatRecord(sentFields,prompt,true,sentSettings),answerFields:sentFields,...(sentSettings?{answerSettings:sentSettings}:{}),...(sentRequest?{requestSettings:sentRequest}:{}),runId:'lab_'+newId(),provider,model,prompt,effort,docIds:pending.map(d=>d.id),createdAt:new Date().toISOString(),state:'submitting',...(times>1?{repeats:times,...(ns.some(list=>list.length!==times)?{ns}:{})}:{})};
+  const job:BatchJob={responseFormat:annotationFormatRecord(sentFields,prompt,true,sentSettings),answerFields:sentFields,...(sentSettings?{answerSettings:sentSettings}:{}),...(sentRequest?{requestSettings:sentRequest}:{}),runId:'lab_'+newId(),provider,model,prompt,effort,layout:LAYOUT,docIds:pending.map(d=>d.id),createdAt:new Date().toISOString(),state:'submitting',...(times>1?{repeats:times,...(ns.some(list=>list.length!==times)?{ns}:{})}:{})};
   const queuedIds=new Set(job.docIds),noted=recorded(true);
-  const queued=latest.current.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,processing:'batch',concurrency:undefined,webSearch:false,webUsed:false,instructions:knowledgeInstructions(false),research:undefined,score:undefined,explanation:undefined,time:undefined,tokens:undefined,responseId:undefined,...noted,...insertsOf(d),...claimRepeats(d,times)}:d);
+  const queued=latest.current.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout:LAYOUT,processing:'batch',concurrency:undefined,webSearch:false,webUsed:false,instructions:knowledgeInstructions(false),research:undefined,score:undefined,explanation:undefined,time:undefined,tokens:undefined,responseId:undefined,...noted,...insertsOf(d),...claimRepeats(d,times)}:d);
   const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));form.set('mode','model-knowledge');form.set('webSearch','false');form.set('subjects',JSON.stringify(pending.map(d=>d.fields)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns))));
   // Research mode: one batch of the prepared run goes up.
   const partForm=(k:number)=>{const f=new FormData();f.set('model',model);f.set('runId',job.runId);f.set('part',String(k));return f;};
@@ -322,7 +322,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   if([...results.keys()].some(id=>!expected.has(id)))throw new Error('These results belong to a different batch. Check the batch ID; your workspace has not been changed.');
   const checked=(r:BatchResult|undefined)=>{if(r&&!r.error){r.error=annotationValidationError(r,job.answerFields,job.prompt,true,job.answerSettings);if(r.error)r.rawResponse=JSON.stringify({score:r.score,explanation:r.explanation,answers:r.answers});else delete r.rawResponse;}return r;};
   const collectedAt=new Date().toISOString(),notReturned='No result was returned for this subject. Check the provider’s batch report before retrying.';
-  const settings={provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,processing:'batch',concurrency:undefined,batchId,webSearch:false,webUsed:false,instructions:knowledgeInstructions(false)};
+  const settings={provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',concurrency:undefined,batchId,webSearch:false,webUsed:false,instructions:knowledgeInstructions(false)};
   // Several annotations per subject: each result is kept as an annotation, and the subject's own fields are worked out from them.
   const gathered=(d:Item,slot:{at:number;ns:number[]}):Item=>{
    let row:Item={...d,...settings,answerFields:job.answerFields,answerSettings:job.answerSettings,responseFormat:job.responseFormat};

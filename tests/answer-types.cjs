@@ -63,7 +63,8 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const models={openai:['gpt-6-luna','medium'],anthropic:['claude-sonnet-5-5','medium'],gemini:['gemini-3.8-flash','medium'],openrouter:[providers.defaultModel('openrouter'),'medium']};
  const reply=(provider,text)=>provider==='openai'?{status:'completed',id:'resp_test',usage:{total_tokens:12},output:[{content:[{type:'output_text',text}]}]}:provider==='anthropic'?{stop_reason:'end_turn',usage:{input_tokens:10,output_tokens:2},content:[{type:'text',text}]}:provider==='gemini'?{candidates:[{finishReason:'STOP',content:{parts:[{text}]}}],usageMetadata:{totalTokenCount:12}}:{id:'test-response',choices:[{finish_reason:'stop',message:{content:text}}],usage:{prompt_tokens:10,completion_tokens:2,total_tokens:12}};
  const schemaOf=(provider,body)=>provider==='openai'?body.text?.format?.schema:provider==='anthropic'?body.output_config?.format?.schema:provider==='gemini'?body.generationConfig?.responseSchema:body.response_format?.json_schema?.schema;
- const instructionsOf=(provider,body)=>provider==='openai'?body.instructions:provider==='anthropic'?body.system:provider==='gemini'?body.systemInstruction.parts[0].text:body.messages[0].content;
+ // The prompt goes in the message with the text (lib/request-frame.ts).
+ const instructionsOf=(provider,body)=>{const content=provider==='gemini'?body.contents[0].parts:provider==='openai'?body.input.at(-1).content:body.messages.at(-1).content;return typeof content==='string'?content:content.map(part=>part.text||'').join('');};
  const PROMPT='Classify the tone of the text.';
  function request(provider,answerFields,answerSettings,knowledge=false){
   const form=new FormData();for(const [k,v]of Object.entries({provider,model:models[provider][0],effort:models[provider][1],prompt:PROMPT,answerFields:JSON.stringify(answerFields)}))form.set(k,v);
@@ -100,7 +101,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
   response=await route.POST(request(provider,['response'],{plain:true}));out=await response.json();
   assert.equal(response.status,200,provider+' plain: '+out.error);assert.deepEqual(out.answers,{f0:'The tone is hopeful.\nSecond line.'});assert.equal(out.score,'');assert.equal(out.explanation,'');
   assert.deepEqual(JSON.parse(out.responseFormat),{instructions:'',schema:null},'A plain-text result records that no format was sent');
-  body=JSON.parse(calls[0].options.body);assert.equal(schemaOf(provider,body),undefined,provider+': no schema in plain text');assert.equal(instructionsOf(provider,body),PROMPT,provider+': the prompt is sent as written');
+  body=JSON.parse(calls[0].options.body);assert.equal(schemaOf(provider,body),undefined,provider+': no schema in plain text');assert.equal(instructionsOf(provider,body),PROMPT+'\n\n<text>\nA document.\n</text>',provider+': the prompt is sent as written, then the text');
   assert(!/json_schema|responseSchema|responseMimeType|response_format/.test(calls[0].options.body),provider+': no answer format of any kind');
   mock=async()=>Response.json(reply(provider,'   '));response=await route.POST(request(provider,['response'],{plain:true}));assert.equal(response.status,422,'An empty reply is a failed result');
   // A reply that is one JSON object is stored whole, as written. JSON among other words is a failed result that keeps the reply.

@@ -3,7 +3,7 @@
 import {usageSample} from '../cost-estimate/engine';
 import {cacheTokens,recordedCost} from '../cost-estimate/run-cost';
 import type {Provider} from '../providers';
-import {fillRequest,promptLead,requestFrame,type RequestFrame} from '../request-frame';
+import {fillRequest,framePrompt,requestFrame,type RequestFrame} from '../request-frame';
 import {insertMap,showInserts} from '../prompt-inserts';
 import {annotationFormatRecord} from '../answer-fields';
 import {knowledgeDocumentText} from '../model-knowledge';
@@ -79,7 +79,7 @@ export function requestOf(study:ExportStudy,row:Row,result:Row):SentRequest|unde
  if(!result.provider||!result.model||result.effort===undefined||result.prompt===undefined)return undefined;
  const knowledge=study.dataset.kind==='knowledge';
  try{
-  const frame=requestFrame({provider:result.provider as Provider,model:result.model,effort:result.effort,prompt:result.prompt,answerFields:result.answerFields||[],answerSettings:result.answerSettings,requestSettings:result.requestSettings,knowledge,webSearch:Boolean(result.webSearch),batch:result.processing==='batch',inserts:Array.isArray(result.inserts)},sentAsFile(study.dataset,row));
+  const frame=requestFrame({provider:result.provider as Provider,model:result.model,effort:result.effort,prompt:result.prompt,answerFields:result.answerFields||[],answerSettings:result.answerSettings,requestSettings:result.requestSettings,knowledge,webSearch:Boolean(result.webSearch),batch:result.processing==='batch',inserts:Array.isArray(result.inserts),layout:result.layout},sentAsFile(study.dataset,row));
   const format=typeof result.responseFormat==='string'?result.responseFormat===annotationFormatRecord(result.answerFields||[],result.prompt,knowledge,result.answerSettings):undefined;
   return {frame,recorded:false,...(format===undefined?{}:{formatUnchanged:format})};
  }catch{return undefined;}
@@ -90,7 +90,7 @@ export function requestFinder(study:ExportStudy):(row:Row,result:Row)=>SentReque
  const built=new Map<string,SentRequest|undefined>();
  return (row,result)=>{
   if(result.requestId)return requestOf(study,row,result);
-  const key=JSON.stringify([result.provider,result.model,result.effort,result.prompt,result.answerFields,result.answerSettings,result.requestSettings,Boolean(result.webSearch),result.processing==='batch',sentAsFile(study.dataset,row),result.responseFormat,Array.isArray(result.inserts)]);
+  const key=JSON.stringify([result.provider,result.model,result.effort,result.prompt,result.answerFields,result.answerSettings,result.requestSettings,Boolean(result.webSearch),result.processing==='batch',sentAsFile(study.dataset,row),result.responseFormat,Array.isArray(result.inserts),result.layout]);
   if(!built.has(key))built.set(key,requestOf(study,row,result));
   return built.get(key);
  };
@@ -113,23 +113,24 @@ export function runRequests(study:ExportStudy,run:number,find=requestFinder(stud
  const text=most(false),pdf=most(true);
  return {...(text?{text:{...text.sent,count:text.count}}:{}),...(pdf?{pdf:{...pdf.sent,count:pdf.count}}:{}),forms:counts.size,rebuilt,unknown,total};
 }
-// What a request body says, whichever provider it is for. system: the prompt with the Lab's own instructions,
-// as sent; a placeholder that was filled in for each text stands as written ({{meta.year}}). limit: the most output tokens the reply may have. temperature: the sampling temperature (absent:
-// none was sent, so the model used its own). schema: the answer format (absent for plain text).
+// What a request body says, whichever provider it is for, in either layout (lib/request-frame.ts). prompt: the
+// prompt with the Lab's own instructions, as sent; a placeholder that was filled in for each text stands as
+// written ({{meta.year}}). system: research mode's own system prompt, where one was sent. limit: the most output
+// tokens the reply may have. temperature: the sampling temperature (absent: none was sent, so the model used its
+// own). schema: the answer format (absent for plain text).
 export function requestParts(frame:RequestFrame):{model:string;prompt:string;system?:string;limit?:number;temperature?:number;schema?:any}{
  const body=JSON.parse(frame.body);
  const text=(value:any):string=>typeof value==='string'?value:Array.isArray(value)?value.map(part=>typeof part?.text==='string'?part.text:'').join(''):'';
  const first=Array.isArray(body.input)?body.input[0]:Array.isArray(body.messages)?body.messages[0]:undefined;
  const slot=typeof body.instructions==='string'?body.instructions:body.system!==undefined?text(body.system):body.systemInstruction?text(body.systemInstruction.parts):first&&(first.role==='developer'||first.role==='system')?text(first.content):'';
- // With research mode's own system prompt in the system place, the prompt opens the message with the document.
  const messages:any[]=Array.isArray(body.contents)?body.contents.map((item:any)=>item?.parts):(Array.isArray(body.input)?body.input:Array.isArray(body.messages)?body.messages:[]).filter((item:any)=>item?.role==='user').map((item:any)=>item.content);
- const lead=promptLead(messages[0]),prompt=lead?text(messages[0].slice(0,lead)):slot;
+ const {prompt,system}=framePrompt(slot,messages[0]);
  const limit=[body.max_output_tokens,body.max_tokens,body.generationConfig?.maxOutputTokens].find(value=>typeof value==='number');
  const temperature=[body.temperature,body.generationConfig?.temperature].find(value=>typeof value==='number');
  const schema=body.text?.format?.schema??body.output_config?.format?.schema??body.generationConfig?.responseSchema??body.response_format?.json_schema?.schema;
  // Gemini names its model in the address, the others in the body.
  const model=typeof body.model==='string'?body.model:(/\/models\/([^/:]+):/.exec(frame.url)?.[1]??'');
- return {model,prompt:showInserts(prompt),...(lead?{system:slot}:{}),...(limit===undefined?{}:{limit}),...(temperature===undefined?{}:{temperature}),...(schema?{schema}:{})};
+ return {model,prompt:showInserts(prompt),...(system!==undefined?{system}:{}),...(limit===undefined?{}:{limit}),...(temperature===undefined?{}:{temperature}),...(schema?{schema}:{})};
 }
 
 // The document a request carried: a text, or a whole PDF sent as a file.
