@@ -8,6 +8,21 @@ export function ModeSwitch({on,onChange,disabled}:{on:boolean;onChange:(on:boole
  return <button type="button" role="switch" aria-checked={on} aria-label="Research mode" className={'mode-switch'+(on?' on':'')} disabled={disabled} onClick={()=>onChange(!on)} title={on?'Back to the standard Lab. Your texts, prompt, and results stay as they are.':'Adds tools for research: several runs per text, agreement with human labels, sampling, and more exports. Your texts, prompt, and results stay as they are.'}><span className="mode-switch-track" aria-hidden="true"><span className="mode-switch-thumb"/></span><span className="mode-switch-label">Research<span className="mode-switch-more"> mode</span></span></button>;
 }
 
+// Research mode: step through the texts shown, from the details of one. The buttons stay in place (and keep the
+// focus) at either end. index: the place of the text shown, from 0; -1 when it is not among them.
+export function DetailSteps({index,total,onStep}:{index:number;total:number;onStep:(to:number)=>void}){
+ if(index<0||total<2)return null;
+ const step=(to:number,label:string,key:string)=><button type="button" className="textbutton" aria-disabled={to<0||to>=total} title={`${label} (${key})`} onClick={()=>{if(to>=0&&to<total)onStep(to);}}>{label}</button>;
+ return <span className="research-steps">{step(index-1,'Previous','K')}<span>{(index+1).toLocaleString('en-US')} of {total.toLocaleString('en-US')}</span>{step(index+1,'Next','J')}</span>;
+}
+// J and K step too, while the details themselves or one of their buttons have the focus.
+export function stepKey(event:{key:string;target:unknown;currentTarget:unknown;altKey?:boolean;ctrlKey?:boolean;metaKey?:boolean},index:number,total:number,onStep:(to:number)=>void){
+ const key=event.key.toLowerCase(),to=key==='j'?index+1:key==='k'?index-1:-1;
+ if(event.altKey||event.ctrlKey||event.metaKey||index<0||to<0||to>=total)return;
+ if(event.target!==event.currentTarget&&(event.target as {tagName?:string}|null)?.tagName!=='BUTTON')return;
+ onStep(to);
+}
+
 const load=()=>import('./research/panels');
 const Keys=lazy(()=>load().then(module=>({default:module.KeysControl})));
 const Tools=lazy(()=>load().then(module=>({default:module.ResearchTools})));

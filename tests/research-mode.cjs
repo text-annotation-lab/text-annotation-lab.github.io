@@ -44,7 +44,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  const parts=()=>RESEARCH_PARTS.filter(type=>h.all(n=>n.type===type).length);
 
  // The standard Lab: its eight tabs, its key field, and nothing of research mode but the switch.
- assert.deepEqual(tabs(),STUDENT_TABS);assert.equal(toggle().on,false);assert.deepEqual(parts(),[]);
+ assert.deepEqual(tabs(),STUDENT_TABS);assert.equal(toggle().on,false);assert.deepEqual(parts(),[]);assert.equal(h.all(n=>n.type==='DetailSteps').length,0);
  assert.equal(h.find(n=>n.props?.id==='key').props.value,'sk-workflow-test');assert.equal(h.find(n=>n.type==='header').props.className,undefined);
  assert.throws(()=>h.button('Remaining'));assert.throws(()=>h.button('All ('));assert.throws(()=>h.button('Random sample of'));assert.equal(h.all(n=>n.props?.role==='radio').length,0);
  await h.button('Run all').props.onClick();await h.flush();
@@ -64,6 +64,12 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  assert.deepEqual(h.find(n=>n.type==='ResearchKeys').props.keyring,{openai:'sk-workflow-test'},'A key typed before switching is carried along');
  assert.equal(JSON.stringify(h.latest().docs.map(({file,...doc})=>doc)),before);
  assert.deepEqual(heads(),['','Document','Status','Score / category','Run']);
+ // The details of a text: Previous and Next with its place among the texts, and what the technical details need of the study.
+ {const steps=()=>h.find(n=>n.type==='DetailSteps').props,detail=()=>h.find(n=>n.type==='ResearchDetail').props,region=()=>h.find(n=>n.props?.id==='annotation-detail').props;
+  assert.equal(steps().total,3);assert.equal(detail().row.id,String(steps().index));assert.equal(detail().study.kind,'texts');assert.deepEqual([...detail().study.versions],[[1,1]]);assert.equal(typeof region().onKeyDown,'function');
+  steps().onStep(0);await h.flush();assert.equal(steps().index,0);assert.equal(detail().row.id,'0');
+  steps().onStep(2);await h.flush();assert.equal(steps().index,2);assert.equal(detail().row.id,'2');
+  steps().onStep(3);await h.flush();assert.equal(steps().index,2,'There is no text after the last');}
  const runsPanel=()=>h.find(n=>n.type==='ResearchRuns').props;
  const page=()=>h.find(n=>n.type==='Tabs').props;
  page().onValueChange('runs');await h.flush();assert.equal(page().value,'runs');
@@ -130,7 +136,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  page().onValueChange('runs');await h.flush();assert.equal(page().value,'runs');
  const kept=JSON.stringify(h.latest().docs.map(({file,...doc})=>doc));
  toggle().onChange(false);await h.flush();
- assert.equal(page().value,'workspace');assert.deepEqual(tabs(),STUDENT_TABS);assert.deepEqual(parts(),[]);assert.equal(h.all(n=>n.props?.revision).length,1,'The standard Lab keeps its cost calculator under the run buttons');assert.equal(JSON.parse(h.find(n=>n.props?.revision).props.revision).at(-1),0);assert.deepEqual(heads(),['Document','Status','Score / category']);
+ assert.equal(page().value,'workspace');assert.deepEqual(tabs(),STUDENT_TABS);assert.deepEqual(parts(),[]);assert.equal(h.all(n=>n.type==='DetailSteps').length,0);assert.equal(h.find(n=>n.props?.id==='annotation-detail').props.onKeyDown,undefined);assert.equal(h.all(n=>n.props?.revision).length,1,'The standard Lab keeps its cost calculator under the run buttons');assert.equal(JSON.parse(h.find(n=>n.props?.revision).props.revision).at(-1),0);assert.deepEqual(heads(),['Document','Status','Score / category']);
  assert.equal(JSON.stringify(h.latest().docs.map(({file,...doc})=>doc)),kept);assert.deepEqual(h.latest().columns,[{name:'tone_human',role:'label'}],'Labels wait for the next visit to research mode');
  // No key is ever part of what is saved.
  assert(!JSON.stringify(h.writes.map(write=>({...write,docs:write.docs?.map(({file,...doc})=>doc)}))).includes('sk-workflow-test'));assert(h.writes.every(write=>!Object.hasOwn(write,'key')&&!Object.hasOwn(write,'keyring')));

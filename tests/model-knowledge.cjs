@@ -102,6 +102,12 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   await carried.button('Run all').props.onClick();await carried.flush();
   assert.equal(carried.requests.length,5);assert.deepEqual(carried.latest().items.map(item=>item.status),['done','error','done','done','done']);assert.equal(carried.latest().items[1].error,'The reply was cut off.');
   said(carried,'1 of 5 requests failed, and the run carried on. “Queue failed items for retry” makes it ready to run again.');
+  // The details of a subject: Previous and Next with its place among the subjects, and what the technical details need of the study.
+  {const steps=()=>carried.find(n=>n.type==='DetailSteps').props,detail=()=>carried.find(n=>n.type==='ResearchDetail').props;
+   carried.button('Subject 1').props.onClick();await carried.flush();
+   assert.deepEqual([steps().index,steps().total],[1,5]);assert.equal(detail().row.id,'parallel-1');assert.equal(detail().study.kind,'knowledge');assert.deepEqual([...detail().study.versions],[[1,1]]);assert.equal(typeof carried.find(n=>n.props?.id==='knowledge-detail').props.onKeyDown,'function');
+   steps().onStep(2);await carried.flush();assert.equal(steps().index,2);assert.equal(detail().row.id,'parallel-2');
+   steps().onStep(5);await carried.flush();assert.equal(steps().index,2,'There is no subject after the last');}
   const refused=harness(five(),async()=>refusal());refused.props.research=true;await refused.flush();
   await refused.button('Run all').props.onClick();await refused.flush();
   assert.equal(refused.requests.length,3);assert.deepEqual(refused.latest().items.map(item=>item.status),['error','error','error','pending','pending']);
@@ -119,6 +125,7 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   const first=harness(five(),async()=>refusal());await first.flush();
   await first.button('Run all').props.onClick();await first.flush();
   assert.equal(first.requests.length,1);assert.deepEqual(first.latest().items.map(item=>item.status),['error','pending','pending','pending','pending']);assert(!('shared' in first.latest().items[0]));
+  first.button('Subject 0').props.onClick();await first.flush();assert.throws(()=>first.find(n=>n.type==='DetailSteps'));assert.throws(()=>first.find(n=>n.type==='ResearchDetail'));assert.equal(first.find(n=>n.props?.id==='knowledge-detail').props.onKeyDown,undefined);
   said(first,'Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.');
  }
  // An error prevents new starts while already active results are still collected.

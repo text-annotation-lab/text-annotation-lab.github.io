@@ -7,7 +7,8 @@ import {Button} from '@/components/ui/button';
 import {columnValues,columnIndex,type Column} from '@/lib/research/columns';
 import {DEFAULT_VIEW,fieldLabel,valueOf,viewNarrowed,type View} from '@/lib/research/view';
 import type {Row,RunSummary} from '@/lib/research/runs';
-import {annotationsOf,repeatsOf} from '@/lib/research/repeats';
+import {annotationsOf,repeatsOf,requestsOf} from '@/lib/research/repeats';
+import {Technical,type DetailStudy} from './technical';
 import {modelName} from '@/lib/providers';
 
 export type MenuItem={label:string;onSelect:()=>void;disabled?:boolean;danger?:boolean};
@@ -66,25 +67,35 @@ function Answers({of,fields}:{of:Row|Record<string,any>;fields?:string[]}){
 // The summary of the model's reasoning, where the request asked for one and the provider returned it.
 const summaryOf=(of:{[key:string]:any})=>typeof of.reasoningSummary==='string'&&of.reasoningSummary.trim()?of.reasoningSummary:'';
 const Reasoning=({of}:{of:{[key:string]:any}})=>summaryOf(of)?<details className="research-reasoning"><summary>Reasoning summary</summary><pre>{summaryOf(of)}</pre></details>:null;
-export function ResearchDetail({row,columns}:{row:Row;columns:Column[]}){
+// study: with it, each result also has its technical details (./technical.tsx).
+export function ResearchDetail({row,columns,study}:{row:Row;columns:Column[];study?:DetailStudy}){
  const cells=columns.map((column,i)=>({column,value:row.cells?.[i]??''})).filter(cell=>cell.value);
  const earlier=[...(row.earlier||[])].reverse(),made=row.status==='pending'?[]:annotationsOf(row);
- if(!cells.length&&!earlier.length&&!made.length&&!summaryOf(row))return null;
+ // A result came back for the text itself (done or failed), so there is a request to show.
+ const answered=Boolean(study)&&(row.status==='done'||row.status==='error')&&Boolean(row.provider||row.model);
+ if(!cells.length&&!earlier.length&&!made.length&&!summaryOf(row)&&!answered)return null;
+ // The number of the run a result belongs to (a Model knowledge subject keeps it as runNumber).
+ const runOf=(of:{[key:string]:any})=>typeof of.runNo==='number'?of.runNo:typeof of.runNumber==='number'?of.runNumber:undefined;
+ // The technical details of every request behind a result; `n` picks one annotation.
+ const technical=(of:{[key:string]:any},run:number|undefined,n?:number)=>study?requestsOf(of).filter(request=>n===undefined||request.replicate===n).map(request=><Technical key={[row.id,run,request.replicate,request.result.time||''].join(':')} row={row} of={request.result} run={run} study={study} label={n===undefined&&annotationsOf(of).length>0?'annotation '+request.replicate:undefined}/>):null;
  return <div className="research-detail">
   {cells.length>0&&<dl className="research-cells">{cells.map(({column,value})=><div key={column.name}><dt>{column.name}{column.role==='label'&&<span className="research-tag">human label</span>}</dt><dd>{value}</dd></div>)}</dl>}
   {made.length===0&&<Reasoning of={row}/>}
+  {made.length===0&&answered&&technical(row,runOf(row))}
   {made.length>0&&<details className="research-earlier"><summary>Annotations of this text ({made.filter(a=>a.status==='done').length} of {repeatsOf(row)})</summary>
    <p className="hint">The answers above are the combined ones: the value most annotations gave, the median of a scale, the mean of a number. The explanation is that of the annotation closest to them.</p>
    {made.map(a=><div key={a.n} className="research-earlier-entry">
     <p><strong>Annotation {a.n}</strong>{when(a.time)&&` · ${when(a.time)}`}{typeof a.tokens==='number'&&` · ${a.tokens.toLocaleString('en-US')} tokens`}{a.status==='error'&&' · failed'}</p>
     {a.status==='error'?<><p className="research-muted">{String(a.error||'No result.')}</p>{a.rawResponse&&<details><summary>View returned response</summary><pre>{String(a.rawResponse)}</pre></details>}</>:<Answers of={a} fields={row.answerFields}/>}
     <Reasoning of={a}/>
+    {technical(row,runOf(row),a.n)}
    </div>)}
   </details>}
   {earlier.length>0&&<details className="research-earlier"><summary>Earlier results ({earlier.length})</summary>{earlier.map((entry,i)=><div key={i} className="research-earlier-entry">
    <p><strong>Run #{entry.runNo}</strong> · {modelName(String(entry.model||''))}{when(entry.time)&&` · ${when(entry.time)}`}{annotationsOf(entry).length>0&&` · ${annotationsOf(entry).filter(a=>a.status==='done').length} of ${repeatsOf(entry)} annotations, combined`}{entry.status==='error'&&' · failed'}</p>
    {entry.status==='error'?<p className="research-muted">{String(entry.error||'No result.')}</p>:<Answers of={entry} fields={entry.answerFields}/>}
    <Reasoning of={entry}/>
+   {technical(entry,runOf(entry))}
   </div>)}</details>}
  </div>;
 }

@@ -9,7 +9,7 @@ import {fillRequest} from '../request-frame';
 import {insertMap,markedInserts} from '../prompt-inserts';
 import {columnIndex} from './columns';
 import {agreementTable,runAgreement,type AgreementLine,type Intervals,type LabelPair,type Skipped} from './export-agreement';
-import {fileHash,fullestRun,requestFinder,requestLines,requestParts,runFolder,runRequests,type DocumentReader,type ExportStudy,type RunRequests,type SentRequest} from './export-data';
+import {fileHash,fullestRun,requestFinder,requestLines,requestParts,requestRecord,responseRecord,runFolder,runRequests,type DocumentReader,type ExportStudy,type RunRequests,type SentRequest} from './export-data';
 import {fillScript,keyVariable,REQUIREMENTS,SCRIPT_TEMPLATE,scriptValues} from './export-python';
 import {codebook,corpusColumnNames,corpusRecords,corpusTable,promptHashes,requestsTable,resultsTable,runFacts,runsOverview,type RunFacts,type Table} from './export-tables';
 import {buildWorkbook,isProse,type Sheet} from './export-workbook';
@@ -65,20 +65,14 @@ async function runLogs(ctx:ExportContext,run:number,find:(row:Row,result:Row)=>S
  for(const [i,{row,replicate,attempt,result,replaced}] of lines.entries()){
   if(i%100===0)await ctx.onProgress?.(`Writing the requests and replies of run ${run} (${count(i)} of ${count(lines.length)})`);
   const head={doc_id:String(row.id),[name]:String(row.name??''),run,replicate,attempt,...(replaced?{sent_again:true}:{})},sent=find(row,result),doc=await ctx.read(row,result);
-  // The values the request was sent with in place of the prompt's placeholders, as kept with its result.
-  const inserts=insertMap(String(result.prompt??''),Array.isArray(result.inserts)?result.inserts:undefined);
-  let request:unknown=null,note='';
-  if(!sent)note='The settings of this request were not recorded, so it cannot be shown.';
-  else if(!doc)note='The document of this request could not be read, so only the request’s address is shown.';
-  else if('pdf' in doc){
+  let pdf='';
+  if(doc&&'pdf' in doc){
    if(!hashes.has(row.id))hashes.set(row.id,await fileHash(doc.pdf));
    const path=filePath(row);
-   request=fillRequest(sent.frame.body,{filename:doc.filename,file:`[PDF file: ${doc.filename}, ${doc.pdf.size} bytes, SHA-256 ${hashes.get(row.id)}; ${path?'in this package at '+path:'not included in this package'}]`,inserts});
-  }else request=fillRequest(sent.frame.body,{filename:doc.filename,text:doc.text,inserts});
-  requests.push({...head,...(sent?{recorded:sent.recorded?'kept when the request was sent':'built again from the result’s settings by the version of the Lab that made this export',...(sent.formatUnchanged===undefined?{}:{answer_format_unchanged:sent.formatUnchanged}),url:sent.frame.url}:{}),...(note?{note}:{}),request});
-  const done=result.status==='done',reply=result.output??result.rawResponse??(result.answerSettings?.plain?result.answers?.f0:undefined);
-  responses.push({...head,status:done?'ok':'error',...(done?{}:{error:String(result.error??'')}),response_text:typeof reply==='string'?reply:null,...(typeof result.reasoningSummary==='string'?{reasoning_summary:result.reasoningSummary}:{}),model_reported:result.modelReported??null,stop_reason:result.stopReason??null,response_id:result.responseId??null,
-   ...(result.batchId?{batch_id:result.batchId}:{}),usage:result.usage??null,requested_at:result.startedAt??null,completed_at:result.time??null});
+   pdf=`[PDF file: ${doc.filename}, ${doc.pdf.size} bytes, SHA-256 ${hashes.get(row.id)}; ${path?'in this package at '+path:'not included in this package'}]`;
+  }
+  requests.push({...head,...requestRecord(sent,doc,result,pdf)});
+  responses.push({...head,...responseRecord(result)});
  }
  return {requests:jsonLines(requests),responses:jsonLines(responses)};
 }
