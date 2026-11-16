@@ -39,7 +39,7 @@ import {carriedOnNotice,connectionFailure,earlyStopNotice,earlyStopper,takeShare
 import {promptInserts,fixedLength,insertMap,placesText} from '@/lib/prompt-inserts';
 import {insertValues} from '@/lib/research/inserts';
 import {LAB_VERSION} from '@/lib/version';
-import {cleanColumns,columnIndex,removeColumn,type Column} from '@/lib/research/columns';
+import {cleanColumns,columnIndex,docIdOf,removeColumn,type Column} from '@/lib/research/columns';
 import {cleanSamples,type SampleRecord} from '@/lib/research/sample';
 import {knowledgeRows,subjectRows,applySubjectCells} from '@/lib/research/knowledge';
 import {runSummaries,type Row} from '@/lib/research/runs';
@@ -60,7 +60,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  const [answerFields,setAnswerFields]=useState<string[]>([]);
  // Research mode: field types, plain text, or no explanation; `sent` is what a request uses.
  const [answerSettings,setAnswerSettings]=useState<AnswerSettings|undefined>();
- const sent=sentAnswers(answerFields,answerSettings,Boolean(research),Boolean(research)),sentFields=sent.names,sentSettings=sent.settings;
+ const sent=sentAnswers(answerFields,answerSettings,Boolean(research),Boolean(research),Boolean(research)),sentFields=sent.names,sentSettings=sent.settings;
  // Research mode: human labels and metadata for the subjects, and the samples drawn from them.
  const [columns,setColumns]=useState<Column[]>([]),[samples,setSamples]=useState<SampleRecord[]>([]);
  // Research mode: subjects deleted from the study but kept for the runs that used them (lib/research/removed.ts),
@@ -86,8 +86,9 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // Research mode: your own price for the model, for the cost estimate before a run.
  const ownPrices=useOwnPrices(),typedPrice=research?ownPrice(provider,model,ownPrices):undefined;
  const sentRequest=research?sentRequestSettings(provider,model,promptFixed!==undefined&&!prompt.slice(0,promptFixed).trim()&&!requestSettings?.system?.trim()?{...requestSettings,cache:undefined}:requestSettings,effort):undefined;
- // The values a subject gives those placeholders, kept with its result.
- const insertsOf=(item:Item):{inserts?:string[]}=>insertNames.length?{inserts:insertValues(insertNames,item,columns)}:{};
+ // The values a subject gives those placeholders (kept with its result); {{id}} is its doc_id as the exports name it, worked out once for a run.
+ const subjectIds=()=>{const study={kind:'knowledge',rows:withRemoved(latest.current,removed)};return (item:Item)=>docIdOf(study,item);};
+ const insertsOf=(item:Item,idOf=subjectIds()):{inserts?:string[]}=>insertNames.length?{inserts:insertValues(insertNames,item,columns,idOf(item))}:{};
  // Research mode: the requests the runs sent, each kept once (lib/research/requests.ts).
  const [requests,setRequests]=useState<RecordedRequest[]|undefined>(),requestsNow=useRef<RecordedRequest[]|undefined>(undefined);requestsNow.current=requests;
  const [processing,setProcessing]=useState('instant'),[batchJob,setBatchJob]=useState<BatchJob|null>(null),[batchBusy,setBatchBusy]=useState(false),[recoverId,setRecoverId]=useState('');
@@ -174,6 +175,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   return new Set([...last.values()].filter(item=>item.status==='done'&&incomplete(item)&&repeatsOf(item)===times&&same(item)).map(item=>item.id));
  }
  async function run(all:boolean){
+  const idOf=subjectIds();
   if(lock.current||locked||keyRejected)return;
   setSetupChecked(true);const errors=setupErrors(provider,apiKey,prompt,model,effort);const missingSetup=missingAnnotationSetup(apiKey,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(errors.key||errors.prompt?'':missingSetup);document.getElementById(errors.key?'knowledge-key':errors.prompt?'knowledge-prompt':'knowledge-setup')?.focus();return;}
   lock.current=true;stop.current=false;setBusy(true);reportBusy(true);setNotice('');
@@ -231,7 +233,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
    // The mark of a failure every request of the run would meet. It is read off the reply and never kept.
    // back: a reply came back (a request that did not get as far as a reply may have had no connection).
    let shared:string|undefined,back=false;
-   try{const form=new FormData();form.set('mode','model-knowledge');form.set('fields',JSON.stringify(item.fields));form.set('provider',provider);form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('webSearch',String(webSearch));if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,item,columns)));if(placed)form.set('placeText','true');
+   try{const form=new FormData();form.set('mode','model-knowledge');form.set('fields',JSON.stringify(item.fields));form.set('provider',provider);form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('webSearch',String(webSearch));if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,item,columns,idOf(item))));if(placed)form.set('placeText','true');
     const sent=await sendAnnotation(()=>fetch('/api/annotate',{method:'POST',headers:{Authorization:`Bearer ${apiKey.trim()}`},body:form}),place);
     // The run stopped while this subject waited out a rate limit: it was not annotated and waits again as before.
     if(!sent){if(n)close(item.id);else{latest.current=latest.current.map(x=>x.id===item.id?item:x);setItems(latest.current);}return;}
@@ -265,6 +267,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   if(!out||!r.ok){const error=new Error(out?.error||'The connection was interrupted. Check your provider before submitting again.') as Error&{uncertain:boolean};error.uncertain=out?.uncertain??true;throw error;}return out;
  }
  async function submitBatch(){
+  const idOf=subjectIds();
   if(lock.current||locked||webSearch||keyRejected)return;
   setSetupChecked(true);const errors=setupErrors(provider,apiKey,prompt,model,effort);const missingSetup=missingAnnotationSetup(apiKey,prompt)||Object.values(errors).find(Boolean);if(missingSetup){setNotice(errors.key||errors.prompt?'':missingSetup);document.getElementById(errors.key?'knowledge-key':errors.prompt?'knowledge-prompt':'knowledge-setup')?.focus();return;}
   // What waits: a subject without a result, or one that gets its missing annotations.
@@ -278,7 +281,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   const job:BatchJob={responseFormat:annotationFormatRecord(sentFields,prompt,true,sentSettings),answerFields:sentFields,...(sentSettings?{answerSettings:sentSettings}:{}),...(sentRequest?{requestSettings:sentRequest}:{}),runId:'lab_'+newId(),provider,model,prompt,effort,layout:LAYOUT,docIds:pending.map(d=>d.id),createdAt:new Date().toISOString(),state:'submitting',...(times>1?{repeats:times,...(ns.some(list=>list.length!==times)?{ns}:{})}:{})};
   const queuedIds=new Set(job.docIds),noted=recorded(true);
   const queued=latest.current.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout:LAYOUT,processing:'batch',concurrency:undefined,webSearch:false,webUsed:false,instructions:knowledgeAddition(false,sentSettings).trim(),research:undefined,score:undefined,explanation:undefined,time:undefined,tokens:undefined,responseId:undefined,...noted,...insertsOf(d),...claimRepeats(d,times)}:d);
-  const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));form.set('mode','model-knowledge');form.set('webSearch','false');form.set('subjects',JSON.stringify(pending.map(d=>d.fields)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns))));if(placed)form.set('placeText','true');
+  const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));form.set('mode','model-knowledge');form.set('webSearch','false');form.set('subjects',JSON.stringify(pending.map(d=>d.fields)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns,idOf(d)))));if(placed)form.set('placeText','true');
   // Research mode: one batch of the prepared run goes up.
   const partForm=(k:number)=>{const f=new FormData();f.set('model',model);f.set('runId',job.runId);f.set('part',String(k));return f;};
   let sending=job,submitted=false;
@@ -458,7 +461,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
     <p>This makes it possible to study features of many subjects without supplying the original material. The judgments depend on the model’s knowledge, which can be incomplete or mistaken and may reflect summaries or criticism. Optional web search adds online evidence to the assessment. In either case, the annotations need validation against primary sources or other reliable evidence before they can support research conclusions.</p>
    </details>
   </div>
-  <div className="workspace">{renderSetup({answerFields,setAnswerFields,system:requestSettings?.system,setSystem:value=>setRequestSettings(current=>cleanRequestSettings({...current,system:value})),answerSettings,setAnswerSettings,scoreScale,setScoreScale,validationRequested:setupChecked,prompt,setPrompt,locked,ready,columns,promptNote,keyLocked:busy||batchBusy||parentLocked||!ready||conflict,preview:research?<ResearchRequestPreview unit="subject" disabled={!ready} source={()=>({settings:{provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,knowledge:true,webSearch,batch:processing==='batch',inserts:insertNames.length>0,placed},document:async()=>items[0]?{filename:'subject.txt',text:knowledgeItemText(items[0].fields),inserts:insertMap(prompt,insertValues(insertNames,items[0],columns))}:undefined,...(webSearch&&processing!=='batch'?{note:'With web search on, the Lab first sends a separate search request for each subject and adds what it finds to the subject’s fields.'}:{})})}/>:undefined,extraSetup:<><section className="processing-options" aria-label="Model knowledge processing options">
+  <div className="workspace">{renderSetup({answerFields,setAnswerFields,system:requestSettings?.system,setSystem:value=>setRequestSettings(current=>cleanRequestSettings({...current,system:value})),answerSettings,setAnswerSettings,scoreScale,setScoreScale,validationRequested:setupChecked,prompt,setPrompt,locked,ready,columns,promptNote,keyLocked:busy||batchBusy||parentLocked||!ready||conflict,preview:research?<ResearchRequestPreview unit="subject" disabled={!ready} source={()=>({settings:{provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,knowledge:true,webSearch,batch:processing==='batch',inserts:insertNames.length>0,placed},document:async()=>items[0]?{filename:'subject.txt',text:knowledgeItemText(items[0].fields),inserts:insertMap(prompt,insertValues(insertNames,items[0],columns,subjectIds()(items[0])))}:undefined,...(webSearch&&processing!=='batch'?{note:'With web search on, the Lab first sends a separate search request for each subject and adds what it finds to the subject’s fields.'}:{})})}/>:undefined,extraSetup:<><section className="processing-options" aria-label="Model knowledge processing options">
    <button type="button" className="processing-options-toggle" aria-expanded={showProcessing} aria-controls="knowledge-processing-options" onClick={()=>setShowProcessing(v=>!v)}><span className="processing-options-title">Processing options <span aria-hidden="true">{showProcessing?'▴':'▾'}</span></span><span className="processing-options-summary">{processing==='batch'?'Batch':`Instant · ${parallel===1?'one at a time':`${parallel} at a time`}`}{requestSummary(sentRequest).map(part=>' · '+part).join('')}{times>1?` · ${times} annotations per subject`:''}</span></button>
    {showProcessing&&<div id="knowledge-processing-options" className="processing-options-settings">
     <div className="processing-choice"><label htmlFor="knowledge-processing">Processing</label><select id="knowledge-processing" value={processing} disabled={locked} onChange={event=>setProcessing(event.target.value)} aria-describedby="knowledge-processing-help"><option value="instant">Instant</option><option value="batch" disabled={webSearch||provider==='openrouter'}>Batch · 50% lower token costs</option></select></div>
