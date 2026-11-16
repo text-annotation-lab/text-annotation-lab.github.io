@@ -7,7 +7,9 @@ export type FieldSpec={name:string;type:FieldType;values:string[];description:st
 // named (research mode): each field is sent under its own name and type, and nothing is added to the prompt
 // (see wireKeys and lib/answer-fields.ts). Without it, fields go under short keys (f0, f1, …) as text, with a
 // paragraph on the answer format after the prompt.
-export type AnswerSettings={plain?:true;rationale?:false;named?:true;fields?:FieldSpec[]};
+// inPrompt (Model knowledge, research mode): the Lab adds no instructions of its own after the prompt; the prompt
+// box holds them, where they can be changed or removed (lib/model-knowledge.ts, knowledgeAddition).
+export type AnswerSettings={plain?:true;rationale?:false;named?:true;inPrompt?:true;fields?:FieldSpec[]};
 export const FIELD_TYPES:FieldType[]=['category','ordinal','number','boolean','text'];
 export const FIELD_TYPE_LABELS:Record<FieldType,string>={category:'Category',ordinal:'Ordinal scale',number:'Number',boolean:'Yes / no',text:'Free text'};
 export const MAX_ANSWER_FIELDS=40;
@@ -34,21 +36,21 @@ const validSpec=(f:any):f is FieldSpec=>Boolean(f)&&typeof f==='object'&&typeof 
 export function cleanAnswerSettings(value:unknown):AnswerSettings|undefined{
  if(!value||typeof value!=='object'||Array.isArray(value))return undefined;
  const v=value as any,fields:FieldSpec[]=Array.isArray(v.fields)?v.fields.filter(validSpec).slice(0,MAX_ANSWER_FIELDS).map((f:FieldSpec)=>({name:f.name,type:f.type,values:[...f.values],description:f.description})):[];
- const out:AnswerSettings={...(v.plain===true?{plain:true as const}:{}),...(v.rationale===false?{rationale:false as const}:{}),...(v.named===true&&v.plain!==true?{named:true as const}:{}),...(fields.length?{fields}:{})};
+ const out:AnswerSettings={...(v.plain===true?{plain:true as const}:{}),...(v.rationale===false?{rationale:false as const}:{}),...(v.named===true&&v.plain!==true?{named:true as const}:{}),...(v.inPrompt===true?{inPrompt:true as const}:{}),...(fields.length?{fields}:{})};
  return Object.keys(out).length?out:undefined;
 }
 export const fieldSpec=(settings:AnswerSettings|undefined,name:string)=>settings?.fields?.find(f=>f.name.toLowerCase()===name.toLowerCase());
 // What a request uses and a result records: the field names, and only the settings that differ from
 // the standard format. Two setups ask for the same answers exactly when these are the same.
-// named: the fields go under their own names and types (research mode).
-export function sentAnswers(names:string[]=[],settings?:AnswerSettings,named=settings?.named===true):{names:string[];settings?:AnswerSettings}{
- if(settings?.plain)return {names:[PLAIN_FIELD],settings:{plain:true}};
+// named: the fields go under their own names and types (research mode). inPrompt: see AnswerSettings.
+export function sentAnswers(names:string[]=[],settings?:AnswerSettings,named=settings?.named===true,inPrompt=settings?.inPrompt===true):{names:string[];settings?:AnswerSettings}{
+ if(settings?.plain)return {names:[PLAIN_FIELD],settings:{plain:true,...(inPrompt?{inPrompt:true as const}:{})}};
  const fields=names.flatMap(name=>{
   const found=fieldSpec(settings,name);if(!found)return [];
   const spec:FieldSpec={name,type:found.type,values:allowedValues(found),description:found.description.trim()};
   return spec.type==='text'&&!spec.description?[]:[spec];
  });
- const out:AnswerSettings={...(settings?.rationale===false?{rationale:false as const}:{}),...(named?{named:true as const}:{}),...(fields.length?{fields}:{})};
+ const out:AnswerSettings={...(settings?.rationale===false?{rationale:false as const}:{}),...(named?{named:true as const}:{}),...(inPrompt?{inPrompt:true as const}:{}),...(fields.length?{fields}:{})};
  return {names,settings:Object.keys(out).length?out:undefined};
 }
 // The key of the shared explanation in the named format.

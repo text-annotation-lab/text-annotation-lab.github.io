@@ -96,6 +96,7 @@ const source=file=>fs.readFileSync(path.join(root,file),'utf8');
  assert(page.includes("placed:record.layout===LAYOUT&&placesText(record.prompt)"),'Retry failed places the text only for runs made with the current layout');
  assert(page.includes("if(layout!==LAYOUT)form.set('layout','earlier');else if(placed)form.set('placeText','true');"));
  for(const text of [page,knowledge])assert(text.includes('inserts:insertNames.length>0,placed'),'Preview and the record know the place of the text');
- assert(options.includes('where it has {{text}}, then the instructions the Lab adds for the answer format.'));
+ assert(options.includes('where it has {{text}}${view.added?`, then the instructions the Lab adds ${view.added}`:\'\'}.`'),'The preview names what the Lab adds after the text, if anything');
+ assert(options.includes("const addedWords=(s:FrameSettings)=>[...(s.answerSettings?.plain||s.answerSettings?.named?[]:['for the answer format']),...(s.knowledge&&!s.answerSettings?.inPrompt?['for judging from learned knowledge']:[])].join(' and ');"));
  console.log('PASS: {{text}} places the text in the prompt for every provider, now and in a batch, as recorded; values are never read again; caching ends at the first placeholder; PDFs follow the prompt; the standard Lab sends it as written. No provider was called.');
 })().catch(error=>{console.error(error);process.exit(1);});
