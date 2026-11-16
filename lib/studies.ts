@@ -1,4 +1,5 @@
 import {newId} from './identifier';
+import {copyName,duplicateWorkspaces} from './study-duplicate';
 // Feature entry point. For rollback, redeploy version 104 as documented in
 // STUDIES-ROLLBACK.md; saved snapshots are protected against autosave.
 export const NAMED_STUDIES_ENABLED = true;
@@ -94,11 +95,12 @@ export const WORKING_STUDY_ID = 'working-copy-v2';
 const WORKING_META = 'working-copy-meta-v2';
 export type WorkingStudy = {sourceId?: string; name: string};
 type SnapshotResult = {studies: Study[]; working: WorkingStudy};
-type SnapshotOptions = {id?: string; name?: string; preferredId?: string; revisions?: (number | undefined)[]};
+type SnapshotOptions = {id?: string; name?: string; preferredId?: string; revisions?: (number | undefined)[]; withTexts?: boolean};
 
 // Both workspaces and their metadata change together, or nothing changes.
 // File/Blob values remain structured-clone data; API keys never enter storage.
-export function studySnapshot(action: 'initialize'|'save-new'|'save-and-blank'|'update'|'load'|'blank', options: SnapshotOptions = {}): Promise<SnapshotResult> {
+// 'duplicate' (research mode) opens a copy of the working copy without its results; 'save-and-duplicate' saves the work first.
+export function studySnapshot(action: 'initialize'|'save-new'|'save-and-blank'|'save-and-duplicate'|'update'|'load'|'blank'|'duplicate', options: SnapshotOptions = {}): Promise<SnapshotResult> {
  return new Promise((resolve,reject)=>{
   const request=indexedDB.open('annotation-desk',1);
   request.onupgradeneeded=()=>request.result.createObjectStore('workspace');
@@ -137,7 +139,7 @@ export function studySnapshot(action: 'initialize'|'save-new'|'save-and-blank'|'
       if(!working)throw Error('Open the working copy before saving or loading studies.');
       if(!options.revisions||draft.some((v,i)=>(v?.revision??0)!==options.revisions![i]))throw Error('Another tab changed the working copy. Reload before saving or loading a study.');
       if(hasBatch(draft))throw Error('The working copy has a saved batch. Collect or resolve it before saving, loading, or starting a study.');
-      if(action==='save-new'||action==='save-and-blank'||action==='update'){
+      if(action==='save-new'||action==='save-and-blank'||action==='save-and-duplicate'||action==='update'){
        const target=action==='update'?studies.find(s=>s.id===options.id):{id:newId(),name:studyName(options.name||'')};
        if(!target)throw Error('This saved study no longer exists. Save as a new study instead.');
        if(action!=='update'&&studies.some(s=>s.name.toLocaleLowerCase()===target.name.toLocaleLowerCase()))throw Error('A study already has that name. Choose another name or use Update saved study.');
@@ -153,7 +155,15 @@ export function studySnapshot(action: 'initialize'|'save-new'|'save-and-blank'|'
         // A failed save must never leave the user in an empty working copy.
         writePair(WORKING_STUDY_ID,[undefined,undefined],draft);
         working={name:'Untitled working copy'};
+       }else if(action==='save-and-duplicate'){
+        writePair(WORKING_STUDY_ID,duplicateWorkspaces(draft,Boolean(options.withTexts)),draft);
+        working={name:copyName(target.name)};
        }
+      }else if(action==='duplicate'){
+       writePair(WORKING_STUDY_ID,duplicateWorkspaces(draft,Boolean(options.withTexts)),draft);
+       // An untitled working copy's copy stays untitled.
+       const from=studies.find(s=>s.id===working!.sourceId)?.name||(working.name!=='Untitled working copy'?working.name:'');
+       working={name:from?copyName(from):'Untitled working copy'};
       }else{
        const target=action==='load'?studies.find(s=>s.id===options.id):undefined;
        if(action==='load'&&!target)throw Error('This saved study no longer exists.');

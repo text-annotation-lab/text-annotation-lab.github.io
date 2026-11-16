@@ -9,14 +9,17 @@ import {workspaceRevision} from '@/lib/workspace-storage';
 
 type Action='new'|'update'|'load'|'rename'|'delete';
 export type OpenStudyDraft = RefObject<{texts?:Record<string,unknown>;knowledge?:Record<string,unknown>}>;
+type Fresh='blank'|'settings'|'texts';
+const UNTITLED='Untitled working copy';
 // compact (research mode): the menu button shows the study's name without the word “Studies,” which stays its accessible name.
-export function StudyManager({children,compact}:{children:(study:Study,controls:ReactNode,onReady:(ready:boolean)=>void,version:number,draftRef:OpenStudyDraft,onRecoveryChange:(available:boolean)=>void)=>ReactNode;compact?:boolean}){
+// duplicates (research mode): More options also offers Duplicate settings & prompt and Duplicate with texts & subjects.
+export function StudyManager({children,compact,duplicates}:{children:(study:Study,controls:ReactNode,onReady:(ready:boolean)=>void,version:number,draftRef:OpenStudyDraft,onRecoveryChange:(available:boolean)=>void)=>ReactNode;compact?:boolean;duplicates?:boolean}){
  const [studies,setStudies]=useState<Study[]>([]),[selected,setSelected]=useState('');
- const [draft,setDraft]=useState<WorkingStudy>({name:'Untitled working copy'}),[version,setVersion]=useState(0);
+ const [draft,setDraft]=useState<WorkingStudy>({name:UNTITLED}),[version,setVersion]=useState(0);
  const [loaded,setLoaded]=useState(false),[available,setAvailable]=useState(false),[busy,setBusy]=useState(false);
  const [error,setError]=useState(''),[message,setMessage]=useState(''),[menuOpen,setMenuOpen]=useState(false);
  const [editing,setEditing]=useState<Action|null>(null),[name,setName]=useState('');
- const [newStudy,setNewStudy]=useState<'confirm'|'save'|null>(null),[saveName,setSaveName]=useState('');
+ const [newStudy,setNewStudy]=useState<'confirm'|'save'|null>(null),[saveName,setSaveName]=useState(''),[fresh,setFresh]=useState<Fresh>('blank');
  const backupInput=useRef<HTMLInputElement>(null);
  const menuTrigger=useRef<HTMLButtonElement>(null);
  const target=studies.find(s=>s.id===selected),source=studies.find(s=>s.id===draft.sourceId);
@@ -31,16 +34,18 @@ export function StudyManager({children,compact}:{children:(study:Study,controls:
   const refresh=()=>{listStudies().then(setStudies).catch(()=>{});};
   window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh);
  },[]);
- function begin(action:Action){setEditing(action);setName(action==='rename'?target?.name||'':'');setError('');setMessage('');}
+ // A duplicate opens unsaved under “<name> (copy)”, which Save study offers as its name.
+ function begin(action:Action){setEditing(action);setName(action==='rename'?target?.name||'':duplicates&&action==='new'&&!source&&draft.name!==UNTITLED?draft.name:'');setError('');setMessage('');}
+ function openFresh(kind:Fresh){setMenuOpen(false);setFresh(kind);setNewStudy('confirm');setSaveName('');setError('');setMessage('');}
  async function startNewStudy(save:boolean){
   if(disabled)return;
   setBusy(true);setError('');
   try{
    const revisions=[workspaceRevision(studyWorkspaceKey(WORKING_STUDY_ID)),workspaceRevision(studyWorkspaceKey(WORKING_STUDY_ID,true))];
-   const result=await studySnapshot(save?'save-and-blank':'blank',{name:saveName,revisions});
+   const result=fresh==='blank'?await studySnapshot(save?'save-and-blank':'blank',{name:saveName,revisions}):await studySnapshot(save?'save-and-duplicate':'duplicate',{name:saveName,revisions,withTexts:fresh==='texts'});
    setStudies(result.studies);setDraft(result.working);setSelected(result.studies[0]?.id||'');
    setAvailable(false);setVersion(v=>v+1);setNewStudy(null);setMenuOpen(false);
-  }catch(e){setError(e instanceof Error?e.message:'Could not start a new study. Your current work is unchanged.');}
+  }catch(e){setError(e instanceof Error?e.message:fresh==='blank'?'Could not start a new study. Your current work is unchanged.':'Could not duplicate the study. Your current work is unchanged.');}
   finally{setBusy(false);}
  }
  async function submit(){
@@ -96,15 +101,15 @@ export function StudyManager({children,compact}:{children:(study:Study,controls:
  const controls=<div className="study-controls">
  <Dialog open={newStudy!==null} onOpenChange={open=>{if(!busy){setNewStudy(open?'confirm':null);setSaveName('');setError('');setMenuOpen(false);}}}>
   <DialogContent className="new-study-dialog" showCloseButton={false} onCloseAutoFocus={e=>{e.preventDefault();menuTrigger.current?.focus();}} onEscapeKeyDown={e=>{if(busy)e.preventDefault();}} onPointerDownOutside={e=>{if(busy)e.preventDefault();}}>
-   <DialogTitle>{newStudy==='save'?'Save current work first':'Start a new study?'}</DialogTitle>
-   <DialogDescription>Save your current work before starting over? Your saved studies will remain available.</DialogDescription>
+   <DialogTitle>{newStudy==='save'?'Save current work first':fresh==='settings'?'Duplicate settings & prompt?':fresh==='texts'?'Duplicate with texts & subjects?':'Start a new study?'}</DialogTitle>
+   <DialogDescription>{fresh==='blank'?'Save your current work before starting over? Your saved studies will remain available.':(fresh==='texts'?'The copy opens with this study’s prompt, settings, texts, subjects, and their columns, without results or runs.':'The copy opens with this study’s prompt and settings, without texts, subjects, or results.')+' Save your current work first if you want to keep it.'}</DialogDescription>
    {newStudy==='save'?<form onSubmit={e=>{e.preventDefault();void startNewStudy(true);}}>
     <label htmlFor="new-study-save-name">Save current work as</label>
     <input id="new-study-save-name" autoFocus value={saveName} maxLength={80} disabled={busy} onChange={e=>{setSaveName(e.target.value);setError('');}} autoComplete="off"/>
-    <div className="new-study-actions"><Button type="submit" disabled={disabled||!saveName.trim()}>{busy?'Saving…':'Save and start new'}</Button><Button type="button" variant="outline" disabled={busy} onClick={()=>setNewStudy(null)}>Cancel</Button></div>
+    <div className="new-study-actions"><Button type="submit" disabled={disabled||!saveName.trim()}>{busy?'Saving…':fresh==='blank'?'Save and start new':'Save and duplicate'}</Button><Button type="button" variant="outline" disabled={busy} onClick={()=>setNewStudy(null)}>Cancel</Button></div>
    </form>:<div className="new-study-actions">
-    <Button disabled={disabled} onClick={()=>{setNewStudy('save');setError('');}}>Save and start new</Button>
-    <Button variant="outline" disabled={disabled} onClick={()=>void startNewStudy(false)}>{busy?'Starting…':'Start without saving'}</Button>
+    <Button disabled={disabled} onClick={()=>{setNewStudy('save');setError('');}}>{fresh==='blank'?'Save and start new':'Save and duplicate'}</Button>
+    <Button variant="outline" disabled={disabled} onClick={()=>void startNewStudy(false)}>{fresh==='blank'?busy?'Starting…':'Start without saving':busy?'Duplicating…':'Duplicate without saving'}</Button>
     <Button variant="ghost" disabled={busy} autoFocus onClick={()=>setNewStudy(null)}>Cancel</Button>
    </div>}
    {error&&<p className="message" role="alert">{error}</p>}
@@ -115,11 +120,12 @@ export function StudyManager({children,compact}:{children:(study:Study,controls:
   <PopoverContent align="end" sideOffset={10} className="study-menu" aria-label="Manage studies" onCloseAutoFocus={e=>{if(newStudy!==null)e.preventDefault();}}>
    {!editing&&<>
     <div className="study-primary-actions">
-     <Button variant="outline" disabled={disabled} onClick={()=>{setMenuOpen(false);setNewStudy('confirm');setSaveName('');setError('');setMessage('');}}>New study</Button>
+     <Button variant="outline" disabled={disabled} onClick={()=>openFresh('blank')}>New study</Button>
      <Button disabled={disabled} onClick={()=>begin(source?'update':'new')}>Save study</Button>
     </div>
     <div className="study-saved-list"><label htmlFor="open-study">Saved studies in this browser</label>{studies.length?<><select id="open-study" value={target?selected:''} disabled={disabled} onChange={e=>setSelected(e.target.value)}><option value="" disabled>Choose a study</option>{studies.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><div className="study-menu-actions"><Button variant="outline" disabled={disabled||!target} onClick={()=>begin('load')}>Open</Button></div></>:<p className="hint">No saved studies yet.</p>}</div>
     <details className="study-more-options"><summary>More options</summary><div className="study-menu-actions">
+     {duplicates&&<><button className="textbutton" disabled={disabled} onClick={()=>openFresh('settings')}>Duplicate settings & prompt</button><button className="textbutton" disabled={disabled} onClick={()=>openFresh('texts')}>Duplicate with texts & subjects</button></>}
      {source&&<button className="textbutton" disabled={disabled} onClick={()=>begin('new')}>Save a copy</button>}
      {target&&<><button className="textbutton" disabled={disabled} onClick={()=>begin('rename')}>Rename selected study</button><button className="textbutton study-delete" disabled={disabled} onClick={()=>begin('delete')}>Delete selected study</button></>}
      <button className="textbutton" disabled={busy||(!available&&!canRecover)} onClick={exportBackup}>Download backup</button>
