@@ -17,7 +17,7 @@ export function KeysControl({keyring,remember,provider,open,onOpenChange,onSave,
  const count=ORDER.filter(p=>keyring[p]).length;
  const save=()=>{onSave(cleanKeyring(draft),keep);onOpenChange(false);};
  return <>
-  <Button type="button" variant="outline" className="research-keys-trigger" onClick={()=>onOpenChange(true)} title={count?'Add or change API keys':'Add an API key to annotate'}><KeyRound size={15} aria-hidden="true"/><span>API keys</span><span className={'research-keys-count'+(count?'':' none')}>{count?`${count} set`:'none set'}</span></Button>
+  <Button type="button" variant="outline" className="research-keys-trigger" onClick={()=>onOpenChange(true)} aria-label={`API keys: ${count?`${count} set`:'none set'}`} title={count?`${count} API ${count===1?'key':'keys'} set. Add or change API keys`:'No API key set. Add an API key to annotate'}><span className="research-keys-icon" aria-hidden="true"><KeyRound size={15}/><span className={'research-keys-dot'+(count?' set':'')}/></span><span>API keys</span></Button>
   <Dialog open={open} onOpenChange={onOpenChange}>
    <DialogContent className="research-dialog research-keys-dialog">
     <DialogTitle>API keys</DialogTitle>
