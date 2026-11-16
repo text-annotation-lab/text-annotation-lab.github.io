@@ -31,6 +31,16 @@ const output=p=>p==='openai'?{status:'completed',id:'resp_test',usage:{total_tok
  calls=[];mock=async()=>{throw Error('network')};const bad=request('openai');bad.headers.set('origin','https://evil.test');assert.equal((await route.POST(bad)).status,403);assert.equal(calls.length,0);
  assert.equal((await route.POST(request('openai','collect',{id:'../../secrets'}))).status,400);assert.equal(calls.length,0);
  assert.equal((await route.POST(request('openai','submit',{ids:'["lab_test_0","lab_test_0"]'}))).status,400);assert.equal(calls.length,0);
+ // Several annotations per text (research mode): each file is sent as many times as `copies` says, one reference per request.
+ for(const provider of ['openai','anthropic','gemini']){
+  calls=[];mock=async url=>Response.json(url.endsWith('/files')?{id:'file-test'}:provider==='openai'?{id:'batch_test'}:provider==='anthropic'?{id:'msgbatch_test'}:{name:'batches/test'});
+  const ids=['lab_test_0','lab_test_1','lab_test_2','lab_test_3'],res=await route.POST(request(provider,'submit',{ids:JSON.stringify(ids),copies:'[3,1]'}));assert.equal(res.status,200,provider);
+  const last=calls.at(-1),body=JSON.parse(last.options.body instanceof Blob?await last.options.body.text():last.options.body);
+  const sent=provider==='openai'?(await calls[0].options.body.get('file').text()).split('\n').map(JSON.parse).map(line=>[line.custom_id,JSON.stringify(line.body)]):provider==='anthropic'?body.requests.map(item=>[item.custom_id,JSON.stringify(item.params)]):body.batch.input_config.requests.requests.map(item=>[item.metadata.key,JSON.stringify(item.request)]);
+  assert.deepEqual(sent.map(item=>item[0]),ids,provider);assert(sent[0][1]===sent[1][1]&&sent[1][1]===sent[2][1]&&sent[2][1]!==sent[3][1],provider+': the first file three times, then the second');
+ }
+ calls=[];mock=async()=>{throw Error('network')};
+ for(const extra of [{copies:'[3,1]'},{copies:'[1]',ids:'["lab_test_0"]'},{copies:'[0,2]'},{copies:'[11,1]',ids:JSON.stringify(Array.from({length:12},(_,i)=>'lab_test_'+i))},{copies:'[1.5,1]'},{copies:'oops'},{copies:'{"0":1}'}]){assert.equal((await route.POST(request('openai','submit',extra))).status,400,JSON.stringify(extra));assert.equal(calls.length,0);}
  const big=request('openai');big.headers.set('content-length','60000000');assert.equal((await route.POST(big)).status,413);assert.equal(calls.length,0);
  mock=async url=>url.endsWith('/files')?Response.json({id:'file-test'}):Promise.reject(Error('network'));const uncertain=await route.POST(request('openai'));assert.equal(uncertain.status,502);assert.equal((await uncertain.json()).uncertain,true);
  mock=async url=>url.endsWith('/files')?Response.json({id:'file-test'}):Response.json({error:{message:'quota'}},{status:429});const quota=await route.POST(request('openai'));assert.equal((await quota.json()).uncertain,false);

@@ -29,12 +29,17 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
  const [intervals,setIntervals]=useState<{key:string;ci:Agreement['ci']}>();
 
  const runSources:CompareSource[]=lines.filter(run=>run.done>0).map(run=>({kind:'run',run:run.number}));
+ // Each annotation of a run that makes several per text, to compare one with another (a retest).
+ const singleSources:CompareSource[]=lines.filter(run=>run.done>0&&(run.repeats||1)>1).flatMap(run=>Array.from({length:run.repeats!},(_,i):CompareSource=>({kind:'run',run:run.number,rep:i+1})));
  const columnSources:CompareSource[]=[...dataset.columns.filter(c=>c.role==='label'),...dataset.columns.filter(c=>c.role!=='label')].map(c=>({kind:'column',name:c.name}));
- const sources=[...runSources,...columnSources],keys=sources.map(sourceKey);
- const a=(keys.includes(aKey)?parseSource(aKey):undefined)||runSources[runSources.length-1]||columnSources[0];
+ const sources=[...runSources,...singleSources,...columnSources],keys=sources.map(sourceKey);
+ // With one run and nothing to compare it with, the first two of its annotations are compared.
+ const retest=runSources.length+columnSources.length<2?singleSources[0]:undefined;
+ const a=(keys.includes(aKey)?parseSource(aKey):undefined)||retest||runSources[runSources.length-1]||columnSources[0];
  const rest=sources.filter(source=>!a||sourceKey(source)!==sourceKey(a));
  const firstLabel=rest.find(source=>source.kind==='column'&&dataset.columns.find(c=>c.name===source.name)?.role==='label');
- const b=(bKey&&bKey!==(a&&sourceKey(a))&&keys.includes(bKey)?parseSource(bKey):undefined)||firstLabel||[...rest].reverse().find(source=>source.kind==='run')||rest[0];
+ const sibling=a?.kind==='run'&&a.rep?rest.find(source=>source.kind==='run'&&source.run===a.run&&source.rep):undefined;
+ const b=(bKey&&bKey!==(a&&sourceKey(a))&&keys.includes(bKey)?parseSource(bKey):undefined)||firstLabel||sibling||[...rest].reverse().find(source=>source.kind==='run'&&!source.rep)||rest[0];
 
  const fieldsA=a?sourceFields(dataset.rows,a):[],fieldsB=b?sourceFields(dataset.rows,b):[];
  const fields=a?.kind==='run'?fieldsA:fieldsB;
@@ -59,8 +64,9 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
   if(!stats||!a||!b)return;
   downloadText(`${fileStem(studyName,dataset)}-agreement.csv`,toCsv(agreementTable({a:sourceLabel(a)+(fieldA?` (${fieldLabel(fieldA)})`:''),b:sourceLabel(b)+(fieldB?` (${fieldLabel(fieldB)})`:''),field,dataset:sourceOf(dataset),basis:pairing?.basis},stats,ci,unit)),'text/csv');
  }
- const option=(source:CompareSource)=><option key={sourceKey(source)} value={sourceKey(source)}>{source.kind==='run'?`Run #${source.run} · ${modelLabel(lines.find(run=>run.number===source.run)?.model||'')}`:source.name}</option>;
- const group=(list:CompareSource[])=><>{list.some(s=>s.kind==='run')&&<optgroup label="Runs">{list.filter(s=>s.kind==='run').map(option)}</optgroup>}{list.some(s=>s.kind==='column')&&<optgroup label="Labels and metadata">{list.filter(s=>s.kind==='column').map(option)}</optgroup>}</>;
+ const option=(source:CompareSource)=><option key={sourceKey(source)} value={sourceKey(source)}>{source.kind!=='run'?source.name:source.rep?sourceLabel(source):`Run #${source.run} · ${modelLabel(lines.find(run=>run.number===source.run)?.model||'')}`}</option>;
+ const whole=(s:CompareSource)=>s.kind==='run'&&!s.rep,single=(s:CompareSource)=>s.kind==='run'&&Boolean(s.rep);
+ const group=(list:CompareSource[])=><>{list.some(whole)&&<optgroup label="Runs">{list.filter(whole).map(option)}</optgroup>}{list.some(single)&&<optgroup label="Single annotations (retest)">{list.filter(single).map(option)}</optgroup>}{list.some(s=>s.kind==='column')&&<optgroup label="Labels and metadata">{list.filter(s=>s.kind==='column').map(option)}</optgroup>}</>;
  const categories=stats?.categories||[];
 
  return <div className="research-page">
@@ -75,10 +81,10 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
    {lines.length?<div className="research-table-scroll"><table className="research-table research-runs"><thead><tr><th>Run</th><th>Started</th><th>Model</th><th>Prompt</th><th>Answer fields</th><th>Complete</th><th>Failed</th><th>Cost</th>{dataset.kind==='texts'&&<th><span className="sr-only">Actions</span></th>}</tr></thead><tbody>{lines.map(run=><tr key={run.number}>
     <td><strong>#{run.number}</strong></td>
     <td>{when(run.startedAt)}</td>
-    <td>{modelLabel(run.model)}{run.effort&&<span className="research-muted"> · {reasoningOptionLabel(run.effort)}</span>}{run.webSearch&&<span className="research-tag">web search</span>}{run.caching!=='off'&&<span className="research-tag">{run.caching==='on'?'prompt caching':'prompt caching in part'}</span>}{run.mixed&&<span className="research-tag warn" title={`Results in this run were made with different settings. The long results table lists the settings of every ${unit}.`}>settings vary</span>}</td>
+    <td>{modelLabel(run.model)}{run.effort&&<span className="research-muted"> · {reasoningOptionLabel(run.effort)}</span>}{(run.repeats||1)>1&&<span className="research-tag" title={`${run.repeats} annotations per ${unit}; the answers shown are the combined ones`}>×{run.repeats}</span>}{run.webSearch&&<span className="research-tag">web search</span>}{run.caching!=='off'&&<span className="research-tag">{run.caching==='on'?'prompt caching':'prompt caching in part'}</span>}{run.mixed&&<span className="research-tag warn" title={`Results in this run were made with different settings. The long results table lists the settings of every ${unit}.`}>settings vary</span>}</td>
     <td><details className="research-prompt"><summary>v{run.promptVersion}</summary><pre>{run.prompt||'(no prompt recorded)'}</pre></details></td>
     <td>{answersLabel(run.answerFields,run.answerSettings)}</td>
-    <td>{run.done.toLocaleString('en-US')}{run.active>0&&<span className="research-muted"> · {run.active} in progress</span>}</td>
+    <td>{run.done.toLocaleString('en-US')}{run.active>0&&<span className="research-muted"> · {run.active} in progress</span>}{run.fewer>0&&<span className="research-muted"> · {run.fewer.toLocaleString('en-US')} with fewer than {run.repeats} annotations</span>}</td>
     <td>{run.failed||'—'}</td>
     <td title={run.costKnown<run.costCount?`Known for ${run.costKnown} of ${run.costCount} annotations`:undefined}>{run.costKnown?money(run.cost)+(run.costKnown<run.costCount?'+':''):'—'}</td>
     {dataset.kind==='texts'&&<td className="research-row-actions"><button type="button" className="textbutton" onClick={()=>onShowRun(run.number)}>Show in Workspace</button><button type="button" className="textbutton" disabled={locked} onClick={()=>{if(confirm(`Delete run #${run.number} and its ${run.done+run.failed} results? Texts keep the results of their other runs. This cannot be undone.`))onDeleteRun(run.number);}}>Delete</button></td>}

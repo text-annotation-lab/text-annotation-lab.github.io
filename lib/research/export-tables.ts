@@ -5,6 +5,7 @@ import {fieldsOf,valueOf} from './view';
 import {explanationOf,runLines,sourceOf,subjectField,subjectHeadings,uniqueNames,unitOf,type Dataset,type RunLine} from './export';
 import {costOf,latencyOf,requestLines,rowForRun,shortHash,tokensOf,type ExportStudy,type RequestLine} from './export-data';
 import type {Row} from './runs';
+import {consistencyOf} from './repeats';
 
 export type Table=(string|number)[][];
 const lower=(name:string)=>name.toLowerCase();
@@ -34,7 +35,8 @@ export async function promptHashes(dataset:Dataset):Promise<Map<string,string>>{
 }
 
 // What a run did, counted from its requests. requests: total, ok, and failed count each text's last request
-// in the run; replaced counts the failed attempts that were sent again. Tokens and cost include those attempts.
+// in the run (with several annotations per text, the last request for each annotation); replaced counts the
+// failed attempts that were sent again. Tokens and cost include those attempts.
 export type RunFacts={run:RunLine;texts:number;usable:number;allFailed:number;active:number;
  requests:{total:number;ok:number;failed:number;replaced:number;first:string;last:string};
  tokens:{input:number;output:number;reasoning:number;cacheRead:number;cacheWrite:number;knownFor:number};
@@ -63,38 +65,44 @@ export function runFacts(dataset:Dataset,run:RunLine,all:RequestLine[]=requestLi
 }
 
 // One row per text of a run: its answers, then its labels and metadata. A text is in the run when the run
-// sent a request for it; a text whose requests all failed has empty answers.
+// sent a request for it; a text whose requests all failed has empty answers. In a run that makes several
+// annotations per text the answers are the combined ones, and each answer with a share has a column
+// <field>_replicate_agreement after it: the share of the text's annotations that gave the combined value.
 export function resultsTable(study:ExportStudy,run:number,options:{texts?:Map<string,string>;explanation?:boolean}={}):Table{
  const {dataset}=study,counts=new Map<string,[number,number]>();
  for(const line of requestLines(dataset))if(line.run===run){const count=counts.get(line.row.id)||[0,0];count[line.result.status==='done'?0:1]++;counts.set(line.row.id,count);}
  const rows=dataset.rows.filter(row=>counts.has(row.id)),results=rows.map(row=>rowForRun(row,run)),lead=identity(dataset);
  const fields=fieldsOf(results),explained=options.explanation!==false&&results.some(result=>result.status==='done'&&explanationOf(result));
+ const shared=new Set(fields.filter(field=>results.some(result=>result.status==='done'&&consistencyOf(result,field)!==undefined)));
  const taken=new Set([...lead.header,...(options.texts?['text']:[]),...(explained?['explanation']:[]),'n_ok','n_error'].map(lower));
- const header=[...lead.header,...(options.texts?['text']:[]),...named(fields.map(fieldName),taken,'answer_'),...(explained?['explanation']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_'),'n_ok','n_error'];
+ const names=named(fields.map(fieldName),taken,'answer_'),shares=named(fields.filter(field=>shared.has(field)).map(field=>fieldName(field)+'_replicate_agreement'),taken,'answer_');
+ const header=[...lead.header,...(options.texts?['text']:[]),...fields.flatMap((field,f)=>[names[f],...(shared.has(field)?[shares.shift()!]:[])]),...(explained?['explanation']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_'),'n_ok','n_error'];
+ const share=(result:Row,field:string):number|''=>{const value=result.status==='done'?consistencyOf(result,field):undefined;return value===undefined?'':Math.round(value*1000)/1000;};
  return [uniqueNames(header),...rows.map((row,i)=>{
   const result=results[i],done=result.status==='done',[ok,failed]=counts.get(row.id)!;
-  return [...lead.cells(row),...(options.texts?[options.texts.get(row.id)??'']:[]),...fields.map(field=>done?valueOf(result,field):''),...(explained?[done?explanationOf(result):'']:[]),...dataset.columns.map((_,c)=>row.cells?.[c]??''),ok,failed];
+  return [...lead.cells(row),...(options.texts?[options.texts.get(row.id)??'']:[]),...fields.flatMap(field=>[done?valueOf(result,field):'',...(shared.has(field)?[share(result,field)]:[])]),...(explained?[done?explanationOf(result):'']:[]),...dataset.columns.map((_,c)=>row.cells?.[c]??''),ok,failed];
  })];
 }
 
 // One row per request, in the order of the runs and, within a run, of the texts. A failed request has no
 // answers, so a table of requests cannot be averaged with them by mistake; a plain-text run keeps the reply.
-// sent_again marks a failed attempt that was queued again (the request that followed it has the next attempt
-// number).
+// replicate: which of the text's annotations in the run the request is for (1 when the run makes one per
+// text). sent_again marks a failed attempt that was queued again (the request that followed it has the next
+// attempt number of the same replicate).
 export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:Map<string,string>,options:{explanation?:boolean}={}):Table{
  const {dataset}=study,knowledge=dataset.kind==='knowledge',lead=identity(dataset,true);
  const lines=requestLines(dataset).filter(line=>!runs||runs.includes(line.run)).map((line,i)=>({line,i})).sort((a,b)=>a.line.run-b.line.run||a.i-b.i).map(entry=>entry.line);
  const versions=new Map(runLines(dataset).map(run=>[run.number,run.promptVersion]));
  const fields=fieldsOf(lines.map(line=>line.result)),explained=options.explanation!==false&&lines.some(line=>line.result.status==='done'&&explanationOf(line.result));
- const before=['study','data','run','prompt_version','prompt_hash','provider','model_requested','model_reported','reasoning_effort',...lead.header,'attempt','status','sent_again'];
+ const before=['study','data','run','prompt_version','prompt_hash','provider','model_requested','model_reported','reasoning_effort',...lead.header,'replicate','attempt','status','sent_again'];
  const after=['error','stop_reason','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','cost_usd','processing','prompt_caching',...(knowledge?['web_search']:[]),'latency_ms','requested_at','completed_at','response_id','batch_id','request_id','lab_version'];
  const taken=new Set([...before,...(explained?['explanation']:[]),...after].map(lower));
  const header=[...before,...named(fields.map(fieldName),taken,'answer_'),...(explained?['explanation']:[]),...after];
- return [header,...lines.map(({row,run,attempt,result,replaced})=>{
+ return [header,...lines.map(({row,run,replicate,attempt,result,replaced})=>{
   const done=result.status==='done',used=tokensOf(result);
   // The reply of a plain-text run is kept for a failed request too (a reply that could not be read as JSON, say).
   const value=(field:string)=>done?valueOf(result,field):field===PLAIN_FIELD&&result.answerSettings?.plain?String(result.rawResponse??result.output??result.answers?.f0??''):'';
-  return [study.name,sourceOf(dataset),run,versions.get(run)??'',hashes.get(String(result.prompt??''))??'',String(result.provider??''),String(result.model??''),String(result.modelReported??''),String(result.effort??''),...lead.cells(row),attempt,done?'ok':'error',replaced?'yes':'',
+  return [study.name,sourceOf(dataset),run,versions.get(run)??'',hashes.get(String(result.prompt??''))??'',String(result.provider??''),String(result.model??''),String(result.modelReported??''),String(result.effort??''),...lead.cells(row),replicate,attempt,done?'ok':'error',replaced?'yes':'',
    ...fields.map(value),...(explained?[done?explanationOf(result):'']:[]),
    done?'':String(result.error??''),String(result.stopReason??''),used.input,used.output,used.reasoning,used.cacheRead,used.cacheWrite,costOf(result),result.processing==='batch'?'batch':'instant',result.requestSettings?.cache?'on':'off',...(knowledge?[result.webSearch?'yes':'no']:[]),
    latencyOf(result),String(result.startedAt??''),String(result.time??''),String(result.responseId??''),String(result.batchId??''),String(result.requestId??''),String(result.lab??'')];
@@ -104,10 +112,10 @@ export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:M
 // One row per run, with its settings, counts, tokens, cost, and full prompt.
 export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
  const {dataset}=study,knowledge=dataset.kind==='knowledge',unit=unitOf(dataset),lines=requestLines(dataset);
- const header=['run','data','started_at','finished_at','status','processing','batch_ids','n_'+unit+'s','n_'+unit+'s_with_usable_answer','requests_ok','requests_failed','requests_replaced_by_retries','provider','model_requested','models_reported','reasoning_effort',...(knowledge?['web_search']:[]),'prompt_caching','prompt_version','prompt_hash','answer_fields','answer_format','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','cost_usd','cost_known_for','lab_versions','settings','prompt'];
+ const header=['run','data','started_at','finished_at','status','processing','batch_ids','n_'+unit+'s','n_'+unit+'s_with_usable_answer','annotations_per_'+unit,'requests_ok','requests_failed','requests_replaced_by_retries','provider','model_requested','models_reported','reasoning_effort',...(knowledge?['web_search']:[]),'prompt_caching','prompt_version','prompt_hash','answer_fields','answer_format','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','cost_usd','cost_known_for','lab_versions','settings','prompt'];
  return [header,...runLines(dataset).map(run=>{
   const facts=runFacts(dataset,run,lines),known=facts.tokens.knownFor>0,sum=(n:number)=>known?n:'';
-  return [run.number,sourceOf(dataset),run.startedAt,facts.finished,run.active?'in progress':'finished',facts.processing,facts.batchIds.join('; '),facts.texts,facts.usable,facts.requests.ok,facts.requests.failed,facts.requests.replaced,run.provider,run.model,facts.models.join('; '),run.effort,...(knowledge?[run.webSearch?'yes':'no']:[]),run.caching,run.promptVersion,hashes.get(run.prompt)??'',run.answerFields.join(' | '),answersLabel(run.answerFields,run.answerSettings,true),
+  return [run.number,sourceOf(dataset),run.startedAt,facts.finished,run.active?'in progress':'finished',facts.processing,facts.batchIds.join('; '),facts.texts,facts.usable,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,run.provider,run.model,facts.models.join('; '),run.effort,...(knowledge?[run.webSearch?'yes':'no']:[]),run.caching,run.promptVersion,hashes.get(run.prompt)??'',run.answerFields.join(' | '),answersLabel(run.answerFields,run.answerSettings,true),
    sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),facts.cost.knownFor?facts.cost.amount:'',`${facts.cost.knownFor} of ${facts.cost.of}`,facts.labs.join('; '),run.mixed?'vary within this run; see the table of requests':run.recorded?'recorded when the run started':'read from the run’s results',run.prompt];
  })];
 }

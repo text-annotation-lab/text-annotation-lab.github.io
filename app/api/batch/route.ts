@@ -40,13 +40,21 @@ export async function POST(request:Request){
     if(files.length)throw new BatchError('Submit subject fields without document uploads.');
     files=subjects.map(fields=>new File([knowledgeItemText(fields)],'subject.txt',{type:'text/plain'}));
    }
-   if(!files.length||files.length>MAX_BATCH_ITEMS||!Array.isArray(ids)||ids.length!==files.length||new Set(ids).size!==ids.length||ids.some((id,i)=>typeof id!=='string'||id!==runId+'_'+i))throw new BatchError('Submit between 1 and 10,000 items with unique references.');
+   // Research mode, several annotations per text: how many requests each item gets (absent: one). An item is
+   // prepared once and its request is repeated under consecutive references.
+   let copies:number[]|undefined;
+   if(f.get('copies')!==null){
+    try{copies=JSON.parse(String(f.get('copies')));}catch{throw new BatchError('Could not read the number of annotations per item.');}
+    if(!Array.isArray(copies)||copies.length!==files.length||copies.some(n=>!Number.isInteger(n)||n<1||n>10))throw new BatchError('Provide 1 to 10 annotations for each item.');
+   }
+   const total=copies?copies.reduce((sum,n)=>sum+n,0):files.length;
+   if(!files.length||total>MAX_BATCH_ITEMS||!Array.isArray(ids)||ids.length!==total||new Set(ids).size!==ids.length||ids.some((id,i)=>typeof id!=='string'||id!==runId+'_'+i))throw new BatchError(copies?'Submit between 1 and 10,000 requests (items × annotations per item) with unique references.':'Submit between 1 and 10,000 items with unique references.');
    if(files.some(file=>!(file instanceof File)||!file.size||file.size>20*1024*1024||!supportedFile.test(file.name)))throw new BatchError('Use nonempty PDF, DOCX, TXT, MD, HTML, or RTF documents.');
    if(files.reduce((n,file)=>n+(file as File).size,0)>MAX_BATCH_SOURCE_BYTES)throw new BatchError('These items exceed the 50 MB combined source limit. Submit fewer or smaller items together.',413);
    // Validate and prepare everything before submitting any paid provider job.
    const payload=createBatchPayload(provider,runId);
    f.delete('files');f.delete('subjects');
-   for(let i=0;i<files.length;i++){const body=await buildBatchBody(provider,files[i] as File,knowledge?prompt+'\n\n'+knowledgeInstructions(false):prompt,model,effort,knowledge,false,answerFields,answerSettings,requestSettings);payload.append(ids[i],body);files[i]='';}
+   for(let i=0,at=0;i<files.length;i++){const body=await buildBatchBody(provider,files[i] as File,knowledge?prompt+'\n\n'+knowledgeInstructions(false):prompt,model,effort,knowledge,false,answerFields,answerSettings,requestSettings);for(let copy=0;copy<(copies?copies[i]:1);copy++)payload.append(ids[at++],body);files[i]='';}
    return reply({id:await createBatch(provider,key,model,runId,payload.finish())});
   }
   const id=f.get('id');if(!validBatchId(provider,id))throw new BatchError('Enter a valid batch ID for the selected provider.');

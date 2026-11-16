@@ -10,7 +10,7 @@ export type RecordedRequest={id:string;url:string;body:string};
 // What recording adds to a result. lab: the build of the Lab that sent the request.
 export type Recorded={requestId?:string;modelReported?:string;stopReason?:string;output?:string;lab?:string};
 export const RECORDED_KEYS=['requestId','modelReported','stopReason','output','lab'] as const;
-type Referring={requestId?:string;earlier?:{[key:string]:any}[];history?:{[key:string]:any}[]};
+type Referring={requestId?:string;annotations?:unknown;earlier?:{[key:string]:any}[];history?:{[key:string]:any}[]};
 
 const valid=(r:any):r is RecordedRequest=>Boolean(r)&&typeof r==='object'&&typeof r.id==='string'&&/^q[1-9]\d{0,8}$/.test(r.id)&&typeof r.url==='string'&&r.url.length<=1000&&typeof r.body==='string'&&r.body.length<=1000000;
 // The list as read from browser storage or a study backup (absent when empty).
@@ -26,11 +26,12 @@ export function recordRequest(list:RecordedRequest[]|undefined,frame:RequestFram
  const id='q'+(current.reduce((n,r)=>Math.max(n,Number(r.id.slice(1))),0)+1);
  return {list:[...current,{id,url:frame.url,body:frame.body}],id};
 }
-// The requests that a result, an earlier run's result, or a failed attempt still names.
+// The requests that a result, an earlier run's result, a failed attempt, or one of their annotations (a result
+// made of several, lib/research/repeats.ts) still names.
 export function usedRequests<T extends Referring>(list:RecordedRequest[]|undefined,rows:T[]):RecordedRequest[]|undefined{
  if(!list?.length)return undefined;
  const used=new Set<string>();
- for(const row of rows)for(const result of [row,...(row.earlier||[]),...(row.history||[]),...(row.earlier||[]).flatMap(e=>e.history||[])])if(typeof result.requestId==='string')used.add(result.requestId);
+ for(const row of rows)for(const result of [row,...(row.earlier||[]),...(row.history||[]),...(row.earlier||[]).flatMap(e=>e.history||[])])for(const made of [result,...(Array.isArray(result.annotations)?result.annotations:[])])if(typeof made?.requestId==='string')used.add(made.requestId);
  const kept=list.filter(r=>used.has(r.id));
  return kept.length===list.length?list:kept.length?kept:undefined;
 }

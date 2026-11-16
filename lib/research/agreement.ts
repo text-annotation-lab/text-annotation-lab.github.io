@@ -5,16 +5,16 @@ import {agreement,fmtPct,fmtStat,type Agreement,type CiStat,type Level} from './
 import {normalizeLabel} from './normalize';
 import {rowForRun,type Row} from './runs';
 import {cellOf,columnIndex,type Column} from './columns';
-import {fieldLabel,fieldsOf,pickField,valueOf,type CompareSource} from './view';
+import {fieldLabel,fieldsOf,pickField,sourceResult,valueOf,type CompareSource} from './view';
 import {fieldSpec,type FieldType} from '../answer-types';
 
-export const sourceLabel=(source:CompareSource)=>source.kind==='run'?'Run #'+source.run:source.name;
+export const sourceLabel=(source:CompareSource)=>source.kind==='run'?'Run #'+source.run+(source.rep?' · annotation '+source.rep:''):source.name;
 // The answer fields a run recorded; a column has none.
 export const sourceFields=(rows:Row[],source:CompareSource)=>source.kind==='run'?fieldsOf(rows.map(row=>rowForRun(row,source.run))):[];
 // One value per text, in the order of `rows`; '' where the source has none.
 export function sourceValues(rows:Row[],columns:Column[],source:CompareSource,field:string):string[]{
  if(source.kind==='column'){const index=columnIndex(columns,source.name);return rows.map(row=>cellOf(row,index).trim());}
- return rows.map(row=>{const result=rowForRun(row,source.run);return result.status==='done'?valueOf(result,field).trim():'';});
+ return rows.map(row=>{const result=sourceResult(row,source);return result.status==='done'?valueOf(result,field).trim():'';});
 }
 const isNumber=(value:string)=>value!==''&&!Number.isNaN(Number(value));
 // Codes that only ever mean “no label” (unlike words such as “none”, which may be a category).

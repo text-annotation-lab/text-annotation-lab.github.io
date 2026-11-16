@@ -57,8 +57,10 @@ document's text) or file (the path of a PDF, from the folder of corpus.csv);
 and filename (the name each request gives for the document; without it, the
 PDF's own name or the doc_id).
 
-Outputs: results.csv (one row per document) and log.jsonl (every request and
-the provider's whole response; the script never writes your API key). Each run
+Outputs: results.csv (one row per request: a document's annotations are
+numbered in the column replicate, and are not combined here) and log.jsonl
+(every request and the provider's whole response; the script never writes
+your API key). Each run
 starts from the first row and overwrites --out; log.jsonl is appended to. To
 continue an interrupted run, pass a CSV of the remaining documents and a new
 --out.
@@ -108,6 +110,9 @@ ALLOWED = {{ALLOWED}}
 
 # True: the run asked for plain text, and the whole reply is the answer.
 PLAIN_TEXT = {{PLAIN_TEXT}}
+
+# How many times the run annotated each document (its annotations per text).
+REPLICATES = {{REPLICATES}}
 
 # Seconds to wait for a reply, as in the Lab.
 TIMEOUT = {{TIMEOUT}}
@@ -333,12 +338,12 @@ def main():
         sys.exit("Set the environment variable " + API_KEY_ENV + " to your API key.")
     answers = ["response"] if PLAIN_TEXT else (FIELDS or ["score"])
     explained = not PLAIN_TEXT and "explanation" not in [name.lower() for name in answers]
-    own = ["doc_id", "status", "error", "model_reported", "stop_reason", "input_tokens", "output_tokens", "latency_s", "completed_at", "response_id"]
+    own = ["doc_id", "replicate", "status", "error", "model_reported", "stop_reason", "input_tokens", "output_tokens", "latency_s", "completed_at", "response_id"]
     # As in the Lab's exports: a field named like one of these columns is written as answer_<name>.
     column_of = {name: "answer_" + name if name in own else name for name in answers}
     if explained:
         column_of["explanation"] = "explanation"
-    columns = [*own[:2], *column_of.values(), *own[2:]]
+    columns = [*own[:3], *column_of.values(), *own[3:]]
     now = lambda: dt.datetime.now(dt.timezone.utc).isoformat()
     # With a byte-order mark, like the Lab's CSV files, so Excel reads letters such as æ, ø, and å correctly.
     with open(args.out, "w", newline="", encoding="utf-8-sig") as out_file, open(args.log, "a", encoding="utf-8") as log:
@@ -346,36 +351,37 @@ def main():
         writer.writeheader()
         for number, row in enumerate(rows, 1):
             doc_id, body, data = build_request(row, args, folder, number)
-            record = {"doc_id": doc_id}
-            started = time.time()
-            if body is None:
-                record.update(status="error", error="No document to send (an empty text, or a kind of document the run did not send)")
-            else:
-                try:
-                    status, out = send(url, body, key)
-                    record["completed_at"] = now()
-                    entry = {"doc_id": doc_id, "completed_at": record["completed_at"], "http_status": status, "request": without_data(body, data), "response": out}
-                    if status != 200 or not isinstance(out, dict) or (PROVIDER == "openrouter" and out.get("error")):
-                        code = short_code(out)
-                        record.update(status="error", error="The provider answered with an error (HTTP %d%s)" % (status, ": " + code if code else ""))
-                    else:
-                        text, model, stop, usage, response_id, complete = read_reply(out)
-                        # As in the Lab: a cut-off, refused, empty, or unreadable answer counts as failed.
-                        values, problem = parse_answer(text) if complete else ({}, "Incomplete answer (stop reason: %s)" % (stop or "none"))
-                        tokens_in, tokens_out = token_counts(usage)
-                        record.update({column_of.get(name, name): value for name, value in values.items()})
-                        record.update(status="error" if problem else "ok", error=problem, model_reported=model, stop_reason=stop,
-                                      input_tokens=tokens_in, output_tokens=tokens_out, response_id=response_id)
-                    log.write(json.dumps(entry, ensure_ascii=False) + "\n")
-                except Exception as e:  # keep going; failed requests are recorded
-                    record.update(status="error", error=type(e).__name__ + ": " + str(e), completed_at=now())
-                    log.write(json.dumps({"doc_id": doc_id, "completed_at": record["completed_at"], "request": without_data(body, data),
-                                          "error": type(e).__name__ + ": " + str(e)}, ensure_ascii=False) + "\n")
-            record["latency_s"] = round(time.time() - started, 2)
-            writer.writerow(record)
-            out_file.flush()
-            log.flush()
-            print("[%d/%d] %s" % (number, len(rows), doc_id), file=sys.stderr)
+            for replicate in range(1, REPLICATES + 1):
+                record = {"doc_id": doc_id, "replicate": replicate}
+                started = time.time()
+                if body is None:
+                    record.update(status="error", error="No document to send (an empty text, or a kind of document the run did not send)")
+                else:
+                    try:
+                        status, out = send(url, body, key)
+                        record["completed_at"] = now()
+                        entry = {"doc_id": doc_id, "replicate": replicate, "completed_at": record["completed_at"], "http_status": status, "request": without_data(body, data), "response": out}
+                        if status != 200 or not isinstance(out, dict) or (PROVIDER == "openrouter" and out.get("error")):
+                            code = short_code(out)
+                            record.update(status="error", error="The provider answered with an error (HTTP %d%s)" % (status, ": " + code if code else ""))
+                        else:
+                            text, model, stop, usage, response_id, complete = read_reply(out)
+                            # As in the Lab: a cut-off, refused, empty, or unreadable answer counts as failed.
+                            values, problem = parse_answer(text) if complete else ({}, "Incomplete answer (stop reason: %s)" % (stop or "none"))
+                            tokens_in, tokens_out = token_counts(usage)
+                            record.update({column_of.get(name, name): value for name, value in values.items()})
+                            record.update(status="error" if problem else "ok", error=problem, model_reported=model, stop_reason=stop,
+                                          input_tokens=tokens_in, output_tokens=tokens_out, response_id=response_id)
+                        log.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                    except Exception as e:  # keep going; failed requests are recorded
+                        record.update(status="error", error=type(e).__name__ + ": " + str(e), completed_at=now())
+                        log.write(json.dumps({"doc_id": doc_id, "replicate": replicate, "completed_at": record["completed_at"], "request": without_data(body, data),
+                                              "error": type(e).__name__ + ": " + str(e)}, ensure_ascii=False) + "\n")
+                record["latency_s"] = round(time.time() - started, 2)
+                writer.writerow(record)
+                out_file.flush()
+                log.flush()
+                print("[%d/%d] %s%s" % (number, len(rows), doc_id, " (annotation %d of %d)" % (replicate, REPLICATES) if REPLICATES > 1 else ""), file=sys.stderr)
 
 
 if __name__ == "__main__":
@@ -393,7 +399,8 @@ function allowedValues(frame:RequestFrame,fields:string[]):Record<string,string[
  return out;
 }
 // text, pdf: the run's request for a text and for a PDF sent as a file (lib/request-frame.ts); at least one.
-export type ScriptInput={lab:string;studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;note?:string};
+// repeats: the run's annotations per text (absent: one).
+export type ScriptInput={lab:string;studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;repeats?:number;note?:string};
 export function scriptValues(input:ScriptInput):Record<string,string>{
  const frame=(input.text||input.pdf)!,model=requestParts(frame).model;
  return {
@@ -402,7 +409,7 @@ export function scriptValues(input:ScriptInput):Record<string,string>{
   API_KEY_ENV:keyVariable(input.provider),API_KEY_ENV_NAME:JSON.stringify(keyVariable(input.provider)),
   PROVIDER:JSON.stringify(input.provider),URL:JSON.stringify(frame.url),
   REQUEST:input.text?pyLiteral(JSON.parse(input.text.body)):'None',REQUEST_PDF:input.pdf?pyLiteral(JSON.parse(input.pdf.body)):'None',
-  FIELDS:pyLiteral(input.plain?[]:input.fields),ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields)),PLAIN_TEXT:input.plain?'True':'False',
+  FIELDS:pyLiteral(input.plain?[]:input.fields),ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
   TIMEOUT:String(input.provider==='gemini'&&isGemini4(model)?900:180),
  };
 }

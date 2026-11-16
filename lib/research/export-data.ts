@@ -7,27 +7,36 @@ import {requestFrame,type RequestFrame} from '../request-frame';
 import {annotationFormatRecord} from '../answer-fields';
 import {knowledgeDocumentText} from '../model-knowledge';
 import {rowForRun,type Row} from './runs';
+import {requestsOf} from './repeats';
 import {runLines,type Dataset,type RunLine} from './export';
 import type {RecordedRequest} from './requests';
 
 // lab: the build of the Lab that makes the export.
 export type ExportStudy={name:string;dataset:Dataset;requests?:RecordedRequest[];lab:string};
-// One request a run made and its outcome. replaced: a failed attempt that was sent again later.
-export type RequestLine={row:Row;run:number;attempt:number;result:Row;replaced:boolean};
+// One request a run made and its outcome. replicate: which of the text's annotations in the run it is (1 when
+// the run makes one per text). attempt: counted per run and replicate. replaced: a failed attempt that was sent
+// again later. result: the request read as a result of its own (an annotation with its text's settings).
+export type RequestLine={row:Row;run:number;replicate:number;attempt:number;result:Row;replaced:boolean};
 
-// Every request with an outcome, text by text in the order of the study. A failed attempt that was queued
-// again is kept with the result that followed it, and counts for the run it was made in.
+// Every request with an outcome, text by text in the order of the study; within a text, run by run, then by
+// replicate, then by attempt. A failed attempt that was sent again is kept with the result that followed it,
+// and counts for the run it was made in.
 export function requestLines(dataset:Dataset):RequestLine[]{
  const out:RequestLine[]=[];
  for(const row of dataset.rows){
-  const counts=new Map<number,number>();
-  const add=(run:number|undefined,result:Row,replaced:boolean)=>{
+  const counts=new Map<string,number>();
+  const add=(lines:RequestLine[],run:number|undefined,result:Row,replaced:boolean)=>{
    if(run===undefined)return;
-   const attempt=(counts.get(run)||0)+1;counts.set(run,attempt);out.push({row,run,attempt,result,replaced});
+   for(const request of requestsOf(result)){
+    const key=run+' '+request.replicate,attempt=(counts.get(key)||0)+1;counts.set(key,attempt);
+    lines.push({row,run,replicate:request.replicate,attempt,result:request.result,replaced});
+   }
   };
   for(const result of [...(row.earlier||[]),row] as Row[]){
-   for(const attempt of result.history||[])add(attempt.runNo??result.runNo,attempt as Row,true);
-   if(result.status==='done'||result.status==='error')add(result.runNo,result,false);
+   const lines:RequestLine[]=[];
+   for(const attempt of result.history||[])add(lines,attempt.runNo??result.runNo,attempt as Row,true);
+   if(result.status==='done'||result.status==='error')add(lines,result.runNo,result,false);
+   out.push(...lines.map((line,i)=>({line,i})).sort((a,b)=>a.line.run-b.line.run||a.line.replicate-b.line.replicate||a.i-b.i).map(entry=>entry.line));
   }
  }
  return out;

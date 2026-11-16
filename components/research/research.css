@@ -70,6 +70,7 @@
 .research-muted{color:#64728b}
 .research-tag{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:4px;background:#eef1f6;color:#53657a;font-size:11px;font-weight:400;white-space:nowrap;vertical-align:middle}
 .research-tag.warn{background:#fff3da;color:#805719}
+.status.partial{background:#fff3da;color:#805719}
 
 /* Setup: answer fields with types (a codebook), or plain text */
 .research-segment.research-output-mode{display:flex;margin:10px 0 2px}

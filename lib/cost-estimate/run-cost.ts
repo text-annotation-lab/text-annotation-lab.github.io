@@ -1,6 +1,7 @@
 import {priceFor,type Provider} from './pricing';
 import {usageSample} from './engine';
-export type CostRecord={status:string;runId?:string;runStartedAt?:string;runSize?:number;provider?:Provider;model?:string;processing?:string;webSearch?:boolean;usage?:any;time?:string;startedAt?:string;history?:CostRecord[]};
+// repeats, annotations: a result made of several annotations (research mode, lib/research/repeats.ts).
+export type CostRecord={status:string;runId?:string;runStartedAt?:string;runSize?:number;provider?:Provider;model?:string;processing?:string;webSearch?:boolean;usage?:any;time?:string;startedAt?:string;history?:CostRecord[];repeats?:number;annotations?:(CostRecord&{n?:number})[]};
 const finite=(n:unknown):n is number=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
 export function recordedCost(row:CostRecord):{amount:number;reported:boolean}|undefined{
  const u=row.usage;
@@ -33,8 +34,19 @@ export function cacheTokens(provider:Provider|undefined,u:any,batch=false):{read
  const details=provider==='openrouter'?u?.prompt_tokens_details:u?.input_tokens_details;
  return {read:n(details?.cached_tokens),write:n(details?.cache_write_tokens),hourWrite:0};
 }
+// The requests behind a result. One made of several annotations counts request by request: each annotation
+// that came back, with its own usage and the click it was sent with, and, while the text is being annotated,
+// one request in progress for each annotation still to come.
+function requestsOf(row:CostRecord):CostRecord[]{
+ const made=Array.isArray(row.annotations)?row.annotations.filter(a=>a&&typeof a==='object'&&(a.status==='done'||a.status==='error')):[];
+ const active=row.status==='running'||row.status==='queued',planned=active&&typeof row.repeats==='number'?row.repeats:0;
+ if(!made.length&&planned<2)return [row];
+ const {annotations,history,usage,repeats,...shared}=row,list:CostRecord[]=made.map(a=>({...shared,...a}));
+ for(let n=1;n<=planned;n++)if(!made.some(a=>a.n===n&&(a.status==='done'||a.runId===row.runId)))list.push(shared);
+ return list;
+}
 export function latestRunCost(rows:CostRecord[]){
- const attempts=rows.flatMap(row=>[...(row.history||[]),row]).filter(row=>['done','error','running','queued'].includes(row.status));
+ const attempts=rows.flatMap(row=>[...(row.history||[]),...requestsOf(row)]).filter(row=>['done','error','running','queued'].includes(row.status));
  const tracked=attempts.filter(row=>row.runId&&row.runStartedAt);
  const latest=tracked.reduce<CostRecord|undefined>((a,b)=>!a||b.runStartedAt!>=a.runStartedAt!?b:a,undefined);
  const selected=latest?attempts.filter(row=>row.runId===latest.runId):attempts;
