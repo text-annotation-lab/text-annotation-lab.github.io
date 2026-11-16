@@ -9,7 +9,8 @@ import {workspaceRevision} from '@/lib/workspace-storage';
 
 type Action='new'|'update'|'load'|'rename'|'delete';
 export type OpenStudyDraft = RefObject<{texts?:Record<string,unknown>;knowledge?:Record<string,unknown>}>;
-export function StudyManager({children}:{children:(study:Study,controls:ReactNode,onReady:(ready:boolean)=>void,version:number,draftRef:OpenStudyDraft,onRecoveryChange:(available:boolean)=>void)=>ReactNode}){
+// compact (research mode): the menu button shows the study's name without the word “Studies,” which stays its accessible name.
+export function StudyManager({children,compact}:{children:(study:Study,controls:ReactNode,onReady:(ready:boolean)=>void,version:number,draftRef:OpenStudyDraft,onRecoveryChange:(available:boolean)=>void)=>ReactNode;compact?:boolean}){
  const [studies,setStudies]=useState<Study[]>([]),[selected,setSelected]=useState('');
  const [draft,setDraft]=useState<WorkingStudy>({name:'Untitled working copy'}),[version,setVersion]=useState(0);
  const [loaded,setLoaded]=useState(false),[available,setAvailable]=useState(false),[busy,setBusy]=useState(false);
@@ -110,7 +111,7 @@ export function StudyManager({children}:{children:(study:Study,controls:ReactNod
   </DialogContent>
  </Dialog>
  <Popover open={menuOpen} onOpenChange={value=>{if(!busy){setMenuOpen(value);if(!value)setEditing(null);}}}>
-  <PopoverTrigger asChild><Button ref={menuTrigger} variant="outline" className="study-menu-trigger" title={source?.name||draft.name}><span>Studies</span><span className="active-study-name">{source?.name||draft.name}</span><ChevronDown size={15} aria-hidden="true"/></Button></PopoverTrigger>
+  <PopoverTrigger asChild><Button ref={menuTrigger} variant="outline" className={'study-menu-trigger'+(compact?' compact':'')} title={compact?`Studies: ${source?.name||draft.name}`:source?.name||draft.name} aria-label={compact?`Studies: ${source?.name||draft.name}`:undefined}>{!compact&&<span>Studies</span>}<span className="active-study-name">{source?.name||draft.name}</span><ChevronDown size={15} aria-hidden="true"/></Button></PopoverTrigger>
   <PopoverContent align="end" sideOffset={10} className="study-menu" aria-label="Manage studies" onCloseAutoFocus={e=>{if(newStudy!==null)e.preventDefault();}}>
    {!editing&&<>
     <div className="study-primary-actions">

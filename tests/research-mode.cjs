@@ -641,7 +641,14 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.deepEqual(lab.all(n=>n.type==='TabsTrigger').map(n=>n.props.value),STUDENT_TABS);assert.equal(lab.find(n=>n.type==='header').props.className,undefined);
   answer=true;mode().onChange(true);await lab.flush();
   assert.equal(mode().on,true);assert.deepEqual(changes,[true]);assert.equal(notices().length,0);assert.deepEqual(lab.all(n=>n.type==='TabsTrigger').map(n=>n.props.value),RESEARCH_TABS);
-  answer='off';mode().onChange(false);await lab.flush();assert.equal(mode().on,false);assert.deepEqual(changes,[true,false]);
+  // The header in research mode: the saved status as a check mark, with the words on hover and for screen readers.
+  {const header=()=>lab.find(n=>n.type==='header'),mark=()=>lab.all(n=>n.props?.className==='saved saved-mark');
+   assert.equal(mark().length,0,'Not before the workspace is saved');assert.match(lab.text(header()),/Preparing workspace/);
+   lab.find(n=>n.type==='ModelKnowledge').props.onSaveStateChange('saved');await lab.flush();
+   assert.equal(mark().length,1);assert.equal(mark()[0].props.title,'Autosaved in this browser');assert.match(lab.text(mark()[0]),/^Autosaved in this browser$/);}
+  answer='off';mode().onChange(false);await lab.flush();
+  assert.equal(lab.all(n=>n.props?.className==='saved saved-mark').length,0,'The standard Lab keeps the words');assert.match(lab.text(lab.find(n=>n.type==='header')),/Autosaved in this browser/);
+ assert.equal(mode().on,false);assert.deepEqual(changes,[true,false]);
   answer='held';mode().onChange(true);await lab.flush();assert.equal(mode().on,true,'Already held: switched at once');assert.deepEqual(changes,[true,false,true]);
  }
  console.log('Research mode workspace checks passed.');

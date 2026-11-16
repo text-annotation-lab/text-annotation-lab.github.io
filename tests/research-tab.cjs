@@ -122,6 +122,19 @@ function tab(shared,name,focused=()=>true){
  }
  // Browsers without Web Locks open research mode directly.
  {const h=page(null,'a','research');assert.notEqual(h.tree(),null);await h.flush();assert.equal(h.workspace().research,true);assert.equal(h.workspace().claimResearch,undefined);}
+ // The study menu shows just the study's name in research mode (compact), and the word “Studies” in the standard Lab.
+ {const h=page(null,'a','research');await h.flush();assert.equal(h.find(n=>n.type==='StudyManager').props.compact,true);
+  h.workspace().onResearch(false);await h.flush();assert.equal(h.find(n=>n.type==='StudyManager').props.compact,false);}
+ // The API keys button: a dot on the key (amber with no key, green with one) in place of “none set,” and the count in its
+ // accessible name and tooltip.
+ {const jsx=(type,props)=>({type,props});
+  const react={useState:value=>[typeof value==='function'?value():value,()=>{}],useEffect:()=>{}};
+  const {KeysControl}=transpile('components/research/keys.tsx',id=>id==='react'?react:id==='react/jsx-runtime'?{jsx,jsxs:jsx,Fragment:'Fragment'}:id==='@/lib/research/mode'||id==='@/lib/providers'?localModule(id.slice(2)+'.ts'):new Proxy({},{get:(_,key)=>key==='__esModule'?false:String(key)}));
+  const trigger=keyring=>{const tree=KeysControl({keyring,remember:false,provider:'openai',open:false,onOpenChange(){},onSave(){}});const all=[];(function walk(n){if(!n||typeof n!=='object')return;if(Array.isArray(n))return n.forEach(walk);all.push(n);walk(n.props?.children);})(tree);return {button:all.find(n=>n.props?.className==='research-keys-trigger'),dot:all.find(n=>String(n.props?.className).startsWith('research-keys-dot')),text:JSON.stringify(tree)};};
+  const none=trigger({});assert.equal(none.button.props['aria-label'],'API keys: none set');assert.equal(none.dot.props.className,'research-keys-dot');assert(!none.text.includes('none set\"]')&&!/"children":"none set"/.test(none.text),'No “none set” text');
+  assert.match(none.button.props.title,/No API key set/);
+  const two=trigger({openai:'sk-a',anthropic:'sk-b'});assert.equal(two.button.props['aria-label'],'API keys: 2 set');assert.equal(two.dot.props.className,'research-keys-dot set');assert.match(two.button.props.title,/^2 API keys set/);
+ }
  console.log('Research mode tab checks passed.');
 })().catch(error=>{console.error(error);process.exit(1);});
 

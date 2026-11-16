@@ -11,18 +11,23 @@
 /* Where the header is on two rows, the switch sits at the top right, beside the
    site name, so the row with the study menu and saved status stays as it was. */
 @media(max-width:1240px){header{position:relative}header .mode-switch{position:absolute;top:26px;right:20px}}
-@media(min-width:1241px) and (max-width:1300px){header:not(.research-header) .mode-switch-label{width:min-content;white-space:normal;text-align:left;line-height:1.15}}
-/* Research mode adds the API keys button, so its header goes to two rows sooner. */
-@media(min-width:1241px) and (max-width:1500px){header.research-header{position:relative;height:auto;min-height:94px;flex-wrap:wrap;padding:18px 5%;gap:14px}header.research-header .header-study-actions{width:100%;justify-content:space-between}header.research-header .mode-switch{position:absolute;top:26px;right:5%}}
-@media(max-width:1500px){header.research-header .research-keys-trigger{margin-right:auto}}
+@media(min-width:1241px) and (max-width:1300px){header .mode-switch-label{width:min-content;white-space:normal;text-align:left;line-height:1.15}}
+/* Research mode adds the API keys button, but its study menu and saved status are shorter, so its header goes to two
+   rows where the standard Lab's does. */
+@media(max-width:1240px){header.research-header .research-keys-trigger{margin-right:auto}}
+/* On one row just above that, a long study name is cut short sooner, so that it never reaches the site name. */
+@media(min-width:1241px) and (max-width:1500px){header.research-header .study-controls .study-menu-trigger{max-width:min(420px,calc(100vw - 940px))}}
 @media(max-width:600px){header .mode-switch{top:15px;right:16px;font-size:11px;gap:6px}}
 @media(max-width:374px){header .mode-switch-label{width:min-content;white-space:normal;text-align:left;line-height:1.15}}
 @media(max-width:344px){header .mode-switch{flex-direction:column;gap:2px;padding:0;top:11px;font-size:10px}header .mode-switch-label{width:auto}.mode-switch-more{display:none}}
 
 .research-keys-trigger{display:flex;gap:8px;flex-shrink:0}
-.research-keys-count{font-weight:400;color:#40566e}
-.research-keys-count.none{color:#a5501f}
-@media(max-width:600px){.research-keys-trigger{min-height:36px;padding:6px 10px;font-size:13px;gap:6px}.research-keys-trigger>span:first-of-type{display:none}header.research-header .header-study-actions{flex-wrap:wrap}}
+/* A dot on the key: amber while no key is set, green once one is. */
+.research-keys-icon{position:relative;display:inline-flex}.research-keys-dot{position:absolute;top:-3px;right:-4px;width:8px;height:8px;border-radius:50%;background:#c2620f;box-shadow:0 0 0 2px #fff}.research-keys-dot.set{background:#2f8a57}
+/* The saved status as a check mark, with the words on hover and for screen readers. */
+.saved.saved-mark{color:#2f8a57;cursor:default}.saved.saved-mark svg{display:block}.header-study-actions .saved.saved-mark{min-width:0}
+.study-menu-trigger.compact .active-study-name{color:inherit;font-weight:500}
+@media(max-width:600px){.research-keys-trigger{min-height:36px;padding:6px 10px;font-size:13px;gap:6px}header.research-header .header-study-actions{flex-wrap:wrap}}
 
 /* Dialogs */
 .research-dialog{background:#fff;color:#1b2942;width:520px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);overflow:auto;border-radius:12px;font-family:inherit;gap:14px}
