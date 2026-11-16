@@ -174,6 +174,7 @@ assert.equal(runs.runRequestSettings([{id:'a',status:'done',...setup,runNo:1}],1
  const page=fs.readFileSync(path.join(root,'app/page.tsx'),'utf8');
  assert(page.includes("onRenameRun={renameRun} onRetryRun={retryRun}"));
  assert(page.includes("begunRuns=research?addScope(begun.runs,begun.number,scope||(all?'':`One text: ${eligible[0].name}`)):begun.runs"),'The standard Lab records no scope');
- assert(/const \{provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,key\}=retryOf\?\.use\|\|useNow;/.test(page),'A run reads every setting it sends from one place');
+ assert(/const \{provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,key,layout\}=retryOf\?\.use\|\|useNow;/.test(page),'A run reads every setting it sends from one place');
+ assert(page.includes("key:runKey,layout:record.layout};"),'Retry failed sends a run’s requests in the layout it was made with');
 }
 console.log('Runs table: label, scope, status, requests, tokens, cache use, a settings window, and Retry failed within a run.');

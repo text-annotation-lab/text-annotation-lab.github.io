@@ -75,7 +75,7 @@ assert.deepEqual(research.insertValues(['id','meta.year'],{name:'bare'},COLUMNS)
 assert.deepEqual(research.insertNotes('Rate the tone.',COLUMNS,'text'),['{{meta.Year}} in the prompt inserts each text’s value of that column; {{id}} inserts its name.']);
 assert.deepEqual(research.insertNotes('Rate the tone.',[{name:'tone_human',role:'label'}],'text'),[],'No metadata, nothing to say');assert.deepEqual(research.insertNotes('Rate the tone.',[],'subject'),[]);
 assert.deepEqual(research.insertNotes('{{id}} from {{meta.year}}.',COLUMNS,'text'),['Filled in for each text: {{id}}, {{meta.year}}.']);
-assert.deepEqual(research.insertNotes('{{id}} from {{meta.year}}, {{meta.decade}}, {{meta.tone_human}}, {{text}}, {{name}}.',COLUMNS,'subject'),['Filled in for each subject: {{id}}, {{meta.year}}.','No such metadata column: decade (filled in empty).','Human labels are not sent to the model: tone_human (filled in empty).','Sent as written: {{text}}, {{name}}. The subject always follows the prompt in a message of its own.']);
+assert.deepEqual(research.insertNotes('{{id}} from {{meta.year}}, {{meta.decade}}, {{meta.tone_human}}, {{text}}, {{name}}.',COLUMNS,'subject'),['Filled in for each subject: {{id}}, {{meta.year}}.','No such metadata column: decade (filled in empty).','Human labels are not sent to the model: tone_human (filled in empty).','Sent as written: {{text}}, {{name}}. The subject always follows the prompt, between <entry> tags.']);
 assert.deepEqual(research.insertNotes('About {{name}}.',COLUMNS,'text'),['Sent as written: {{name}}.']);
 assert.deepEqual(research.insertNotes('From {{meta.decade}}.',[],'text'),['No such metadata column: decade (filled in empty).']);
 
@@ -129,7 +129,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
      for(const cacheOn of [false,true]){
       for(const kind of ['txt','pdf','knowledge']){
        const knowledge=kind==='knowledge',label=[provider,model,effort,formatName,cacheOn?'cache':'no cache',kind].join(' | ');
-       const settings={provider,model,effort,prompt:PROMPT,answerFields:format.fields,answerSettings:format.settings,requestSettings:cacheOn?{cache:true}:undefined,knowledge,inserts:true};
+       const settings={provider,model,effort,prompt:PROMPT,answerFields:format.fields,answerSettings:format.settings,requestSettings:cacheOn?{cache:true}:undefined,knowledge,inserts:true,layout:'message'};
        const doc=knowledge?{filename:'subject.txt',text:knowledgeLib.knowledgeDocumentText(SUBJECT)}:kind==='pdf'?{filename:pdf.name,file:pdfData}:{filename:txt.name,text:txtText};
        calls=[];mock=async()=>Response.json(providerReply(provider,formatName==='plain'?'Mostly hopeful.':answerText));
        const response=await annotate(provider,model,effort,format,{cacheOn,kind});
@@ -141,7 +141,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
        if(provider!=='openrouter'){
         const file=knowledge?new File([knowledgeLib.knowledgeDocumentText(SUBJECT)],'subject.txt',{type:'text/plain'}):kind==='pdf'?pdf:txt,added=knowledge?'\n\n'+knowledgeLib.knowledgeInstructions(false):'';
         const sent=JSON.stringify(await batch.buildBatchBody(provider,file,inserts.fillInserts(SENT_PROMPT,P_VALUES)+added,model,effort,knowledge,false,format.fields,format.settings,cacheOn?{cache:true}:undefined,SENT_PROMPT+added));
-        assert.equal(sent,JSON.stringify(frames.fillRequest(frames.requestFrame({...settings,batch:true},kind==='pdf').body,{...doc,inserts:MAP})),'Sent in a batch: '+label);
+        assert.equal(sent,JSON.stringify(frames.fillRequest(frames.requestFrame({layout:'message',...settings,batch:true},kind==='pdf').body,{...doc,inserts:MAP})),'Sent in a batch: '+label);
         compared++;
        }
       }
@@ -153,7 +153,8 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  assert(compared>1500,'Every listed model was compared');
 
  // What a request looks like: the values stand in the prompt, and nowhere else.
- const system=(provider,body)=>{const o=JSON.parse(body),part=provider==='openai'?(o.instructions??o.input[0].content):provider==='anthropic'?o.system:provider==='gemini'?o.systemInstruction.parts:o.messages[0].content;return typeof part==='string'?part:part.map(item=>item.text).join('');};
+ // The message with the text, which opens with the prompt (lib/request-frame.ts).
+ const system=(provider,body)=>{const o=JSON.parse(body),part=provider==='openai'?o.input.at(-1).content:provider==='gemini'?o.contents[0].parts:o.messages.at(-1).content;return typeof part==='string'?part:part.map(item=>item.text||'').join('');};
  const ask=async(provider,options={},format=formats.standard,model=firstModel(provider),effort=providers.reasoningOptions(provider,model)[0])=>{calls=[];mock=async()=>Response.json(providerReply(provider));const response=await annotate(provider,model,effort,format,options);return {status:response.status,out:await response.json(),body:calls[0]?.options.body};};
  const FILLED_PROMPT=inserts.fillInserts(SENT_PROMPT,P_VALUES);
  for(const provider of Object.keys(providers.PROVIDERS)){
@@ -161,7 +162,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
   assert.equal(filled.status,200,provider+': '+JSON.stringify(filled.out));
   assert(system(provider,filled.body).startsWith(FILLED_PROMPT),provider+': the prompt is sent with the text’s values');
   assert(system(provider,written.body).startsWith(SENT_PROMPT),provider+': without values (the standard Lab), a placeholder is sent as written');
-  assert.equal(written.body,JSON.stringify(frames.fillRequest(frames.requestFrame({provider,model:firstModel(provider),effort:firstEffort(provider),prompt:PROMPT,answerFields:[]},false).body,{filename:txt.name,text:txtText})),provider+': and that request is recorded as before');
+  assert.equal(written.body,JSON.stringify(frames.fillRequest(frames.requestFrame({layout:'message',provider,model:firstModel(provider),effort:firstEffort(provider),prompt:PROMPT,answerFields:[]},false).body,{filename:txt.name,text:txtText})),provider+': and that request is recorded as before');
   // Everything but the prompt is the same request: the answer format is read from the prompt as written.
   const strip=body=>body.split(JSON.stringify(FILLED_PROMPT).slice(1,-1)).join('#').split(JSON.stringify(SENT_PROMPT).slice(1,-1)).join('#');
   assert.equal(strip(filled.body),strip(written.body),provider+': only the prompt differs');
@@ -177,24 +178,25 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
   const typed=await ask(provider,{},formats.typed);assert.equal(typed.status,200,provider+': '+JSON.stringify(typed.out));assert.deepEqual(typed.out.answers,{f0:'1',f1:'a',f2:'y'});
  }
  // A request made from a recorded form with no values keeps the marks, so a missing value shows.
- assert(JSON.stringify(frames.fillRequest(frames.requestFrame({provider:'anthropic',model:firstModel('anthropic'),effort:firstEffort('anthropic'),prompt:PROMPT,answerFields:[],inserts:true},false).body,{filename:'a.txt',text:'t'})).includes('<<INSERT:meta.year>>'));
+ assert(JSON.stringify(frames.fillRequest(frames.requestFrame({layout:'message',provider:'anthropic',model:firstModel('anthropic'),effort:firstEffort('anthropic'),prompt:PROMPT,answerFields:[],inserts:true},false).body,{filename:'a.txt',text:'t'})).includes('<<INSERT:meta.year>>'));
  // A prompt without placeholders is recorded the same whether or not the page says they were filled in.
- for(const provider of Object.keys(providers.PROVIDERS))for(const cacheOn of [false,true]){const s={provider,model:marked(provider)||firstModel(provider),effort:providers.reasoningOptions(provider,marked(provider)||firstModel(provider))[0],prompt:'Rate the tone. {{text}} stays.',answerFields:[],requestSettings:cacheOn?{cache:true}:undefined};assert.equal(frames.requestFrame({...s,inserts:true},false).body,frames.requestFrame(s,false).body,provider);}
+ for(const provider of Object.keys(providers.PROVIDERS))for(const cacheOn of [false,true]){const s={provider,model:marked(provider)||firstModel(provider),effort:providers.reasoningOptions(provider,marked(provider)||firstModel(provider))[0],prompt:'Rate the tone. {{text}} stays.',answerFields:[],requestSettings:cacheOn?{cache:true}:undefined,layout:'message'};assert.equal(frames.requestFrame({...s,inserts:true},false).body,frames.requestFrame(s,false).body,provider);assert.equal(frames.requestFrame({...s,layout:undefined,inserts:true},false).body,frames.requestFrame({...s,layout:undefined},false).body,provider+' (earlier layout)');}
 
  // --- Prompt caching: the mark stands before the first placeholder, where the texts' prompts part ----------
  const SHARED=SENT_PROMPT.slice(0,inserts.fixedLength(SENT_PROMPT));assert.equal(SHARED,'Classify the tone of ');
  {
   const model=marked('anthropic'),effort=providers.reasoningOptions('anthropic',model)[0],cached=JSON.parse((await ask('anthropic',{cacheOn:true},formats.standard,model,effort)).body),plain=JSON.parse((await ask('anthropic',{},formats.standard,model,effort)).body);
-  assert.deepEqual(cached.system.map(part=>Object.keys(part)),[['type','text','cache_control'],['type','text']]);assert.deepEqual(cached.system[0],{type:'text',text:SHARED,cache_control:{type:'ephemeral'}});
-  assert.equal(cached.system[0].text+cached.system[1].text,plain.system,'The two parts are the prompt, whole');assert.equal(typeof plain.system,'string');
+  const parts=cached.messages[0].content,whole=plain.messages[0].content;assert.equal(cached.system,undefined);assert.equal(plain.system,undefined);
+  assert.deepEqual(parts.map(part=>Object.keys(part)),[['type','text','cache_control'],['type','text']]);assert.deepEqual(parts[0],{type:'text',text:SHARED,cache_control:{type:'ephemeral'}});
+  assert.equal(whole.length,1);assert.equal(parts[0].text+parts[1].text,whole[0].text,'The two parts are the message, whole');
   const inBatch=await batch.buildBatchBody('anthropic',txt,FILLED_PROMPT,model,effort,false,false,[],undefined,{cache:true},SENT_PROMPT);
-  assert.deepEqual(inBatch.system[0],{type:'text',text:SHARED,cache_control:{type:'ephemeral',ttl:'1h'}});assert.equal(inBatch.system.length,2);
+  assert.deepEqual(inBatch.messages[0].content[0],{type:'text',text:SHARED,cache_control:{type:'ephemeral',ttl:'1h'}});assert.equal(inBatch.messages[0].content.length,2);
  }
  {
   const model=marked('openai'),effort=providers.reasoningOptions('openai',model)[0],cached=JSON.parse((await ask('openai',{cacheOn:true},formats.standard,model,effort)).body),plain=JSON.parse((await ask('openai',{},formats.standard,model,effort)).body);
-  assert.equal(cached.instructions,undefined);assert.equal(cached.input[0].role,'developer');
+  assert.equal(cached.instructions,undefined);assert.equal(cached.input.length,1);assert.equal(cached.input[0].role,'user');
   assert.deepEqual(cached.input[0].content[0],{type:'input_text',text:SHARED,prompt_cache_breakpoint:{mode:'explicit'}});assert.deepEqual(Object.keys(cached.input[0].content[1]),['type','text']);
-  assert.equal(cached.input[0].content[0].text+cached.input[0].content[1].text,plain.instructions);
+  assert.equal(cached.input[0].content[0].text+cached.input[0].content[1].text,plain.input[0].content[0].text);
  }
  for(const model of providers.PROVIDERS.openrouter.models.filter(id=>requestSettings.cacheSupport('openrouter',id)?.kind==='marked').filter((id,i,all)=>all.findIndex(other=>other.split('/')[0]===id.split('/')[0])===i)){
   const effort=providers.reasoningOptions('openrouter',model)[0],cached=JSON.parse((await ask('openrouter',{cacheOn:true},formats.standard,model,effort)).body),plain=JSON.parse((await ask('openrouter',{},formats.standard,model,effort)).body);
@@ -208,7 +210,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
   const model=marked(provider),effort=providers.reasoningOptions(provider,model)[0],values=inserts.promptInserts(start).map(()=>'v');
   const on=await ask(provider,{cacheOn:true,prompt:start,values},formats.standard,model,effort),off=await ask(provider,{prompt:start,values},formats.standard,model,effort);
   assert.equal(on.status,200);assert.equal(on.body,off.body,provider+': '+JSON.stringify(start));
-  assert.equal(frames.requestFrame({provider,model,effort,prompt:start,answerFields:[],requestSettings:{cache:true},inserts:true},false).body,frames.requestFrame({provider,model,effort,prompt:start,answerFields:[],inserts:true},false).body);
+  assert.equal(frames.requestFrame({layout:'message',provider,model,effort,prompt:start,answerFields:[],requestSettings:{cache:true},inserts:true},false).body,frames.requestFrame({layout:'message',provider,model,effort,prompt:start,answerFields:[],inserts:true},false).body);
  }
  // The page then records the request without the option, and says why it cannot be switched on.
  for(const page of ['app/page.tsx','components/model-knowledge.tsx']){
@@ -237,11 +239,11 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
    const payload=calls[0]?.options.body;
    return {status:response.status,out:await response.json(),rows:!payload?[]:provider==='openai'?(await payload.get('file').text()).split('\n').map(line=>JSON.parse(line).body):provider==='anthropic'?JSON.parse(await payload.text()).requests.map(row=>row.params):JSON.parse(await payload.text()).batch.input_config.requests.requests.map(row=>row.request)};};
   const done=await submit();assert.equal(done.status,200,provider+': '+JSON.stringify(done.out));
-  const settings={provider,model,effort,prompt:PROMPT,answerFields:[],requestSettings:{cache:true},batch:true,inserts:true};
+  const settings={provider,model,effort,prompt:PROMPT,answerFields:[],requestSettings:{cache:true},batch:true,inserts:true,layout:'message'};
   assert.deepEqual(done.rows.map(row=>JSON.stringify(row)),[JSON.stringify(frames.fillRequest(frames.requestFrame(settings,false).body,{filename:txt.name,text:txtText,inserts:MAP})),JSON.stringify(frames.fillRequest(frames.requestFrame(settings,true).body,{filename:pdf.name,file:pdfData,inserts:inserts.insertMap(PROMPT,SECOND)}))],provider+': each request of a batch carries its own text’s values');
   // Without values the batch is the one sent before placeholders existed.
   const bare=await submit({inserts:null});assert.equal(bare.status,200);
-  assert.equal(JSON.stringify(bare.rows[0]),JSON.stringify(frames.fillRequest(frames.requestFrame({...settings,inserts:false},false).body,{filename:txt.name,text:txtText})),provider);
+  assert.equal(JSON.stringify(bare.rows[0]),JSON.stringify(frames.fillRequest(frames.requestFrame({layout:'message',...settings,inserts:false},false).body,{filename:txt.name,text:txtText})),provider);
   // Several annotations per text: each copy carries the text's values.
   const copies=await submit({copies:'[2,1]',ids:JSON.stringify(['lab_test_0','lab_test_1','lab_test_2'])});assert.equal(copies.status,200,JSON.stringify(copies.out));
   assert.deepEqual(copies.rows.map(row=>JSON.stringify(row)),[done.rows[0],done.rows[0],done.rows[1]].map(row=>JSON.stringify(row)),provider);
@@ -252,11 +254,11 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
 
  // --- The request as the setup panel shows it ----------------------------------------------------------------
  for(const provider of Object.keys(providers.PROVIDERS)){
-  const model=marked(provider)||firstModel(provider),effort=providers.reasoningOptions(provider,model)[0],settings={provider,model,effort,prompt:PROMPT,answerFields:[],requestSettings:{cache:true},inserts:true};
+  const model=marked(provider)||firstModel(provider),effort=providers.reasoningOptions(provider,model)[0],settings={provider,model,effort,prompt:PROMPT,answerFields:[],requestSettings:{cache:true},inserts:true,layout:'message'};
   const shown=view.previewRequest(settings,{filename:txt.name,text:txtText,inserts:MAP});
-  assert(shown.prompt.startsWith(FILLED_PROMPT),provider+': the prompt is shown as one text, with the first text’s values');
+  assert(shown.message.startsWith(FILLED_PROMPT)&&shown.message.endsWith('\n\n<text>\n'+txtText+'\n</text>'),provider+': the message is shown as one text, with the first text’s values');
   assert.equal(shown.cached,requestSettings.cacheSupport(provider,model)?.kind==='marked',provider);
-  assert(view.previewRequest({...settings,inserts:false},{filename:'a.txt',text:'(your text appears here)'}).prompt.startsWith(SENT_PROMPT),provider+': with no text yet, the placeholders are shown as written');
+  assert(view.previewRequest({...settings,inserts:false},{filename:'a.txt',text:'(your text appears here)'}).message.startsWith(SENT_PROMPT),provider+': with no text yet, the placeholders are shown as written');
  }
 
  // --- The record: a result keeps the values its request was sent with ------------------------------------------
@@ -267,7 +269,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  const retried=safety.queueRetries([{id:'t',status:'error',error:'Cut short.',runNo:2,requestId:'q1',inserts:P_VALUES,name:'t.txt'}])[0];
  assert.deepEqual(retried.history[0].inserts,P_VALUES,'A failed attempt keeps the values it was sent with');assert(!('inserts' in retried));
  // Backups: the values travel with each result; a value may be any text.
- const AWKWARD=['password','api_key: sk-none','','{"key":"value"}'],frame=frames.requestFrame({provider:'anthropic',model:anthropicModel,effort:providers.reasoningOptions('anthropic',anthropicModel)[0],prompt:PROMPT,answerFields:[],inserts:true},false);
+ const AWKWARD=['password','api_key: sk-none','','{"key":"value"}'],frame=frames.requestFrame({layout:'message',provider:'anthropic',model:anthropicModel,effort:providers.reasoningOptions('anthropic',anthropicModel)[0],prompt:PROMPT,answerFields:[],inserts:true},false);
  const workspace={prompt:PROMPT,requests:[{id:'q1',...frame}],columns:COLUMNS,docs:[{id:'d',name:'d.txt',file:new File(['Text'],'d.txt'),status:'done',score:'A',explanation:'e',runNo:1,requestId:'q1',inserts:AWKWARD.slice(0,3),cells:['1975','The Post','5','body','1974'],history:[{status:'error',error:'Cut short.',requestId:'q1',inserts:AWKWARD.slice(1),runNo:1}]}]};
  const encoded=await backup.encodeStudyBackup({name:'Study',createdAt:new Date().toISOString(),texts:workspace,knowledge:{items:[]}}),restored=backup.decodeStudyBackup(encoded).texts;
  assert.deepEqual(restored.docs[0].inserts,AWKWARD.slice(0,3));assert.deepEqual(restored.docs[0].history[0].inserts,AWKWARD.slice(1));assert.deepEqual(restored.requests,workspace.requests);
@@ -279,10 +281,10 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  const E_PROMPT='Rate the tone of “{{id}}” ({{meta.year}}, {{meta.Outlet name}}; {{meta.text}}; {{meta.gone}}; {{meta.tone_human}}).\nUse the scale from 1 (bleak) to 5 (hopeful).';
  const E_NAMES=inserts.promptInserts(E_PROMPT);assert.deepEqual(E_NAMES,['id','meta.year','meta.Outlet name','meta.text','meta.gone','meta.tone_human']);
  const E_SETTINGS={fields:[{name:'Tone',type:'ordinal',values:['1','2','3','4','5'],description:'Overall tone.'}]},E_FIELDS=['Tone'],E_COLUMNS=[{name:'Year',role:'meta'},{name:'tone_human',role:'label'},{name:'Outlet name',role:'meta'},{name:'text',role:'meta'}];
- const setup={provider:'anthropic',model:'claude-haiku-5-5',effort:'medium',prompt:E_PROMPT,answerFields:E_FIELDS,answerSettings:E_SETTINGS,requestSettings:{cache:true}};
+ const setup={provider:'anthropic',model:'claude-haiku-5-5',effort:'medium',prompt:E_PROMPT,answerFields:E_FIELDS,answerSettings:E_SETTINGS,requestSettings:{cache:true},layout:'message'};
  const E_TEXTS=['First text, with “quotes”\nand a second line.','Second text.','Third text.'],NOW=new Date('2026-11-16T12:00:00.000Z');
  const CELLS=[['1975','5','The "Post" \\ daily','body, one'],['1980\r\nor 1981','3','Ærø Avis 日本 🙂','<<DOCUMENT_TEXT>>'],['','1','',''],['1999','4','PDF press','{{id}}']];
- let list;const record=isPdf=>{const kept=records.recordRequest(list,frames.requestFrame({...setup,inserts:true},isPdf));list=kept.list;return kept.id;};
+ let list;const record=isPdf=>{const kept=records.recordRequest(list,frames.requestFrame({layout:'message',...setup,inserts:true},isPdf));list=kept.list;return kept.id;};
  const format=formatsLib.annotationFormatRecord(E_FIELDS,E_PROMPT,false,E_SETTINGS),E_PDF=new File([new Uint8Array([37,80,68,70,45,49,46,52,10,1,2,3,250,251,252])],'report.pdf',{type:'application/pdf'});
  const rows=[...E_TEXTS,null].map((text,i)=>{
   const name=text===null?'report.pdf':`text-${i+1}.txt`,reply=JSON.stringify({explanation:'Because.',score:'',answers:{f0:'4'}}),row={id:'doc-'+(i+1),name,cells:CELLS[i]};
@@ -292,7 +294,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  });
  const dataset={kind:'texts',rows,runs:[{...setup,number:1,startedAt:'2026-11-16T10:00:00.000Z'}],columns:E_COLUMNS,samples:[]},study={name:'Tone study',dataset,requests:list,lab:'2026-11-16 abcdef0'};
  assert.equal(list.length,2,'One recorded request for texts and one for PDFs, whatever the texts’ values');
- const textFrame=frames.requestFrame({...setup,inserts:true},false),pdfFrame=frames.requestFrame({...setup,inserts:true},true);
+ const textFrame=frames.requestFrame({layout:'message',...setup,inserts:true},false),pdfFrame=frames.requestFrame({layout:'message',...setup,inserts:true},true);
  assert.deepEqual(tables.corpusColumnNames(dataset),['Year','tone_human','Outlet name','meta_text'],'The corpus table’s names for the study’s columns');assert.deepEqual(tables.corpusColumnNames({...dataset,columns:[]}),[]);
  assert(data.requestParts(textFrame).prompt.startsWith(E_PROMPT.replace('\n','\r\n')),'The prompt of a request is shown with its placeholders, not with marks');
  const pack=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:true});
@@ -303,10 +305,10 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  for(const [i,text] of E_TEXTS.entries())assert.equal(JSON.stringify(logged[i].request),JSON.stringify(frames.fillRequest(textFrame.body,{filename:rows[i].name,text,inserts:inserts.insertMap(E_PROMPT,rows[i].inserts)})),'Logged as sent: text '+(i+1));
  assert(JSON.stringify(logged[1].request).includes('1890')&&JSON.stringify(logged[0].request).includes('was here 1'),'A value changed or removed after the run is still in the log');
  assert(JSON.stringify(logged[3].request).includes('PDF press')&&!JSON.stringify(logged).includes('<<INSERT:'),'No mark is left in a logged request');
- assert.deepEqual(logged[0].request.system.map(part=>Object.keys(part)),[['type','text','cache_control'],['type','text']]);assert.equal(logged[0].request.system[0].text,'Rate the tone of “');
+ assert.equal(logged[0].request.system,undefined);assert.deepEqual(logged[0].request.messages[0].content.map(part=>Object.keys(part)),[['type','text','cache_control'],['type','text']]);assert.equal(logged[0].request.messages[0].content[0].text,'Rate the tone of “');
  // The prompt files and the record of the run.
  assert.equal(await read(pack,'prompt/prompt.txt'),E_PROMPT);
- const asSent=await read(pack,'prompt/prompt_as_sent.txt');assert(asSent.startsWith(E_PROMPT.replace('\n','\r\n'))&&!asSent.includes('<<INSERT:'),'The prompt as sent shows the placeholders where each request had the values');
+ const asSent=await read(pack,'prompt/prompt_as_sent.txt');assert(asSent.startsWith(E_PROMPT.replace('\n','\r\n'))&&!asSent.includes('<<INSERT:')&&!asSent.includes('<text>')&&!asSent.includes('DOCUMENT'),'The prompt as sent shows the placeholders where each request had the values');
  assert((await read(pack,'metadata.json')).includes('<<INSERT:meta.year>>'),'The recorded request bodies keep their marks');
  const readme=await read(pack,'README.md');
  for(const part of ['| `prompt/prompt.txt` | The annotation prompt as written. Its placeholders were filled in for each text: `{{id}}` with the text’s name; `{{meta.year}}`, `{{meta.Outlet name}}`, `{{meta.text}}`, and `{{meta.gone}}` with its values in those metadata columns; `{{meta.tone_human}}` was filled in empty for every text (it names no metadata column, or an empty one) |','(marks stand for the document and for the values of the prompt’s placeholders)','; the placeholders stand where each request had the values','The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent (the logs hold the requests as they were sent).','For each text, the prompt was completed with its name and its values of the metadata columns year, Outlet name, text, and gone.'])assert(readme.includes(part),'README: '+part);
@@ -359,7 +361,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
    fs.writeFileSync(path.join(folder,'corpus.csv'),toCsv([['doc_id','document','filename','text','file','Year','Outlet'],['d1',awkward[0][0],'file “1”.txt',TEXT,'',awkward[0][1],awkward[0][2]],['d2',awkward[1][0],'report.pdf','','report.pdf',awkward[1][1],awkward[1][2]]]));
    const models={openai:marked('openai'),anthropic:marked('anthropic'),gemini:firstModel('gemini'),openrouter:marked('openrouter')};
    for(const provider of Object.keys(models))for(const cacheOn of [false,true]){
-    const settings={provider,model:models[provider],effort:providers.reasoningOptions(provider,models[provider])[0],prompt:PROMPT,answerFields:E_FIELDS,answerSettings:E_SETTINGS,requestSettings:cacheOn?{cache:true}:undefined,inserts:true},text=frames.requestFrame(settings,false),pdfBody=frames.requestFrame(settings,true);
+    const settings={provider,model:models[provider],effort:providers.reasoningOptions(provider,models[provider])[0],prompt:PROMPT,answerFields:E_FIELDS,answerSettings:E_SETTINGS,requestSettings:cacheOn?{cache:true}:undefined,inserts:true,layout:'message'},text=frames.requestFrame(settings,false),pdfBody=frames.requestFrame(settings,true);
     fs.writeFileSync(path.join(folder,provider+'.py'),python.fillScript(python.SCRIPT_TEMPLATE,python.scriptValues({lab:'test',studyName:'Tone',runDescription:'#1',provider,text,pdf:pdfBody,fields:E_FIELDS,plain:false,inserts:[['id','document'],['meta.year','Year'],['meta.Outlet name','Outlet']]})));
     received.length=0;current=provider;
     const done=await run([provider+'.py','corpus.csv','--base-url',base,'--out',provider+'.csv','--log',provider+'.jsonl'],{[python.keyVariable(provider)]:KEY});

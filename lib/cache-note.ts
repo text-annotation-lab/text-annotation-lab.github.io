@@ -19,5 +19,5 @@ export function cacheNote(provider:Provider,model:string,prompt:string,fixed?:nu
  const stored=`${percent(support.write!-1)} extra${batch&&support.batchWrite!==support.write?` (${percent(support.batchWrite!-1)} in a batch)`:''}`;
  const length=shared.trim()||own?textTokens(own+(own&&shared.trim()?'\n':'')+(shared.trim()?shared:''),price?.tokenMultiplier||1):undefined;
  const sized=!length?'':own?(fixed===undefined?` The system prompt and this prompt: about ${tokens(length)} tokens.`:` Only the system prompt and the part of the prompt before the first placeholder are stored: about ${tokens(length)} tokens.`):fixed===undefined?` This prompt: about ${tokens(length)} tokens.`:` Only the part before the first placeholder is stored: about ${tokens(length)} tokens.`;
- return {available:true,text:`${support.vendor==='anthropic'?'Anthropic':'OpenAI'} stores the prompt for ${life}; later texts read it ${read}, and storing it costs ${stored}. Prompts under ${min} tokens are not cached.${sized}${provider==='openai'&&!own?' It is then sent as a developer message instead of as instructions.':''}`};
+ return {available:true,text:`${support.vendor==='anthropic'?'Anthropic':'OpenAI'} stores the prompt for ${life}; later texts read it ${read}, and storing it costs ${stored}. Prompts under ${min} tokens are not cached.${sized}`};
 }

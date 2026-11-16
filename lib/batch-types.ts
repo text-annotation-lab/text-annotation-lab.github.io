@@ -2,6 +2,8 @@ import type {Provider} from './providers';
 import type {AnswerSettings} from './answer-types';
 import type {RequestSettings} from './request-settings';
 export type BatchJob={responseFormat?:string;answerFields?:string[];answerSettings?:AnswerSettings;requestSettings?:RequestSettings;id?:string;runId:string;provider:Provider;model:string;prompt:string;effort:string;docIds:string[];createdAt:string;state:'submitting'|'unknown'|'processing'|'ready';completed?:number;total?:number;providerState?:string;
+ // The layout of its requests (lib/request-frame.ts; absent: a batch sent before it).
+ layout?:string;
  // Research mode, several annotations per text: how many each text gets in its run, and, per text of docIds, which
  // of them this batch asks for (absent: all of them). Requests are numbered text by text in that order.
  repeats?:number;ns?:number[][];

@@ -9,7 +9,7 @@ function req(provider='openai',file=new File(['The actual source text.'],'paper.
   const r=await POST(req(provider));assert.equal(r.status,200);assert.equal((await r.json()).inputTokens,1234);const call=calls.at(-1),body=JSON.parse(call.options.body);
   assert(/count_tokens$|input_tokens$|:countTokens$/.test(call.url),'Only count-only endpoints are allowed');
   assert(JSON.stringify(body).includes('The actual source text.'));assert(JSON.stringify(body).includes('Classify and explain using my rubric.'));assert(JSON.stringify(body).includes('explanation'),'Prepared response schema is included');
-  if(provider==='gemini'){assert(body.generateContentRequest.systemInstruction);assert(body.generateContentRequest.generationConfig.responseSchema);assert.equal(body.contents,undefined);assert.equal(call.options.headers.Authorization,undefined);}
+  if(provider==='gemini'){assert.equal(body.generateContentRequest.systemInstruction,undefined,'No system prompt: the prompt goes with the text');assert(JSON.stringify(body.generateContentRequest.contents).includes('\\n\\n<text>\\nThe actual source text.\\n</text>'));assert(body.generateContentRequest.generationConfig.responseSchema);assert.equal(body.contents,undefined);assert.equal(call.options.headers.Authorization,undefined);}
   if(provider==='anthropic'){assert(body.output_config.format.schema);assert(body.thinking);assert.equal(call.options.headers.Authorization,undefined);}
   if(provider==='openai'){assert(body.text.format.schema);assert.equal(body.store,undefined);assert.equal(body.tools,undefined);}
   const pdf=await POST(req(provider,new File(['%PDF-testing'],'test.pdf')));assert.equal(pdf.status,200);assert(JSON.stringify(JSON.parse(calls.at(-1).options.body)).includes('JVBERi10ZXN0aW5n'));

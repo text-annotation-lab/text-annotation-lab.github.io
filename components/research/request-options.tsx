@@ -63,7 +63,7 @@ export function SystemPrompt({id,unit,value,disabled,onChange}:{id:string;unit:'
  return <details className="research-system-prompt" open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
   <summary>System prompt (optional)</summary>
   <textarea id={id} aria-label="System prompt" aria-describedby={id+'-help'} rows={4} maxLength={MAX_SYSTEM_PROMPT} value={value} disabled={disabled} placeholder="Rarely needed. Standing instructions sent separately from the prompt, e.g. a role: “You are an expert in educational assessment.”" onChange={event=>onChange(event.target.value)}/>
-  <p id={id+'-help'} className="hint">Sent unchanged with every request as the system prompt; the annotation prompt then goes with each {unit} in the message. Leave empty unless you follow a setup that uses one.</p>
+  <p id={id+'-help'} className="hint">Sent unchanged with every request as the system prompt, ahead of the message with your prompt and the {unit}. Leave empty unless you follow a setup that uses one.</p>
  </details>;
 }
 
@@ -73,13 +73,13 @@ export function SystemPrompt({id,unit,value,disabled,onChange}:{id:string;unit:'
 // inserts: the first text's value for each placeholder of the prompt that is filled in.
 export type PreviewSource={settings:FrameSettings;document:()=>Promise<({filename:string;text:string}|{filename:string;pdf:true})&{inserts?:Map<string,string>}|undefined>;note?:string};
 export function RequestPreview({unit,source,disabled}:{unit:'text'|'subject';source:()=>PreviewSource;disabled?:boolean}){
- const [view,setView]=useState<(RequestView&{unit:'text'|'subject';provider:Provider;first:boolean;filled:boolean;note?:string})|null>(null),[problem,setProblem]=useState('');
+ const [view,setView]=useState<(RequestView&{unit:'text'|'subject';provider:Provider;first:boolean;filled:boolean;pdf:boolean;note?:string})|null>(null),[problem,setProblem]=useState('');
  async function open(){
   setProblem('');
   try{
    const {settings,document,note}=source(),doc=await document();
    // Without a first text there are no values to fill in, and the placeholders are shown as written.
-   setView({...previewRequest(doc?settings:{...settings,inserts:false},doc??{filename:unit==='subject'?'subject.txt':'example.txt',text:PREVIEW_PLACEHOLDER[unit]}),unit,provider:settings.provider,first:Boolean(doc),filled:Boolean(doc&&settings.inserts),note});
+   setView({...previewRequest(doc?settings:{...settings,inserts:false},doc??{filename:unit==='subject'?'subject.txt':'example.txt',text:PREVIEW_PLACEHOLDER[unit]}),unit,provider:settings.provider,first:Boolean(doc),filled:Boolean(doc&&settings.inserts),pdf:Boolean(doc&&'pdf' in doc),note});
   }catch{setProblem('The request could not be shown. Check that the first text opens correctly.');}
  }
  const shown=(text:string)=>text.length>200000?text.slice(0,200000)+`\n\n[${count(text.length-200000)} more characters are sent and not shown here.]`:text;
@@ -93,10 +93,8 @@ export function RequestPreview({unit,source,disabled}:{unit:'text'|'subject';sou
     {view.system!==undefined&&<><h3>System prompt</h3>
     <p className="hint">Your own system prompt, sent unchanged.{view.systemCached?' It carries the mark for the provider’s prompt cache.':''}</p>
     <pre className="research-preview-text" tabIndex={0}>{shown(view.system)}</pre></>}
-    <h3>Prompt as sent</h3>
-    <p className="hint">Your prompt with the instructions the Lab adds for the answer format{view.system!==undefined?`, at the start of the message with the ${view.unit}`:''}.{view.filled?` Its placeholders hold the values of the first ${view.unit}.`:''}{view.cached?(view.filled?' The part before the first placeholder carries the mark for the provider’s prompt cache.':' It carries the mark for the provider’s prompt cache.'):''}</p>
-    <pre className="research-preview-text" tabIndex={0}>{shown(view.prompt)}</pre>
-    <h3>Message with the {view.unit}</h3>
+    <h3>Message as the model reads it</h3>
+    <p className="hint">Your prompt with the instructions the Lab adds for the answer format, then the {view.unit==='subject'?'subject’s fields between <entry> tags':view.pdf?'PDF as a file':'text between <text> tags'}.{view.filled?` The placeholders hold the values of the first ${view.unit}.`:''}{view.cached?(view.filled?' The part before the first placeholder carries the mark for the provider’s prompt cache.':` The part before the ${view.unit} carries the mark for the provider’s prompt cache.`):''}</p>
     <pre className="research-preview-text" tabIndex={0}>{shown(view.message)}</pre>
     <h3>Settings sent with it</h3>
     <p className="hint">Sent to <code>{view.url}</code></p>

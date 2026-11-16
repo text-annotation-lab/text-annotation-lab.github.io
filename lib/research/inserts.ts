@@ -22,6 +22,6 @@ export function insertNotes(prompt:string,columns:Column[],unit:'text'|'subject'
  else if(!names.length&&!stray.length&&example)notes.push(`${written('meta.'+example.name)} in the prompt inserts each ${unit}’s value of that column; ${written('id')} inserts its name.`);
  if(missing.length)notes.push(`No such metadata column: ${list(missing)} (filled in empty).`);
  if(labels.length)notes.push(`Human labels are not sent to the model: ${list(labels)} (filled in empty).`);
- if(stray.length)notes.push(`Sent as written: ${list(stray)}.${stray.some(item=>/^\{\{\s*text\s*\}\}$/.test(item))?` The ${unit} always follows the prompt in a message of its own.`:''}`);
+ if(stray.length)notes.push(`Sent as written: ${list(stray)}.${stray.some(item=>/^\{\{\s*text\s*\}\}$/.test(item))?` The ${unit} always follows the prompt, between ${unit==='subject'?'<entry>':'<text>'} tags.`:''}`);
  return notes;
 }
