@@ -5,6 +5,7 @@ import {supportedFile} from '@/lib/extract-text';
 import {BatchError,buildBatchBody,createBatchPayload,createBatch,checkBatch,cancelBatch,validBatchId} from '@/lib/batch-provider';
 import {knowledgeInstructions,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
 import {MAX_BATCH_ITEMS,MAX_BATCH_SOURCE_BYTES,MAX_BATCH_REQUEST_BYTES} from '@/lib/batch-limits';
+import {readRequestSettings} from '@/lib/request-settings';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export async function POST(request:Request){
  try{
@@ -21,7 +22,7 @@ export async function POST(request:Request){
  if(!Object.hasOwn(PROVIDERS,provider)||provider==='gemini'&&!GEMINI_ENABLED)return reply({error:'Unsupported provider.'},400);
   if(provider==='openai'&&(!/^sk-[\w-]+$/.test(key)||key.startsWith('sk-ant-')))return reply({error:'Use an OpenAI key for OpenAI batches.'},401);
   if(action==='submit'){
-   let answerFields:string[],answerSettings;try{answerFields=readAnswerFields(f.get('answerFields'));answerSettings=readAnswerSettings(f.get('answerSettings'),answerFields);}catch(error){throw new BatchError((error as Error).message);}
+   let answerFields:string[],answerSettings,requestSettings;try{answerFields=readAnswerFields(f.get('answerFields'));answerSettings=readAnswerSettings(f.get('answerSettings'),answerFields);requestSettings=readRequestSettings(f.get('requestSettings'));}catch(error){throw new BatchError((error as Error).message);}
    const model=String(f.get('model')||''),effort=String(f.get('effort')||''),prompt=String(f.get('prompt')||''),runId=String(f.get('runId')||'');
    if(!PROVIDERS[provider].models.includes(model)||!reasoningOptions(provider,model).includes(effort))throw new BatchError('Unsupported model or reasoning setting.');
    if(!prompt.trim()||prompt.length>100000||!/^lab_[a-zA-Z0-9_-]{1,60}$/.test(runId))throw new BatchError('Provide an annotation prompt and a valid batch reference.');
@@ -44,7 +45,7 @@ export async function POST(request:Request){
    // Validate and prepare everything before submitting any paid provider job.
    const payload=createBatchPayload(provider,runId);
    f.delete('files');f.delete('subjects');
-   for(let i=0;i<files.length;i++){const body=await buildBatchBody(provider,files[i] as File,knowledge?prompt+'\n\n'+knowledgeInstructions(false):prompt,model,effort,knowledge,false,answerFields,answerSettings);payload.append(ids[i],body);files[i]='';}
+   for(let i=0;i<files.length;i++){const body=await buildBatchBody(provider,files[i] as File,knowledge?prompt+'\n\n'+knowledgeInstructions(false):prompt,model,effort,knowledge,false,answerFields,answerSettings,requestSettings);payload.append(ids[i],body);files[i]='';}
    return reply({id:await createBatch(provider,key,model,runId,payload.finish())});
   }
   const id=f.get('id');if(!validBatchId(provider,id))throw new BatchError('Enter a valid batch ID for the selected provider.');

@@ -210,3 +210,5 @@
 /* The count is not part of the tab's name, so the active tab's underline skips it. */
 .study-tabs .tab-count{margin-left:6px;font-size:13px;font-weight:400;color:#64728b}
 .study-tabs .tab-count>span{display:inline-block}
+/* The prompt caching option in Processing options. */
+.research-cache-option{margin-top:14px!important}

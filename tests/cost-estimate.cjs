@@ -30,7 +30,8 @@ assert.equal(usageSample('anthropic',{input_tokens:20,cache_read_input_tokens:30
 assert.equal(usageSample('openai',{total_tokens:900}),undefined);
 const calibrated=estimate({...config,effort:'medium'},inputs,Array.from({length:12},()=>({input:500,output:120,visible:70,reasoning:50})));assert(calibrated.total.high<medium.total.high);assert.equal(calibrated.samples,12);
 const web=estimate({...config,webSearch:true},inputs);assert(web.total.low>base.total.low&&Math.abs(web.searchCost.low-.4)<1e-10);assert.equal(web.batch,undefined);assert(web.input.low>base.input.low);
-const cached=estimate({...config,cache:true},inputs);assert.equal(cached.total.low,base.total.low);assert(cached.total.high>base.total.high);
+// Prompt caching (research mode; details in prompt-caching.cjs): a long prompt may be read from the cache (lower edge) or written anew by every text (upper edge); a short one is not cached.
+const rubric='Score the speech on the rubric. '.repeat(300),uncached=estimate({...config,prompt:rubric},inputs),cached=estimate({...config,prompt:rubric,cache:true},inputs);assert(cached.total.low<uncached.total.low);assert(cached.total.high>uncached.total.high);assert.deepEqual(estimate({...config,cache:true},inputs).total,base.total);
 assert(!money({low:.000001,high:.00002}).includes('$0.00–'));assert(textTokens('漢字'.repeat(100)).high>100);
 for(const [model,p] of Object.entries(PRICES)){const e=estimate({...config,provider:p.provider,model},inputs);assert(!e.unknown,model);assert(Number.isFinite(e.total.high)&&e.total.high>=e.total.low,model);}
 console.table([{task:'40 short classifications, no reasoning',range:money(base.total)},{task:'40 classifications, medium reasoning',range:money(medium.total)},{task:'40 classifications, high reasoning',range:money(high.total)},{task:'40 classifications with web research',range:money(web.total)},{task:'80 smaller chunks, no reasoning',range:money(chunked.total)}]);
