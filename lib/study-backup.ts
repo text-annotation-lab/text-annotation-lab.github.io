@@ -15,11 +15,12 @@ const research=z.object({text, sources:z.array(z.object({url:text,title:text})).
 const answerNames=z.array(z.string().min(1).max(60)).max(MAX_ANSWER_FIELDS).refine(validAnswerFields).optional();
 // Typed answer fields, plain text, or no explanation (research mode).
 const answerSettings=z.object({plain:z.literal(true).optional(),rationale:z.literal(false).optional(),fields:z.array(z.object({name:z.string().min(1).max(60),type:z.enum(FIELD_TYPES as [string,...string[]]),values:z.array(z.string().max(200)).max(100),description:z.string().max(2000)})).max(MAX_ANSWER_FIELDS).optional()}).optional();
-// Prompt caching (research mode), as stored with a study and recorded on a result.
-const requestSettings=z.object({cache:z.literal(true).optional()}).optional();
+// Request settings (research mode: prompt caching, temperature, output limit, reasoning summary, OpenAI's
+// logs; lib/request-settings.ts), as stored with a study and recorded on a result.
+const requestSettings=z.object({cache:z.literal(true).optional(),temperature:z.number().min(0).max(2).optional(),maxOutput:z.number().int().min(16).max(1000000).optional(),summary:z.literal(true).optional(),store:z.literal(false).optional()}).optional();
 const resultShape={inputMode:z.enum(['pdf-native','text']).optional(),runId:short.optional(),runStartedAt:short.optional(),runSize:z.number().int().positive().optional(),responseFormat:optionalText,rawResponse:optionalText,answerFields:answerNames,answerSettings,requestSettings,answers:z.record(z.string(),text).optional(),status,error:optionalText,provider:z.enum(['openai','gemini','anthropic','openrouter']).optional(),model:short.optional(),effort:short.optional(),prompt:z.string().max(100000).optional(),processing:z.enum(['instant','batch']).optional(),concurrency:z.number().int().min(1).max(128).optional(),batchId:optionalText,instructions:optionalText,webSearch:z.boolean().optional(),webUsed:z.boolean().optional(),research:research.optional(),score:optionalText,explanation:optionalText,tokens:z.number().optional(),usage:z.unknown().optional(),responseId:optionalText,time:short.optional(),startedAt:short.optional(),
  // Research mode: the record of a request (lib/research/requests.ts).
- requestId:z.string().regex(/^q[1-9]\d{0,8}$/).optional(),modelReported:z.string().max(500).optional(),stopReason:z.string().max(200).optional(),output:optionalText,lab:z.string().max(100).optional()};
+ requestId:z.string().regex(/^q[1-9]\d{0,8}$/).optional(),modelReported:z.string().max(500).optional(),stopReason:z.string().max(200).optional(),output:optionalText,reasoningSummary:optionalText,lab:z.string().max(100).optional()};
 // Research mode: several annotations per text (lib/research/repeats.ts). An annotation holds a part of a result's fields.
 const repeats=z.number().int().min(2).max(10).optional();
 const attemptShape={...resultShape,repeats,annotations:z.array(z.object({...resultShape,n:z.number().int().min(1).max(10),status:z.enum(['done','error'])}).passthrough()).max(10).optional(),consistency:z.record(z.string(),z.number()).optional()};

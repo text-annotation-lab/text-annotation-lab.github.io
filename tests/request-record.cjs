@@ -156,7 +156,7 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
   assert(!('output' in batch.parseBatchAnnotation(provider,providerReply(provider,{text:'Mostly hopeful.'}),true,true)));
   assert.equal(batch.parseBatchAnnotation(provider,providerReply(provider,{text:' Mostly hopeful.'}),true,true).output,' Mostly hopeful.');
  }
- {const source=fs.readFileSync(path.join(root,'app/api/batch/route.ts'),'utf8');assert(source.includes("checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true')"));}
+ {const source=fs.readFileSync(path.join(root,'app/api/batch/route.ts'),'utf8');assert(source.includes("checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true',summary==='true')"));}
 
  // --- The list of requests -----------------------------------------------------------------------------
  const frameA={url:'https://a.test',body:'{"a":1}'},frameB={url:'https://a.test',body:'{"b":2}'};
@@ -180,19 +180,19 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
  const researchRetry=safety.queueRetries([failed],undefined,['runNo'])[0];
  assert.equal(researchRetry.history[0].runNo,2,'Research mode: a failed attempt keeps its run');assert.equal(researchRetry.runNo,2);
  assert(!('runNo' in safety.queueRetries([{id:'s',status:'error',error:'e',runNo:1}])[0].history[0]),'The standard Lab’s attempts are as before');
- const done={id:'d',name:'d.txt',status:'done',runNo:1,provider:'openai',model:'m',effort:'low',prompt:'p',score:'A',explanation:'e',requestId:'q1',modelReported:'m-1',stopReason:'completed',output:'{}',lab:'2026-11-16 abc1234'};
+ const done={id:'d',name:'d.txt',status:'done',runNo:1,provider:'openai',model:'m',effort:'low',prompt:'p',score:'A',explanation:'e',requestId:'q1',modelReported:'m-1',stopReason:'completed',output:'{}',reasoningSummary:'Weighed both readings.',lab:'2026-11-16 abc1234'};
  const moved=runs.requeue([done],[],new Set(['d'])).docs[0];
- assert.deepEqual(records.RECORDED_KEYS.map(key=>moved.earlier[0][key]),['q1','m-1','completed','{}','2026-11-16 abc1234']);assert(records.RECORDED_KEYS.every(key=>!(key in moved)));
+ assert.deepEqual(records.RECORDED_KEYS.map(key=>moved.earlier[0][key]),['q1','m-1','completed','{}','Weighed both readings.','2026-11-16 abc1234']);assert(records.RECORDED_KEYS.every(key=>!(key in moved)));
  assert(records.RECORDED_KEYS.every(key=>!(key in runs.clearRuns(done))));
  assert.equal(runs.rowForRun(moved,1).requestId,'q1');
 
  // --- Backups ------------------------------------------------------------------------------------------
  const body=JSON.stringify({model:'m',system:'The words api_key, password, and Authorization in a prompt are text.',messages:[{role:'user',content:'<<DOCUMENT_TEXT>>'}]});
- const workspace={prompt:'p',requests:[{id:'q1',url:'https://api.anthropic.com/v1/messages',body}],docs:[{id:'d',name:'d.txt',file:new File(['Text'],'d.txt'),status:'done',score:'A',explanation:'e',runNo:1,requestId:'q1',modelReported:'claude-sonnet-5-5-20260901',stopReason:'end_turn',output:'{"score":"A"}',lab:'2026-11-16 abc1234',history:[{status:'error',error:'Cut short.',requestId:'q1',stopReason:'max_tokens',runNo:1}]}]};
+ const workspace={prompt:'p',requests:[{id:'q1',url:'https://api.anthropic.com/v1/messages',body}],docs:[{id:'d',name:'d.txt',file:new File(['Text'],'d.txt'),status:'done',score:'A',explanation:'e',runNo:1,requestId:'q1',modelReported:'claude-sonnet-5-5-20260901',stopReason:'end_turn',output:'{"score":"A"}',reasoningSummary:'Compared the text with each category.',lab:'2026-11-16 abc1234',history:[{status:'error',error:'Cut short.',requestId:'q1',stopReason:'max_tokens',runNo:1}]}]};
  const encoded=await backup.encodeStudyBackup({name:'Study',createdAt:new Date().toISOString(),texts:workspace,knowledge:{items:[]}});
  const restored=backup.decodeStudyBackup(encoded).texts;
  assert.deepEqual(restored.requests,workspace.requests,'The requests travel with a study backup, whole');
- assert.deepEqual(records.RECORDED_KEYS.map(key=>restored.docs[0][key]),['q1','claude-sonnet-5-5-20260901','end_turn','{"score":"A"}','2026-11-16 abc1234']);assert.equal(restored.docs[0].history[0].stopReason,'max_tokens');
+ assert.deepEqual(records.RECORDED_KEYS.map(key=>restored.docs[0][key]),['q1','claude-sonnet-5-5-20260901','end_turn','{"score":"A"}','Compared the text with each category.','2026-11-16 abc1234']);assert.equal(restored.docs[0].history[0].stopReason,'max_tokens');
  const tampered=JSON.parse(encoded);tampered.workspaces.texts.requests[0].id='../q1';
  assert.throws(()=>backup.decodeStudyBackup(JSON.stringify(tampered)),/Invalid texts workspace at requests/);
  const longNote=JSON.parse(encoded);longNote.workspaces.texts.docs[0].stopReason='x'.repeat(201);
@@ -202,7 +202,7 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
  for(const page of ['app/page.tsx','components/model-knowledge.tsx']){
   const source=fs.readFileSync(path.join(root,page),'utf8');
   assert.equal(source.split("form.set('record','true')").length-1,2,page+': results made now and results collected from a batch');
-  assert(source.includes("if(research)form.set('record','true');")&&source.includes("if(research&&action==='collect')form.set('record','true');"),page);
+  assert(source.includes("if(research)form.set('record','true');")&&source.includes("if(research&&action==='collect'){form.set('record','true');if(job.requestSettings?.summary)form.set('summary','true');}"),page);
   assert(source.includes('if(!research)return {};'),page+': the standard Lab records no request');
  }
  console.log(`PASS: research mode’s record of a request: ${compared} requests equal their recorded form filled with the document (every provider and model, now and in a batch, text, PDF, and Model knowledge), the provider’s notes, retries, runs, and backups. No provider was called.`);

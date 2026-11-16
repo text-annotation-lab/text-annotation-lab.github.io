@@ -163,6 +163,11 @@
 .research-earlier summary{cursor:pointer;font-weight:600;font-size:14px}
 .research-earlier-entry{border-top:1px solid #d9e3ef;margin-top:12px;padding-top:10px;font-size:14px;line-height:1.6}
 .research-earlier-entry p{margin:0 0 8px}
+.research-reasoning{margin:0 0 12px}
+.research-reasoning summary{cursor:pointer;font-weight:600;font-size:14px}
+.research-reasoning pre{margin:8px 0 0;font:inherit;font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
+.research-earlier-entry .research-reasoning{margin:0 0 4px}
+.research-earlier-entry .research-reasoning summary{font-weight:400;color:#33415c}
 
 /* Runs & agreement, Export */
 .research-panel{width:calc(100% - 56px);max-width:1384px;margin:0 auto;padding:32px 40px}
@@ -228,3 +233,18 @@
 .study-tabs .tab-count>span{display:inline-block}
 /* The prompt caching option in Processing options. */
 .research-cache-option{margin-top:14px!important}
+/* The other request settings in Processing options, and "Preview request". */
+.research-request-option{margin-top:14px!important}
+.processing-choice .research-number{width:120px;min-height:0;padding:7px 10px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#19334f;font:inherit;font-size:13px}
+.processing-choice .research-number:disabled{background:#f3f6fa;color:#64728b}
+.research-setup-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 25px}
+.research-setup-head h2{margin:0}
+.research-preview-slot{text-align:right}
+.research-preview-slot .research-preview-button{margin:0;display:inline-block;white-space:nowrap}
+.research-preview-slot .hint{margin:4px 0 0}
+.research-preview h3{font-size:15px;margin:6px 0 0}
+.research-preview-text{margin:0;padding:12px 14px;max-height:260px;overflow:auto;border:1px solid #dce2ec;border-radius:8px;background:#f8faff;color:#1b2942;font:inherit;font-size:14px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.research-preview-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+.research-preview code{font-size:12.5px;overflow-wrap:anywhere}
+.research-preview-whole summary{cursor:pointer;font-size:14px;color:#003d73}
+.research-preview-whole pre{margin-top:10px}

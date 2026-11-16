@@ -3,13 +3,14 @@
 // list stored with the workspace. A result names its request by `requestId`.
 // Not kept: API keys (they travel in request headers, never in a body) and a provider's whole reply. The
 // workspace is one record that is written again at every save, and whole replies would about double it; a
-// result keeps the model the provider names, why it stopped, and the text it returned.
+// result keeps the model the provider names, why it stopped, the text it returned, and, where the request
+// asked for one, the summary of the model's reasoning.
 import type {RequestFrame} from '../request-frame';
 
 export type RecordedRequest={id:string;url:string;body:string};
 // What recording adds to a result. lab: the build of the Lab that sent the request.
-export type Recorded={requestId?:string;modelReported?:string;stopReason?:string;output?:string;lab?:string};
-export const RECORDED_KEYS=['requestId','modelReported','stopReason','output','lab'] as const;
+export type Recorded={requestId?:string;modelReported?:string;stopReason?:string;output?:string;reasoningSummary?:string;lab?:string};
+export const RECORDED_KEYS=['requestId','modelReported','stopReason','output','reasoningSummary','lab'] as const;
 type Referring={requestId?:string;annotations?:unknown;earlier?:{[key:string]:any}[];history?:{[key:string]:any}[]};
 
 const valid=(r:any):r is RecordedRequest=>Boolean(r)&&typeof r==='object'&&typeof r.id==='string'&&/^q[1-9]\d{0,8}$/.test(r.id)&&typeof r.url==='string'&&r.url.length<=1000&&typeof r.body==='string'&&r.body.length<=1000000;
@@ -38,8 +39,8 @@ export function usedRequests<T extends Referring>(list:RecordedRequest[]|undefin
 // What a reply from the Lab's request handlers adds to a result when recording is on.
 export function replyNotes(out:unknown):Recorded{
  const o=(out&&typeof out==='object'?out:{}) as Record<string,unknown>,notes:Recorded={};
- for(const key of ['modelReported','stopReason','output'] as const)if(typeof o[key]==='string')notes[key]=o[key] as string;
+ for(const key of ['modelReported','stopReason','output','reasoningSummary'] as const)if(typeof o[key]==='string')notes[key]=o[key] as string;
  return notes;
 }
 // A result about to be made: nothing of an earlier attempt's record stays on it.
-export const NOT_RECORDED:Record<(typeof RECORDED_KEYS)[number],undefined>={requestId:undefined,modelReported:undefined,stopReason:undefined,output:undefined,lab:undefined};
+export const NOT_RECORDED:Record<(typeof RECORDED_KEYS)[number],undefined>={requestId:undefined,modelReported:undefined,stopReason:undefined,output:undefined,reasoningSummary:undefined,lab:undefined};

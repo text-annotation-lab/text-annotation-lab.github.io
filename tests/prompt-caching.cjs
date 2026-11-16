@@ -184,10 +184,10 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
  // --- The page: only research mode sends the setting -------------------------------------------
  for(const page of ['app/page.tsx','components/model-knowledge.tsx']){
   const source=fs.readFileSync(path.join(root,page),'utf8');
-  assert(source.includes('const sentRequest=research?sentRequestSettings(provider,model,requestSettings):undefined;'),page+': the standard Lab never sends or records the setting');
+  assert(source.includes('const sentRequest=research?sentRequestSettings(provider,model,requestSettings,effort):undefined;'),page+': the standard Lab never sends or records the setting');
   assert.equal(source.split("form.set('requestSettings'").length-1,2,page+': texts sent now and in a batch');assert.equal(source.split("if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));").length-1,2,page);
-  assert.equal(source.split('requestSettings:sentRequest').length-1,4,page+': every started result, the batch, and the recorded request hold what was sent');
-  assert(source.includes('{research&&<ResearchCacheOption '),page+': the option is shown in research mode only');
+  assert.equal(source.split('requestSettings:sentRequest').length-1,5,page+': every started result, the batch, the recorded request, and the preview hold what is sent');
+  assert(source.includes('{research&&<ResearchRequestOptions '),page+': the option is shown in research mode only');
  }
 
  console.log('PASS: prompt caching: the setting, each provider’s request with and without it (instant and batch), prices of cached tokens, the estimate, the note, backups, runs, and exports. No provider was called.');

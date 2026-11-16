@@ -1,10 +1,23 @@
-// Research mode: settings of a request that leave what is asked of the model unchanged. Without them a request
-// is the standard Lab's. They are stored with the study and recorded on every result made with them.
+// Research mode: settings of a request beyond what the standard Lab sends. Without them a request is the
+// standard Lab's. They are stored with the study and recorded on every result made with them.
 // cache: the prompt is marked for the provider's prompt cache, so that each later text reads it at a lower price.
+// temperature: the sampling temperature, where the model takes one.
+// maxOutput: the most output tokens a reply may have (reasoning included), where it is not the Lab's own limit.
+// summary: the provider is asked for a readable summary of the model's reasoning, which is kept with the result.
+// store: false asks OpenAI not to keep the request in its logs (the Lab otherwise asks OpenAI to keep it).
 // This file imports nothing, so anything may import it.
-export type RequestSettings={cache?:true};
+export type RequestSettings={cache?:true;temperature?:number;maxOutput?:number;summary?:true;store?:false};
+export const MIN_OUTPUT_TOKENS=16,MAX_OUTPUT_TOKENS=1000000,MAX_TEMPERATURE=2;
+// The stored form: the settings in this order, and only those that are set.
 export function cleanRequestSettings(value:unknown):RequestSettings|undefined{
- return value&&typeof value==='object'&&(value as RequestSettings).cache===true?{cache:true}:undefined;
+ if(!value||typeof value!=='object'||Array.isArray(value))return undefined;
+ const v=value as Record<string,unknown>,out:RequestSettings={};
+ if(v.cache===true)out.cache=true;
+ if(typeof v.temperature==='number'&&v.temperature>=0&&v.temperature<=MAX_TEMPERATURE)out.temperature=v.temperature;
+ if(typeof v.maxOutput==='number'&&Number.isInteger(v.maxOutput)&&v.maxOutput>=MIN_OUTPUT_TOKENS&&v.maxOutput<=MAX_OUTPUT_TOKENS)out.maxOutput=v.maxOutput;
+ if(v.summary===true)out.summary=true;
+ if(v.store===false)out.store=false;
+ return Object.keys(out).length?out:undefined;
 }
 // What a request may carry: exactly the stored form, or nothing.
 export function readRequestSettings(raw:FormDataEntryValue|null):RequestSettings|undefined{
@@ -29,8 +42,39 @@ export function cacheSupport(provider:string,model:string):CacheSupport|undefine
 }
 // Whether the setting changes this request: the option is on, and the model's provider caches at a mark.
 export const marksCache=(provider:string,model:string,request?:RequestSettings)=>Boolean(request?.cache)&&cacheSupport(provider,model)?.kind==='marked';
-// What is recorded on a result: the setting, where it changed the request.
-export const sentRequestSettings=(provider:string,model:string,request?:RequestSettings):RequestSettings|undefined=>marksCache(provider,model,request)?{cache:true}:undefined;
+
+// The most output tokens the Lab allows a reply when no other limit is set (reasoning included). Gemini 4
+// models think at length and get more room.
+export const defaultOutputLimit=(provider:string,model:string)=>provider==='gemini'&&model.startsWith('gemini-4-')?32768:12000;
+// A model with a fixed reasoning budget (Claude Haiku 4.5) needs a limit above that budget.
+export const outputFloor=(provider:string,model:string,effort?:string)=>provider==='anthropic'&&model.startsWith('claude-haiku-4-5')&&/^\d+$/.test(effort||'')?Number(effort)+1:MIN_OUTPUT_TOKENS;
+// Whether a model takes a temperature. Claude models from Opus 4.7 on reject one, and a Claude model that
+// reasons accepts none, so of the Lab's Claude models only Haiku 4.5 with reasoning off gets it (never through
+// OpenRouter, which offers no "off"). Other providers are sent the temperature, and reject it for a model that
+// takes none. Anthropic's scale ends at 1.
+export function takesTemperature(provider:string,model:string,effort?:string){
+ const routed=provider==='openrouter',vendor=routed?model.split('/')[0]:provider;
+ return vendor!=='anthropic'||!routed&&model.startsWith('claude-haiku-4-5')&&effort==='off';
+}
+export const temperatureCeiling=(provider:string)=>provider==='anthropic'?1:MAX_TEMPERATURE;
+// Whether there is reasoning to summarize: not with reasoning switched off.
+export const summarizesReasoning=(effort?:string)=>effort!=='off'&&effort!=='none';
+// What a request carries and a result records: each setting where it changes the request to this provider and
+// model. effort: the reasoning setting the request is sent with.
+export function sentRequestSettings(provider:string,model:string,request?:RequestSettings,effort?:string):RequestSettings|undefined{
+ if(!request)return undefined;
+ const out:RequestSettings={};
+ if(marksCache(provider,model,request))out.cache=true;
+ if(request.temperature!==undefined&&takesTemperature(provider,model,effort))out.temperature=Math.min(request.temperature,temperatureCeiling(provider));
+ if(request.maxOutput!==undefined){const limit=Math.max(request.maxOutput,outputFloor(provider,model,effort));if(limit!==defaultOutputLimit(provider,model))out.maxOutput=limit;}
+ if(request.summary&&summarizesReasoning(effort))out.summary=true;
+ if(request.store===false&&provider==='openai')out.store=false;
+ return Object.keys(out).length?out:undefined;
+}
+// The limit a request is sent with, and how long the Lab waits for its reply: longer where a model thinks at
+// length or the limit was raised.
+export const outputLimit=(provider:string,model:string,sent?:RequestSettings)=>sent?.maxOutput??defaultOutputLimit(provider,model);
+export const requestTimeout=(provider:string,model:string,sent?:RequestSettings)=>provider==='gemini'&&model.startsWith('gemini-4-')||(sent?.maxOutput??0)>defaultOutputLimit(provider,model)?900000:180000;
 
 // Anthropic: the lifetime of the cache entry is five minutes, refreshed by every text that reads it; one hour
 // in a batch, whose requests may start further apart.
@@ -45,4 +89,8 @@ export const openaiPrompt=(prompt:string,input:unknown[],request?:RequestSetting
 export function openRouterSystem(prompt:string,model:string,request?:RequestSettings){
  if(!marksCache('openrouter',model,request))return prompt;
  return [{type:'text',text:prompt,...(model.startsWith('anthropic/')?{cache_control:{type:'ephemeral'}}:OPENAI_MARK)}];
+}
+// The settings a request carries, in a few words (the summary line of Processing options, and the list of runs).
+export function requestSummary(sent:RequestSettings|undefined):string[]{
+ return [sent?.cache?'Prompt caching':'',sent?.temperature!==undefined?`temperature ${sent.temperature}`:'',sent?.maxOutput!==undefined?`max ${sent.maxOutput.toLocaleString('en-US')} output tokens`:'',sent?.summary?'reasoning summary':'',sent?.store===false?'not in OpenAI’s logs':''].filter(Boolean);
 }

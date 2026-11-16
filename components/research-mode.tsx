@@ -12,7 +12,8 @@ const load=()=>import('./research/panels');
 const Keys=lazy(()=>load().then(module=>({default:module.KeysControl})));
 const Tools=lazy(()=>load().then(module=>({default:module.ResearchTools})));
 const Output=lazy(()=>load().then(module=>({default:module.OutputEditor})));
-const Cache=lazy(()=>load().then(module=>({default:module.CacheOption})));
+const Options=lazy(()=>load().then(module=>({default:module.RequestOptions})));
+const Preview=lazy(()=>load().then(module=>({default:module.RequestPreview})));
 const Filters=lazy(()=>load().then(module=>({default:module.ResearchFilters})));
 const Detail=lazy(()=>load().then(module=>({default:module.ResearchDetail})));
 const Runs=lazy(()=>load().then(module=>({default:module.RunsPanel})));
@@ -22,7 +23,8 @@ const loading=<p className="hint" role="status">Loading…</p>;
 export function ResearchKeys(props:ComponentProps<typeof Keys>){return <Suspense fallback={null}><Keys {...props}/></Suspense>;}
 export function ResearchTools(props:ComponentProps<typeof Tools>){return <Suspense fallback={null}><Tools {...props}/></Suspense>;}
 export function ResearchAnswerFields(props:ComponentProps<typeof Output>){return <Suspense fallback={null}><Output {...props}/></Suspense>;}
-export function ResearchCacheOption(props:ComponentProps<typeof Cache>){return <Suspense fallback={null}><Cache {...props}/></Suspense>;}
+export function ResearchRequestOptions(props:ComponentProps<typeof Options>){return <Suspense fallback={null}><Options {...props}/></Suspense>;}
+export function ResearchRequestPreview(props:ComponentProps<typeof Preview>){return <Suspense fallback={null}><Preview {...props}/></Suspense>;}
 export function ResearchFilters(props:ComponentProps<typeof Filters>){return <Suspense fallback={null}><Filters {...props}/></Suspense>;}
 export function ResearchDetail(props:ComponentProps<typeof Detail>){return <Suspense fallback={null}><Detail {...props}/></Suspense>;}
 export function ResearchRuns(props:ComponentProps<typeof Runs>){return <Suspense fallback={loading}><Runs {...props}/></Suspense>;}

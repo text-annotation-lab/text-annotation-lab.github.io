@@ -1,4 +1,5 @@
 import type {Provider} from './providers';
+import type {RequestSettings} from './request-settings';
 const names={openrouter:'OpenRouter',openai:'OpenAI',anthropic:'Anthropic',gemini:'Gemini'};
 const consoles={openrouter:'OpenRouter',openai:'OpenAI Platform',anthropic:'Claude Console',gemini:'Google AI Studio'};
 // Interpret upstream diagnostics, but never display arbitrary provider text.
@@ -32,10 +33,20 @@ function openRouterDiagnostics(error:any){
  }
  return {message,details,cause};
 }
+// Research mode: a request setting the provider did not accept (lib/request-settings.ts), told from the
+// parameter its error names. The provider's words are read only to find that parameter; none are returned.
+function rejectedSetting(provider:Provider,status:number,e:any,request?:RequestSettings):string|undefined{
+ if(!request||status!==400&&status!==404&&status!==422)return undefined;
+ const label=names[provider],said=[e?.param,e?.message,e?.metadata?.raw].filter((x:unknown)=>typeof x==='string').map((x:string)=>x.slice(0,16384)).join(' ');
+ if(request.temperature!==undefined&&(/temperature/i.test(said)||provider==='openrouter'&&status===404&&/no endpoints/i.test(said)))return `${label} does not accept a temperature for this model and reasoning setting. Clear Temperature in Processing options, or choose a model that takes one.`;
+ if(request.summary&&/summar|thinking\.display|include_?thoughts/i.test(said))return `${label} did not accept the request for a reasoning summary. Some models return none, and OpenAI gives summaries of its latest models only to verified organizations. Switch off “Record the model’s reasoning summary” in Processing options to continue.`;
+ if(request.maxOutput!==undefined&&/max_?(?:output_?|completion_?)?tokens/i.test(said))return `${label} does not accept ${request.maxOutput.toLocaleString('en-US')} as the output limit for this model. Change “Max output tokens” in Processing options.`;
+}
 // Never return raw provider messages: they can echo credentials or document text.
 // Codes guide the explanation only; an HTTP status alone cannot establish billing
 // state, whether a request completed, or the cause of a generic quota error.
-export function providerError(provider:Provider,status:number,body:unknown,headers?:Headers){
+// request: research mode's request settings as sent, so a rejected one can be named.
+export function providerError(provider:Provider,status:number,body:unknown,headers?:Headers,request?:RequestSettings){
  const label=names[provider],consoleName=consoles[provider];
  const e=(body as any)?.error;
  const diagnostics=provider==='openrouter'?openRouterDiagnostics(e):undefined;
@@ -45,8 +56,9 @@ export function providerError(provider:Provider,status:number,body:unknown,heade
  if(provider==='openrouter'&&e?.metadata?.limit_source==='openrouter_key_limit')return 'This OpenRouter key has reached its spending allowance. No new annotations will start. Ask the person who issued your key about additional funds; completed results are kept.';
  if(provider==='openrouter'&&e?.metadata?.limit_source==='openrouter_in_flight_budget')return 'OpenRouter has reserved the available budget for active requests. Wait for them to finish, refresh the allowance, and use fewer parallel annotations before retrying.';
  if(provider==='openrouter'&&status===402)return 'OpenRouter cannot fund this request with the available credits or allowance. Refresh the allowance and contact the key issuer if needed. A smaller request may fit the remaining budget. Completed results are kept.';
- let message:string;
- if(status===429&&diagnostics?.message)message=diagnostics.message;
+ let message:string;const rejected=rejectedSetting(provider,status,e,request);
+ if(rejected)message=rejected;
+ else if(status===429&&diagnostics?.message)message=diagnostics.message;
  else if(status===401||has('api_key_invalid','api_key_expired','invalid_api_key','authentication_error'))message=`${label} rejected the API key. Copy an active key for this provider from ${consoleName}, then retry.`;
  else if(status===402||has('billing_error','credit_balance_exhausted','insufficient_credits'))message=`${label} reports a billing or credit problem. Check API credits and billing in ${consoleName} before retrying; waiting alone will not resolve it.`;
  else if(has('organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_exceeded','insufficient_quota','quota_exceeded'))message=`${label} reports an account quota or spending limit. Check the specific limit and its reset date in ${consoleName}. Retry only after access is available again.`;
@@ -106,9 +118,9 @@ export function retryWait(provider:Provider,status:number,body:unknown,headers?:
  return wait>MAX_AUTOMATIC_WAIT_MS?undefined:Math.ceil(wait);
 }
 // The reply for a failed provider request: the message, and `retryAfterMs` when a paced run may send it again.
-export function providerFailure(provider:Provider,status:number,body:unknown,headers?:Headers):{error:string;retryAfterMs?:number}{
+export function providerFailure(provider:Provider,status:number,body:unknown,headers?:Headers,request?:RequestSettings):{error:string;retryAfterMs?:number}{
  const wait=retryWait(provider,status,body,headers);
- return {error:providerError(provider,status,body,headers),...(wait===undefined?{}:{retryAfterMs:wait})};
+ return {error:providerError(provider,status,body,headers,request),...(wait===undefined?{}:{retryAfterMs:wait})};
 }
 export function incompleteAnnotation(provider:Provider,reason:unknown){
  const label=names[provider],consoleName=consoles[provider];

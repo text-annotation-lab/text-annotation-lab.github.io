@@ -6,6 +6,7 @@ export type BatchJob={responseFormat?:string;answerFields?:string[];answerSettin
  // of them this batch asks for (absent: all of them). Requests are numbered text by text in that order.
  repeats?:number;ns?:number[][]};
 export type BatchResult={rawResponse?:string;answers?:Record<string,string>;id:string;score?:string;explanation?:string;tokens?:number;usage?:any;responseId?:string;error?:string;
- // Research mode: the model the provider names, why it stopped, and the text it returned.
- modelReported?:string;stopReason?:string;output?:string};
+ // Research mode: the model the provider names, why it stopped, the text it returned, and the summary of the
+ // model's reasoning where the requests asked for one.
+ modelReported?:string;stopReason?:string;output?:string;reasoningSummary?:string};
 export type BatchUpdate={id:string;terminal:boolean;state:string;completed:number;total:number;results?:BatchResult[]};

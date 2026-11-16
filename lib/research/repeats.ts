@@ -25,7 +25,7 @@ type Result={status?:string;repeats?:unknown;annotations?:Annotation[];consisten
 // The first three name the click it was sent with: an annotation made later than its text's others (a missing
 // one that was filled in) has its own, so the cost of a click counts only the requests of that click.
 const SENT_KEYS=['runId','runStartedAt','runSize'] as const;
-const OWN_KEYS=['inputMode','rawResponse','answers','score','explanation','error','tokens','usage','responseId','time','startedAt','processing','batchId','concurrency','requestId','modelReported','stopReason','output','lab'] as const;
+const OWN_KEYS=['inputMode','rawResponse','answers','score','explanation','error','tokens','usage','responseId','time','startedAt','processing','batchId','concurrency','requestId','modelReported','stopReason','output','reasoningSummary','lab'] as const;
 export const ANNOTATION_KEYS=[...SENT_KEYS,...OWN_KEYS] as const;
 // What a failed annotation that was sent again keeps of its text's result, as a failed attempt in `history`.
 const SETTING_KEYS=['runId','runStartedAt','runSize','responseFormat','answerFields','answerSettings','requestSettings','provider','model','effort','prompt','runNo','repeats'] as const;
@@ -152,7 +152,7 @@ export function tiedVote(result:Result,field:string):boolean{
 export function settle(result:Result):Record<string,any>{
  const all=annotationsOf(result),ok=all.filter(a=>a.status==='done');
  const counted=all.filter(a=>typeof a.tokens==='number'&&Number.isFinite(a.tokens)),last=all.map(a=>String(a.time||'')).filter(Boolean).sort().at(-1);
- const shared={tokens:counted.length?counted.reduce((n,a)=>n+a.tokens,0):undefined,time:last,usage:undefined,responseId:undefined,rawResponse:undefined,modelReported:undefined,stopReason:undefined,output:undefined};
+ const shared={tokens:counted.length?counted.reduce((n,a)=>n+a.tokens,0):undefined,time:last,usage:undefined,responseId:undefined,rawResponse:undefined,modelReported:undefined,stopReason:undefined,output:undefined,reasoningSummary:undefined};
  if(!ok.length){
   const first=String(all[0]?.error||'Request failed.');
   return {...shared,status:'error',answers:undefined,score:undefined,explanation:undefined,consistency:undefined,error:!all.length?'No annotation was made.':all.length===1?first:`All ${all.length} annotations failed. The first: ${first}`};

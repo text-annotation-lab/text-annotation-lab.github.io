@@ -4,8 +4,8 @@ import {extractText,TextEncodingError} from './extract-text';
 import type {Provider} from './providers';
 import type {BatchResult,BatchUpdate} from './batch-types';
 import {MAX_BATCH_ITEMS,MAX_BATCH_PREPARED_BYTES,MAX_GEMINI_PREPARED_BYTES} from './batch-limits';
-import {marksCache,type RequestSettings} from './request-settings';
-import {providerBody,replyCode,replyText} from './request-frame';
+import type {RequestSettings} from './request-settings';
+import {providerBody,replyCode,replyText,reasoningSummary} from './request-frame';
 
 const MAX_RESULT_BYTES=32*1024*1024;
 export class BatchError extends Error{constructor(message:string,public status=400,public uncertain=false){super(message);}}
@@ -57,12 +57,11 @@ export function createBatchPayload(provider:Provider,runId:string){
  };
 }
 export async function buildBatchBody(provider:Provider,file:File,prompt:string,model:string,effort:string,knowledge=false,webSearch=false,answerFields:string[]=[],settings?:AnswerSettings,request?:RequestSettings){
- // Research mode: prompt caching, where the model's provider caches at a mark.
- const cached=marksCache(provider,model,request)?request:undefined;
+ // request: research mode's request settings; the request builder applies each where it changes the request.
  const schemaPrompt=prompt;prompt+=answerInstructions(answerFields,settings);
  const pdf=/\.pdf$/i.test(file.name);let data='';
  if(pdf){const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));data=btoa(binary);}else{try{data=await extractText(file);}catch(error){throw new BatchError(error instanceof TextEncodingError?`${file.name}: ${error.message}`:`Could not read ${file.name}. Save it as TXT or PDF and try again.`);}if(!data.trim()||data.length>2000000)throw new BatchError(`${file.name} is empty or too large. Split it into smaller texts.`);}
- return providerBody({provider,model,effort,prompt,schemaPrompt,answerFields,settings,request:cached,knowledge,batch:true},pdf?{filename:file.name,pdf:data}:{filename:file.name,text:data});
+ return providerBody({provider,model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge,batch:true},pdf?{filename:file.name,pdf:data}:{filename:file.name,text:data});
 }
 export function validBatchId(provider:Provider,id:unknown):id is string{return typeof id==='string'&&(provider==='openai'?/^batch_[a-zA-Z0-9_-]+$/:provider==='anthropic'?/^msgbatch_[a-zA-Z0-9_-]+$/:/^batches\/[a-zA-Z0-9_-]+$/).test(id);}
 export async function createBatch(provider:Provider,key:string,model:string,runId:string,payload:Blob){
@@ -78,13 +77,15 @@ export async function createBatch(provider:Provider,key:string,model:string,runI
  if(!validBatchId(provider,id))throw new BatchError('Batch creation was not confirmed. Check your provider before retrying.',502,true);return id;
 }
 // record (research mode): a result also carries the model the provider names, why it stopped, and the text it
-// returned (left out where a plain-text answer already holds that text whole).
-export function parseBatchAnnotation(provider:Provider,out:any,plain=false,record=false):Omit<BatchResult,'id'>{
+// returned (left out where a plain-text answer already holds that text whole). summary: the requests asked for
+// a summary of the model's reasoning, which is kept as well.
+export function parseBatchAnnotation(provider:Provider,out:any,plain=false,record=false,summary=false):Omit<BatchResult,'id'>{
  const usage=provider==='gemini'?out?.usageMetadata:out?.usage;
  const tokens=provider==='gemini'?usage?.totalTokenCount:provider==='openai'?usage?.total_tokens:
   usage?(usage.input_tokens||0)+(usage.output_tokens||0)+(usage.cache_creation_input_tokens||0)+(usage.cache_read_input_tokens||0):undefined;
  const responseId=provider==='gemini'?out?.responseId:out?.id;
- const noted:Pick<BatchResult,'modelReported'|'stopReason'|'output'>=!record?{}:provider==='openai'?{modelReported:replyCode(out?.model),stopReason:replyCode([out?.status,out?.incomplete_details?.reason].filter(part=>typeof part==='string'&&part).join(': '))}:provider==='anthropic'?{modelReported:replyCode(out?.model),stopReason:replyCode(out?.stop_reason)}:{modelReported:replyCode(out?.modelVersion),stopReason:replyCode(out?.promptFeedback?.blockReason||out?.candidates?.[0]?.finishReason)};
+ const noted:Pick<BatchResult,'modelReported'|'stopReason'|'output'|'reasoningSummary'>=!record?{}:provider==='openai'?{modelReported:replyCode(out?.model),stopReason:replyCode([out?.status,out?.incomplete_details?.reason].filter(part=>typeof part==='string'&&part).join(': '))}:provider==='anthropic'?{modelReported:replyCode(out?.model),stopReason:replyCode(out?.stop_reason)}:{modelReported:replyCode(out?.modelVersion),stopReason:replyCode(out?.promptFeedback?.blockReason||out?.candidates?.[0]?.finishReason)};
+ if(record&&summary){const text=reasoningSummary(provider,out);if(text)noted.reasoningSummary=text;}
  const metadata:Omit<BatchResult,'id'>={...noted,usage,...(typeof tokens==='number'?{tokens}:{}),...(typeof responseId==='string'?{responseId}:{})};
  let raw:string;
  if(provider==='openai'){
@@ -106,7 +107,7 @@ export function parseBatchAnnotation(provider:Provider,out:any,plain=false,recor
   return {...metadata,answers:value.answers,score:value.score,explanation:value.explanation};
  }catch{return {...metadata,error:'The provider did not return a valid annotation. Check its response before retrying.'};}
 }
-export async function checkBatch(provider:Provider,key:string,id:string,collect:boolean,plain=false,record=false):Promise<BatchUpdate>{
+export async function checkBatch(provider:Provider,key:string,id:string,collect:boolean,plain=false,record=false,summary=false):Promise<BatchUpdate>{
  const base=provider==='openai'?'https://api.openai.com/v1/batches/':provider==='anthropic'?'https://api.anthropic.com/v1/messages/batches/':'https://generativelanguage.googleapis.com/v1beta/';
  const out=await call(provider,key,base+id);
  const state=String(provider==='openai'?out.status:provider==='anthropic'?out.processing_status:out.metadata?.state||out.state||'processing');
@@ -118,14 +119,14 @@ export async function checkBatch(provider:Provider,key:string,id:string,collect:
  const results:BatchResult[]=[],seen=new Set<string>();let resultBytes=0;
  const append=(result:BatchResult)=>{if(typeof result.id!=='string'||seen.has(result.id))throw new BatchError('The results could not be matched reliably to documents. Check the provider’s batch output.',502);seen.add(result.id);resultBytes+=new TextEncoder().encode(JSON.stringify(result)).length;if(results.length>=MAX_BATCH_ITEMS||resultBytes>MAX_RESULT_BYTES)throw new BatchError('The annotations exceed the collection limit. Download them from your provider’s console. Your saved job is unchanged.',413);results.push(result);};
  if(provider==='openai'){
-  for(const fileId of [out.output_file_id,out.error_file_id]){if(!fileId)continue;if(!/^file-[\w-]+$/.test(fileId))throw new BatchError('The provider returned an invalid results reference.',502);for await(const row of resultRows(provider,key,'https://api.openai.com/v1/files/'+fileId+'/content')){append({id:row.custom_id,...(row.error||row.response?.status_code!==200?{error:'This request failed in the batch. Check the provider’s batch results before retrying.'}:parseBatchAnnotation(provider,row.response.body,plain,record))});}}
+  for(const fileId of [out.output_file_id,out.error_file_id]){if(!fileId)continue;if(!/^file-[\w-]+$/.test(fileId))throw new BatchError('The provider returned an invalid results reference.',502);for await(const row of resultRows(provider,key,'https://api.openai.com/v1/files/'+fileId+'/content')){append({id:row.custom_id,...(row.error||row.response?.status_code!==200?{error:'This request failed in the batch. Check the provider’s batch results before retrying.'}:parseBatchAnnotation(provider,row.response.body,plain,record,summary))});}}
  }else if(provider==='anthropic'){
   // Use the fixed API origin, never a response-provided results URL.
-  for await(const row of resultRows(provider,key,base+id+'/results')){append({id:row.custom_id,...(row.result?.type==='succeeded'?parseBatchAnnotation(provider,row.result.message,plain,record):{error:`Batch request ${String(row.result?.type||'failed')}. Check provider usage before retrying.`})});}
+  for await(const row of resultRows(provider,key,base+id+'/results')){append({id:row.custom_id,...(row.result?.type==='succeeded'?parseBatchAnnotation(provider,row.result.message,plain,record,summary):{error:`Batch request ${String(row.result?.type||'failed')}. Check provider usage before retrying.`})});}
  }else{
   const dest=out.response?.inlinedResponses||out.output?.inlinedResponses||out.dest?.inlinedResponses;
   const rows=Array.isArray(dest)?dest:dest?.inlinedResponses;
-  if(rows){for(const row of rows){append({id:row.metadata?.key,...(row.error?{error:'Gemini could not complete this batch request. Check its batch results before retrying.'}:parseBatchAnnotation(provider,row.response,plain,record))});}}
+  if(rows){for(const row of rows){append({id:row.metadata?.key,...(row.error?{error:'Gemini could not complete this batch request. Check its batch results before retrying.'}:parseBatchAnnotation(provider,row.response,plain,record,summary))});}}
  }
  // A terminal batch may legitimately contain no results (e.g., validation failed).
  if(results.some(r=>typeof r.id!=='string')||new Set(results.map(r=>r.id)).size!==results.length)throw new BatchError('The results could not be matched reliably to documents. Check the provider’s batch output.',502);

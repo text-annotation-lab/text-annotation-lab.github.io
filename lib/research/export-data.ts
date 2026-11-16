@@ -113,17 +113,19 @@ export function runRequests(study:ExportStudy,run:number,find=requestFinder(stud
  return {...(text?{text:{...text.sent,count:text.count}}:{}),...(pdf?{pdf:{...pdf.sent,count:pdf.count}}:{}),forms:counts.size,rebuilt,unknown,total};
 }
 // What a request body says, whichever provider it is for. system: the prompt with the Lab's own instructions,
-// as sent. limit: the most output tokens the reply may have. schema: the answer format (absent for plain text).
-export function requestParts(frame:RequestFrame):{model:string;system:string;limit?:number;schema?:any}{
+// as sent. limit: the most output tokens the reply may have. temperature: the sampling temperature (absent:
+// none was sent, so the model used its own). schema: the answer format (absent for plain text).
+export function requestParts(frame:RequestFrame):{model:string;system:string;limit?:number;temperature?:number;schema?:any}{
  const body=JSON.parse(frame.body);
  const text=(value:any):string=>typeof value==='string'?value:Array.isArray(value)?value.map(part=>typeof part?.text==='string'?part.text:'').join(''):'';
  const first=Array.isArray(body.input)?body.input[0]:Array.isArray(body.messages)?body.messages[0]:undefined;
  const system=typeof body.instructions==='string'?body.instructions:body.system!==undefined?text(body.system):body.systemInstruction?text(body.systemInstruction.parts):first&&(first.role==='developer'||first.role==='system')?text(first.content):'';
  const limit=[body.max_output_tokens,body.max_tokens,body.generationConfig?.maxOutputTokens].find(value=>typeof value==='number');
+ const temperature=[body.temperature,body.generationConfig?.temperature].find(value=>typeof value==='number');
  const schema=body.text?.format?.schema??body.output_config?.format?.schema??body.generationConfig?.responseSchema??body.response_format?.json_schema?.schema;
  // Gemini names its model in the address, the others in the body.
  const model=typeof body.model==='string'?body.model:(/\/models\/([^/:]+):/.exec(frame.url)?.[1]??'');
- return {model,system,...(limit===undefined?{}:{limit}),...(schema?{schema}:{})};
+ return {model,system,...(limit===undefined?{}:{limit}),...(temperature===undefined?{}:{temperature}),...(schema?{schema}:{})};
 }
 
 // The document a request carried: a text, or a whole PDF sent as a file.
