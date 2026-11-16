@@ -1,4 +1,4 @@
-import {PROVIDERS,reasoningOptions,type Provider} from './providers';
+import {PROVIDERS,reasoningOptions,validModelId,type Provider} from './providers';
 export function keyProvider(key:string):Provider|undefined {
  if (key.startsWith('sk-or-')) return 'openrouter';
  if (key.startsWith('sk-ant-')) return 'anthropic';
@@ -15,7 +15,7 @@ export function setupErrors(provider:Provider,apiKey:string,prompt:string,model:
  const recognized=keyProvider(key);
  if(!key)keyError='Add your API key before starting.';
  else if(recognized&&recognized!==provider)keyError=`This key appears to be for ${PROVIDERS[recognized].label}. Select that provider or enter a ${PROVIDERS[provider].label} key. Key format alone does not verify access.`;
- return {key:keyError,prompt:!prompt.trim()?'Add an annotation prompt before starting.':prompt.length>100000?'Keep the prompt within 100,000 characters.':'',model:!PROVIDERS[provider].models.includes(model)?'Choose an available model.':!reasoningOptions(provider,model).includes(effort)?'Choose a supported reasoning setting.':''};
+ return {key:keyError,prompt:!prompt.trim()?'Add an annotation prompt before starting.':prompt.length>100000?'Keep the prompt within 100,000 characters.':'',model:!validModelId(provider,model)?'Choose an available model.':!reasoningOptions(provider,model).includes(effort)?'Choose a supported reasoning setting.':''};
 }
 export type Attempt = {status:string;[key:string]:any};
 export type RetryRecord={id:string;status:string;history?:Attempt[];[key:string]:any};

@@ -31,7 +31,7 @@ export async function annotateOpenRouter(file:File,prompt:string,model:string,ef
   const out:any=await providerJson(response);
   const served=[out?.model,out?.provider].map(replyCode).filter(Boolean).join(' via ');
   const accounting:Record<string,unknown>={inputMode:pdfInput?'pdf-native':'text',tokens:out?.usage?.total_tokens,usage:out?.usage,responseId:out?.id,...(record?{modelReported:served||undefined,stopReason:replyCode(out?.choices?.[0]?.finish_reason)}:{})};
-  if(!response.ok||out?.error){const code=Number(out?.error?.code),status=response.ok?(Number.isInteger(code)&&code>=400&&code<=599?code:502):response.status;return reply({...accounting,...providerFailure('openrouter',status,out,response.headers,request)},status);}
+  if(!response.ok||out?.error){const code=Number(out?.error?.code),status=response.ok?(Number.isInteger(code)&&code>=400&&code<=599?code:502):response.status;return reply({...accounting,...providerFailure('openrouter',status,out,response.headers,request,model)},status);}
   const choice=out?.choices?.[0];
   if(record&&request?.summary){const summary=reasoningSummary('openrouter',out);if(summary)accounting.reasoningSummary=summary;}
   if(choice?.message?.refusal)return reply({...accounting,error:incompleteAnnotation('openrouter','refusal')},422);

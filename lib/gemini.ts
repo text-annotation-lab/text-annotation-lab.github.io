@@ -20,7 +20,7 @@ export async function annotateGemini(file:File,prompt:string,model:string,effort
  }
  const r=await fetch(requestUrl('gemini',model),{method:'POST',headers:{'x-goog-api-key':key,'Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('gemini',model,request)),body:JSON.stringify(providerBody({provider:'gemini',model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge},doc))});
  const out:any=await providerJson(r);
- if(!r.ok)return reply(providerFailure('gemini',r.status,out,r.headers,request),r.status);
+ if(!r.ok)return reply(providerFailure('gemini',r.status,out,r.headers,request,model),r.status);
  if(!out)return reply({error:'Gemini returned an unreadable response. Check Google AI Studio usage before retrying; the request may have completed.'},502);
  const candidate=out.candidates?.[0];
  const noted:Record<string,unknown>=record?{modelReported:replyCode(out.modelVersion),stopReason:replyCode(out.promptFeedback?.blockReason||candidate?.finishReason)}:{};

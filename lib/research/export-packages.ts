@@ -178,7 +178,7 @@ function scriptFiles(study:ExportStudy,report:RunReport,exportedAt:string):{file
 export function methodsParagraph(study:ExportStudy,report:RunReport,record:RunRecord):string{
  const {facts}=report,{run}=facts,knowledge=study.dataset.kind==='knowledge',unit=unitOf(study.dataset),units=(n:number)=>`${count(n)} ${unit}${n===1?'':'s'}`,was=(n:number)=>n===1?'was':'were';
  const dates=[facts.requests.first,facts.requests.last].filter(Boolean).map(time=>time.slice(0,10)),period=!dates.length?'':dates.length<2||dates[0]===dates[1]?` on ${dates[0]}`:` between ${dates[0]} and ${dates[1]}`;
- const effort=run.effort==='off'?'reasoning switched off':run.effort?`reasoning effort “${reasoningOptionLabel(run.effort).toLowerCase()}”`:'the provider’s default reasoning effort',limit=record.model.max_output_tokens;
+ const effort=run.effort==='off'?'reasoning switched off':run.effort&&run.effort!=='default'?`reasoning effort “${reasoningOptionLabel(run.effort).toLowerCase()}”`:'the provider’s default reasoning effort',limit=record.model.max_output_tokens;
  const reported=facts.models.length?`; model ${run.provider==='openrouter'?'and upstream provider ':'version '}reported by the API: ${facts.models.join(', ')}`:'';
  const {total,failed,replaced}=facts.requests,failedText=failed?`${count(failed)} of ${count(total)} request${total===1?'':'s'} did not return a usable annotation (an API error, a refusal, or an answer that could not be read) and ${was(failed)} excluded${facts.allFailed?`, leaving ${units(facts.allFailed)} without an annotation`:''}`:'';
  const retried=replaced?`${count(replaced)} failed request${replaced===1?' was':'s were'} sent again`:'';

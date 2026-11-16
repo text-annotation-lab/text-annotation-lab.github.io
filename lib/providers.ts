@@ -1,3 +1,4 @@
+import {budgetedClaude,plainOpenAI} from './request-settings';
 // Set false and republish to hide Gemini and reject its API requests.
 export const GEMINI_ENABLED = true;
 export const OPENROUTER_STARTER_MODELS = ['openai/gpt-6-luna','anthropic/claude-haiku-5.5','google/gemini-3.1-flash-lite'];
@@ -12,9 +13,35 @@ export const PROVIDERS = {
 };
 // Defaults are independent of price order: Gemini 2.5 access is restricted.
 export function defaultModel(provider:Provider):string {return provider==='openrouter'?'openai/gpt-6-luna':provider==='gemini'?'gemini-3.1-flash-lite':provider==='anthropic'?'claude-haiku-5-5':'gpt-6-luna';}
-export function selectedModel(provider:Provider,saved:unknown):string {return typeof saved==='string'&&PROVIDERS[provider].models.includes(saved)?saved:defaultModel(provider);}
+// A saved model is kept when the Lab lists it. other: the study says the model was chosen in research mode
+// from outside the Lab's lists; it is then kept when it has the form of a model ID.
+export function selectedModel(provider:Provider,saved:unknown,other=false):string {return typeof saved==='string'&&(PROVIDERS[provider].models.includes(saved)||other&&validModelId(provider,saved))?saved:defaultModel(provider);}
+// A model on the account behind a key, as the provider lists it (research mode, app/api/models/route.ts).
+// efforts: the reasoning levels the provider says the model takes, where it says so.
+export type AccountModel={id:string;name?:string;efforts?:string[]};
+// Research mode accepts any model of a provider by its ID. A listed model is one of the Lab's own lists.
+export const isListedModel=(provider:Provider,model:string)=>PROVIDERS[provider].models.includes(model);
+// The form of a model ID: what a request may carry. OpenRouter's IDs name the vendor first (vendor/model);
+// a Gemini ID becomes part of the request's address. An ID that plainly belongs to another provider is not
+// one of this provider's: Claude IDs begin with "claude-", and no other provider's do.
+export function validModelId(provider:Provider,model:unknown):model is string{
+ if(typeof model!=='string'||model.length>128)return false;
+ if(provider==='openrouter')return /^[A-Za-z0-9~][A-Za-z0-9._:~-]*\/[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(model);
+ if(provider==='anthropic')return /^claude-[A-Za-z0-9._:-]+$/.test(model);
+ if(provider==='gemini')return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(model)&&!/^(?:claude-|gpt-|chatgpt-|o\d)/i.test(model);
+ return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(model)&&!/^(?:claude-|gemini-)/i.test(model);
+}
+// The reasoning settings of a model outside the Lab's lists, by its family. "default" sends no reasoning
+// setting, so the model uses its own; a level the model does not take is refused by the provider.
+function otherReasoningOptions(provider:Provider,model:string):string[]{
+ if(provider==='anthropic')return budgetedClaude(model)?['off','1024','4096','8192']:['low','medium','high','xhigh','max'];
+ if(provider==='openai')return plainOpenAI(model)?['default']:['default','none','minimal','low','medium','high','xhigh','max'];
+ if(provider==='gemini')return model==='gemini-2.5-pro'?['dynamic','1024','4096','8192']:model.startsWith('gemini-2.5-')?['off','dynamic','1024','4096','8192']:['default','minimal','low','medium','high','xhigh'];
+ return ['default','none','minimal','low','medium','high','xhigh','max'];
+}
 export function availableProvider(value:unknown):Provider {return value==='openrouter'?'openrouter':value==='anthropic'?'anthropic':GEMINI_ENABLED && value==='gemini'?'gemini':'openai';}
 export function reasoningOptions(provider:Provider,model:string):string[]{
+ if(!isListedModel(provider,model))return otherReasoningOptions(provider,model);
  if(provider==='openrouter'&&model==='google/gemini-3.1-flash-lite')return ['minimal','low','medium','high'];
  if(provider==='gemini'){
   if(model==='gemini-2.5-pro')return ['dynamic','1024','4096','8192'];
@@ -27,6 +54,12 @@ export function reasoningOptions(provider:Provider,model:string):string[]{
  return provider==='anthropic'&&model.startsWith('claude-haiku-4-5')?['off','1024','4096','8192']:PROVIDERS[provider].efforts;
 }
 export function defaultEffort(provider:Provider,model:string):string{
+ if(!isListedModel(provider,model)){
+  if(provider==='anthropic')return budgetedClaude(model)?'off':'high';
+  if(provider==='openai')return plainOpenAI(model)?'default':'medium';
+  if(provider==='gemini')return model==='gemini-2.5-flash-lite'?'off':model.startsWith('gemini-2.5-')?'dynamic':'default';
+  return 'default';
+ }
  if(provider==='openrouter')return model==='google/gemini-3.1-flash-lite'?'minimal':'medium';
  if(provider==='gemini')return model==='gemini-2.5-flash-lite'?'off':model.startsWith('gemini-2.5-')?'dynamic':model==='gemini-3.1-pro-preview'||model==='gemini-4-hydrogen'?'high':model==='gemini-3.8-flash'||model==='gemini-3.6-flash'||isGemini4(model)?'medium':'minimal';
  return provider==='anthropic'?(model.startsWith('claude-haiku-4-5')?'off':model==='claude-opus-5-5'||model==='claude-haiku-5-5'?'medium':'high'):'medium';
@@ -34,16 +67,27 @@ export function defaultEffort(provider:Provider,model:string):string{
 // Use one short label throughout the interface. Legacy numeric budgets retain
 // their original API values; the menu presents them as relative levels.
 export function reasoningLabel(_provider:string|undefined,_model:string):string{return 'Reasoning effort';}
-export function reasoningOptionLabel(value:string):string{return ({'1024':'low','4096':'medium','8192':'high','dynamic':'auto'} as Record<string,string>)[value]||value;}
+export function reasoningOptionLabel(value:string):string{return ({'1024':'low','4096':'medium','8192':'high','dynamic':'auto','default':'model default'} as Record<string,string>)[value]||value;}
+// The settings offered for a model outside the Lab's lists (research mode), once the provider's model list
+// names the levels the model takes: those of them the Lab can send. Without that knowledge, every setting.
+// current: the setting in use, which stays on offer.
+export function effortChoices(provider:Provider,model:string,known?:string[],current?:string):string[]{
+ const all=reasoningOptions(provider,model);
+ if(isListedModel(provider,model)||!known)return all;
+ const taken=all.filter(value=>value==='default'||known.includes(value));
+ return taken.length?all.filter(value=>taken.includes(value)||value===current):all;
+}
 
 export function modelLabel(model:string):string{
- if(model.includes('/')){const [vendor,id]=model.split('/');return (vendor==='google'?'Google · ':vendor==='anthropic'?'Anthropic · ':'OpenAI · ')+modelLabel(id.replace(/claude-(haiku|sonnet)-(\d+)\.(\d+)/,'claude-$1-$2-$3'));}
+ if(model.includes('/')){const [vendor,id]=model.split('/');if(vendor!=='google'&&vendor!=='anthropic'&&vendor!=='openai')return model;return (vendor==='google'?'Google · ':vendor==='anthropic'?'Anthropic · ':'OpenAI · ')+modelLabel(id.replace(/claude-(haiku|sonnet)-(\d+)\.(\d+)/,'claude-$1-$2-$3'));}
  const labels:Record<string,string>={'gemini-4-carbon':'Gemini 4 Carbon','gemini-4-argon':'Gemini 4 Argon','gemini-4-hydrogen':'Gemini 4 Hydrogen','gemini-3.6-flash':'Gemini 3.6 Flash','gemini-3.5-flash-lite':'Gemini 3.5 Flash-Lite','gemini-3.1-flash-lite':'Gemini 3.1 Flash-Lite','gemini-3.8-flash':'Gemini 3.8 Flash','gemini-3.5-flash':'Gemini 3.5 Flash','gemini-3.1-pro-preview':'Gemini 3.1 Pro (preview)','gemini-2.5-flash-lite':'Gemini 2.5 Flash-Lite','gemini-2.5-flash':'Gemini 2.5 Flash','gemini-2.5-pro':'Gemini 2.5 Pro'};
  if(model.startsWith('gpt-'))return model.replace(/^gpt-/,'GPT-').replace(/-(luna|terra|sol|astra)$/,(_,name:string)=>' '+name[0].toUpperCase()+name.slice(1));
  if(model==='claude-haiku-4-5-20251001')return 'Claude Haiku 4.5';
  if(model.startsWith('claude-'))return model.replace(/^claude-(\w+)-(\d+)-(\d+)$/,(_,name:string,major:string,minor:string)=>'Claude '+name[0].toUpperCase()+name.slice(1)+' '+major+'.'+minor);
  return labels[model]||model;
 }
+// Research mode names a model outside the Lab's lists by its ID, as the provider knows it.
+export const modelName=(model:string)=>Object.values(PROVIDERS).some(provider=>provider.models.includes(model))?modelLabel(model):model;
 export function geminiModelHint(model:string):string{
  if(model==='gemini-4-carbon')return 'Google’s strongest reasoning model, for the most demanding analysis. It thinks longer than Argon, so it uses more tokens. Paid API access only; complex requests can take several minutes.';
  if(model==='gemini-4-argon')return 'An efficient Gemini 4 reasoning model for demanding analysis, with lower token use than Carbon. Paid API access only; complex requests can take several minutes.';

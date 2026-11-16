@@ -4,7 +4,7 @@
 import {useEffect,useMemo,useState} from 'react';
 import {Download} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {modelLabel,reasoningOptionLabel} from '@/lib/providers';
+import {modelName,reasoningOptionLabel} from '@/lib/providers';
 import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSources,runJob,sourceFields,sourceLabel,statLines,type LevelChoice} from '@/lib/research/agreement';
 import {computeIntervals} from '@/lib/research/intervals';
 import {fileStem,runLines,sourceOf,unitOf,type Dataset} from '@/lib/research/export';
@@ -64,7 +64,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
   if(!stats||!a||!b)return;
   downloadText(`${fileStem(studyName,dataset)}-agreement.csv`,toCsv(agreementTable({a:sourceLabel(a)+(fieldA?` (${fieldLabel(fieldA)})`:''),b:sourceLabel(b)+(fieldB?` (${fieldLabel(fieldB)})`:''),field,dataset:sourceOf(dataset),basis:pairing?.basis},stats,ci,unit)),'text/csv');
  }
- const option=(source:CompareSource)=><option key={sourceKey(source)} value={sourceKey(source)}>{source.kind!=='run'?source.name:source.rep?sourceLabel(source):`Run #${source.run} · ${modelLabel(lines.find(run=>run.number===source.run)?.model||'')}`}</option>;
+ const option=(source:CompareSource)=><option key={sourceKey(source)} value={sourceKey(source)}>{source.kind!=='run'?source.name:source.rep?sourceLabel(source):`Run #${source.run} · ${modelName(lines.find(run=>run.number===source.run)?.model||'')}`}</option>;
  const whole=(s:CompareSource)=>s.kind==='run'&&!s.rep,single=(s:CompareSource)=>s.kind==='run'&&Boolean(s.rep);
  const group=(list:CompareSource[])=><>{list.some(whole)&&<optgroup label="Runs">{list.filter(whole).map(option)}</optgroup>}{list.some(single)&&<optgroup label="Single annotations (retest)">{list.filter(single).map(option)}</optgroup>}{list.some(s=>s.kind==='column')&&<optgroup label="Labels and metadata">{list.filter(s=>s.kind==='column').map(option)}</optgroup>}</>;
  const categories=stats?.categories||[];
@@ -81,7 +81,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
    {lines.length?<div className="research-table-scroll"><table className="research-table research-runs"><thead><tr><th>Run</th><th>Started</th><th>Model</th><th>Prompt</th><th>Answer fields</th><th>Complete</th><th>Failed</th><th>Cost</th>{dataset.kind==='texts'&&<th><span className="sr-only">Actions</span></th>}</tr></thead><tbody>{lines.map(run=><tr key={run.number}>
     <td><strong>#{run.number}</strong></td>
     <td>{when(run.startedAt)}</td>
-    <td>{modelLabel(run.model)}{run.effort&&<span className="research-muted"> · {reasoningOptionLabel(run.effort)}</span>}{(run.repeats||1)>1&&<span className="research-tag" title={`${run.repeats} annotations per ${unit}; the answers shown are the combined ones`}>×{run.repeats}</span>}{run.webSearch&&<span className="research-tag">web search</span>}{run.caching!=='off'&&<span className="research-tag">{run.caching==='on'?'prompt caching':'prompt caching in part'}</span>}{run.temperature!==undefined&&<span className="research-tag">temperature {run.temperature}</span>}{run.maxOutput!==undefined&&<span className="research-tag">max {run.maxOutput.toLocaleString('en-US')} output tokens</span>}{run.summary!=='off'&&<span className="research-tag">{run.summary==='on'?'reasoning summary':'reasoning summary in part'}</span>}{run.mixed&&<span className="research-tag warn" title={`Results in this run were made with different settings. The long results table lists the settings of every ${unit}.`}>settings vary</span>}</td>
+    <td>{modelName(run.model)}{run.effort&&<span className="research-muted"> · {reasoningOptionLabel(run.effort)}</span>}{(run.repeats||1)>1&&<span className="research-tag" title={`${run.repeats} annotations per ${unit}; the answers shown are the combined ones`}>×{run.repeats}</span>}{run.webSearch&&<span className="research-tag">web search</span>}{run.caching!=='off'&&<span className="research-tag">{run.caching==='on'?'prompt caching':'prompt caching in part'}</span>}{run.temperature!==undefined&&<span className="research-tag">temperature {run.temperature}</span>}{run.maxOutput!==undefined&&<span className="research-tag">max {run.maxOutput.toLocaleString('en-US')} output tokens</span>}{run.summary!=='off'&&<span className="research-tag">{run.summary==='on'?'reasoning summary':'reasoning summary in part'}</span>}{run.mixed&&<span className="research-tag warn" title={`Results in this run were made with different settings. The long results table lists the settings of every ${unit}.`}>settings vary</span>}</td>
     <td><details className="research-prompt"><summary>v{run.promptVersion}</summary><pre>{run.prompt||'(no prompt recorded)'}</pre></details></td>
     <td>{answersLabel(run.answerFields,run.answerSettings)}</td>
     <td>{run.done.toLocaleString('en-US')}{run.active>0&&<span className="research-muted"> · {run.active} in progress</span>}{run.fewer>0&&<span className="research-muted"> · {run.fewer.toLocaleString('en-US')} with fewer than {run.repeats} annotations</span>}</td>

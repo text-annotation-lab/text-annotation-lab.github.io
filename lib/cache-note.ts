@@ -7,7 +7,7 @@ const percent=(share:number)=>`${+(share*100).toFixed(1)}%`;
 export function cacheNote(provider:Provider,model:string,prompt:string):{available:boolean;text:string}{
  const support=cacheSupport(provider,model),min=support?.minTokens?.toLocaleString('en-US');
  if(!support)return {available:false,text:'Not available for this model.'};
- if(support.kind==='automatic')return {available:false,text:`Gemini caches repeated prompts by itself${min?`, from ${min} tokens on this model`:''}. There is nothing to switch on or off.`};
+ if(support.kind==='automatic')return {available:false,text:`${support.vendor==='openai'?'OpenAI':support.vendor==='anthropic'?'Anthropic':'Gemini'} caches repeated prompts by itself${min?`, from ${min} tokens on this model`:''}. There is nothing to switch on or off.`};
  const price=priceFor(provider,model),batch=provider!=='openrouter';
  const life=support.vendor==='anthropic'?`5 minutes${batch?' (1 hour in a batch)':''}`:'30 minutes';
  const read=price?.cacheRead===undefined?'at a lower price':`at ${percent(price.cacheRead)} of the input price`;

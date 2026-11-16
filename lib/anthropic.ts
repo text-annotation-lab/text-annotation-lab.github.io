@@ -25,7 +25,7 @@ export async function annotateAnthropic(file:File,prompt:string,model:string,eff
    method:'POST',headers:{'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true','Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('anthropic',model,request)),
    body:JSON.stringify(providerBody({provider:'anthropic',model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge},doc))
   });
-  if(!r.ok)return reply(providerFailure('anthropic',r.status,await providerJson(r),r.headers,request),r.status);
+  if(!r.ok)return reply(providerFailure('anthropic',r.status,await providerJson(r),r.headers,request,model),r.status);
   const out=await r.json() as {id?:string;model?:string;stop_reason?:string;content?:{type:string;text?:string;thinking?:string}[];usage?:{input_tokens?:number;output_tokens?:number;cache_creation_input_tokens?:number;cache_read_input_tokens?:number}};
   const noted:Record<string,unknown>=record?{modelReported:replyCode(out.model),stopReason:replyCode(out.stop_reason)}:{};
   if(record&&request?.summary){const summary=reasoningSummary('anthropic',out);if(summary)noted.reasoningSummary=summary;}

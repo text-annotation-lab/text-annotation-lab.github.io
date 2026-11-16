@@ -3,14 +3,15 @@
 // what a run sent: the same body with marks where the document goes.
 import {annotationSchema,answerInstructions,type AnswerSettings} from './answer-fields';
 import type {Provider} from './providers';
-import {anthropicSystem,openaiPrompt,openRouterSystem,OPENAI_CACHE_MODE,sentRequestSettings,outputLimit,type RequestSettings} from './request-settings';
+import {anthropicSystem,openaiPrompt,openRouterSystem,OPENAI_CACHE_MODE,sentRequestSettings,outputLimit,budgetedClaude,marksOpenAICache,type RequestSettings} from './request-settings';
 import {knowledgeInstructions} from './model-knowledge';
 
 // The document of one request: its text, or a whole PDF (base64) sent as a file.
 export type RequestDocument={filename:string;text:string}|{filename:string;pdf:string};
 // prompt: the annotation prompt with the Lab's instructions added, as sent. schemaPrompt: the prompt the
 // answer format is read from. request: research mode's request settings (lib/request-settings.ts); each is
-// applied only where it changes a request to this provider and model.
+// applied only where it changes a request to this provider and model. effort "default" (a model outside the
+// Lab's lists, research mode): no reasoning setting is sent, and the model uses its own.
 export type BodyOptions={provider:Provider;model:string;effort:string;prompt:string;schemaPrompt:string;answerFields:string[];settings?:AnswerSettings;request?:RequestSettings;knowledge?:boolean;batch?:boolean};
 
 export const requestUrl=(provider:Provider,model:string)=>provider==='openai'?'https://api.openai.com/v1/responses':provider==='anthropic'?'https://api.anthropic.com/v1/messages':provider==='gemini'?`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`:'https://openrouter.ai/api/v1/chat/completions';
@@ -24,31 +25,35 @@ export function providerBody(o:BodyOptions,doc:RequestDocument):Record<string,un
  const request=sentRequestSettings(provider,model,o.request,effort),limit=outputLimit(provider,model,request),temperature=request?.temperature===undefined?{}:{temperature:request.temperature};
  if(provider==='openai'){
   const content=[{type:'input_text',text:note},pdf!==undefined?{type:'input_file',filename:doc.filename,file_data:'data:application/pdf;base64,'+pdf}:{type:'input_text',text}];
-  const prompted=openaiPrompt(o.prompt,[{role:'user',content}],request),reasoning={effort,...(request?.summary?{summary:'auto'}:{})},store=request?.store!==false,format=plain?{}:{text:{format:{type:'json_schema',name:'annotation',strict:true,schema:schema(false)}}};
+  const prompted=openaiPrompt(o.prompt,[{role:'user',content}],request),thought={...(effort==='default'?{}:{effort}),...(request?.summary?{summary:'auto'}:{})},reasoning=Object.keys(thought).length?{reasoning:thought}:{},store=request?.store!==false,format=plain?{}:{text:{format:{type:'json_schema',name:'annotation',strict:true,schema:schema(false)}}};
   // Explicit mode without breakpoints disables cache reads and writes on all
   // supported OpenAI models (GPT-5.6 and later). Each document is new input.
-  // With prompt caching on (research mode), the prompt carries the breakpoint.
-  return o.batch?{model,...prompted,reasoning,...OPENAI_CACHE_MODE,store,max_output_tokens:limit,...format,...temperature}:{model,...OPENAI_CACHE_MODE,...prompted,reasoning,store,max_output_tokens:limit,...format,...temperature};
+  // With prompt caching on (research mode), the prompt carries the breakpoint. Earlier models cache by
+  // themselves and take no cache mode.
+  const cacheMode=marksOpenAICache(model)?OPENAI_CACHE_MODE:{};
+  return o.batch?{model,...prompted,...reasoning,...cacheMode,store,max_output_tokens:limit,...format,...temperature}:{model,...cacheMode,...prompted,...reasoning,store,max_output_tokens:limit,...format,...temperature};
  }
  if(provider==='anthropic'){
-  // Adaptive effort for current models, a fixed thinking budget for Haiku 4.5. Current models return their
-  // reasoning only as a summary, and only when asked; Haiku 4.5 returns one whenever it reasons.
-  const haiku=model.startsWith('claude-haiku-4-5'),thinking=haiku?(effort==='off'?{type:'disabled'}:{type:'enabled',budget_tokens:Number(effort)}):{type:'adaptive',...(request?.summary?{display:'summarized'}:{})};
+  // Adaptive effort for current models, a fixed thinking budget for Haiku 4.5 and earlier models. Current
+  // models return their reasoning only as a summary, and only when asked; the earlier ones return it
+  // whenever they reason.
+  const budgeted=budgetedClaude(model),thinking=budgeted?(effort==='off'?{type:'disabled'}:{type:'enabled',budget_tokens:Number(effort)}):{type:'adaptive',...(request?.summary?{display:'summarized'}:{})};
   const content=[{type:'text',text:note},pdf!==undefined?{type:'document',source:{type:'base64',media_type:'application/pdf',data:pdf}}:{type:'text',text}];
-  return {model,max_tokens:limit,thinking,system:anthropicSystem(o.prompt,request,Boolean(o.batch)),messages:[{role:'user',content}],...(plain?(haiku?{}:{output_config:{effort}}):{output_config:{...(!haiku?{effort}:{}),format:{type:'json_schema',schema:schema(false)}}}),...temperature};
+  return {model,max_tokens:limit,thinking,system:anthropicSystem(o.prompt,request,Boolean(o.batch)),messages:[{role:'user',content}],...(plain?(budgeted?{}:{output_config:{effort}}):{output_config:{...(!budgeted?{effort}:{}),format:{type:'json_schema',schema:schema(false)}}}),...temperature};
  }
  if(provider==='gemini'){
   const parts=[{text:note},pdf!==undefined?{inlineData:{mimeType:'application/pdf',data:pdf}}:{text}];
-  const thinkingConfig={...(model.startsWith('gemini-2.5-')?{thinkingBudget:effort==='off'?0:effort==='dynamic'?-1:Number(effort)}:{thinkingLevel:effort.toUpperCase()}),...(request?.summary?{includeThoughts:true}:{})};
-  return {systemInstruction:{parts:[{text:o.prompt}]},contents:[{role:'user',parts}],generationConfig:{maxOutputTokens:limit,...temperature,thinkingConfig,...(plain?{}:{responseMimeType:'application/json',responseSchema:schema(true)})}};
+  const thinkingConfig={...(model.startsWith('gemini-2.5-')?{thinkingBudget:effort==='off'?0:effort==='dynamic'?-1:Number(effort)}:effort==='default'?{}:{thinkingLevel:effort.toUpperCase()}),...(request?.summary?{includeThoughts:true}:{})};
+  return {systemInstruction:{parts:[{text:o.prompt}]},contents:[{role:'user',parts}],generationConfig:{maxOutputTokens:limit,...temperature,...(Object.keys(thinkingConfig).length?{thinkingConfig}:{}),...(plain?{}:{responseMimeType:'application/json',responseSchema:schema(true)})}};
  }
  // OpenRouter. Whole PDFs use native file input; pinning the engine prevents an automatic switch to separately
  // billed OCR. OpenAI models (GPT-5.6 and later) cache automatically and bill cache writes at 1.25x input; each
  // document is new input, so caching is switched off as on the direct OpenAI path (explicit mode with no
  // breakpoints). With prompt caching on (research mode), the prompt carries the mark instead. The reasoning is
- // left out of the reply unless a summary of it is to be kept.
+ // left out of the reply unless a summary of it is to be kept. With effort "default" no reasoning setting is
+ // sent, so that a model without one still finds a provider.
  const content=pdf!==undefined?[{type:'text',text:note},{type:'file',file:{filename:doc.filename,file_data:'data:application/pdf;base64,'+pdf}}]:note+'\n\n'+text;
- return {model,stream:false,max_tokens:limit,reasoning:{effort,exclude:!request?.summary},provider:{require_parameters:true},...(model.startsWith('openai/')?OPENAI_CACHE_MODE:{}),
+ return {model,stream:false,max_tokens:limit,...(effort==='default'?{}:{reasoning:{effort,exclude:!request?.summary}}),provider:{require_parameters:true},...(model.startsWith('openai/')&&marksOpenAICache(model.slice(7))?OPENAI_CACHE_MODE:{}),
   messages:[{role:'system',content:openRouterSystem(o.prompt,model,request)},{role:'user',content}],
   ...(pdf!==undefined?{plugins:[{id:'file-parser',pdf:{engine:'native'}}]}:{}),
   ...(plain?{}:{response_format:{type:'json_schema',json_schema:{name:'annotation',strict:true,schema:schema(false)}}}),...temperature};

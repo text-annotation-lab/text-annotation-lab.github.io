@@ -2,7 +2,7 @@ import {answerInstructions,type AnswerSettings} from './answer-fields';
 import {remainingEstimateNotice} from './annotation-feedback';
 import {estimate,textTokens,usageSample,add,type Input,type EstimateConfig} from './cost-estimate/engine';
 import {knowledgeInstructions,knowledgeItemText} from './model-knowledge';
-import {PROVIDERS,annotationOutputLimit,type Provider} from './providers';
+import {validModelId,annotationOutputLimit,type Provider} from './providers';
 const visualCache=new WeakMap<File,Promise<Input>>(),textCache=new WeakMap<File,Promise<Input>>();
 async function fileInput(file:File,textOnly=false):Promise<Input>{
  const cache=textOnly?textCache:visualCache;
@@ -28,7 +28,7 @@ async function fileInput(file:File,textOnly=false):Promise<Input>{
 // times: research mode, several annotations per text: how many requests a waiting text gets (absent: one).
 // maxOutput: research mode's output limit, where it is not the Lab's own.
 export async function studentEstimate({provider,model,effort,prompt,rows,answerFields=[],answerSettings,knowledge=false,webSearch=false,cache=false,batch=false,times,maxOutput,signal}:{provider:Provider;model:string;effort:string;prompt:string;rows:any[];answerFields?:string[];answerSettings?:AnswerSettings;knowledge?:boolean;webSearch?:boolean;cache?:boolean;batch?:boolean;times?:(row:any)=>number;maxOutput?:number;signal?:AbortSignal}){
- if(!PROVIDERS[provider].models.includes(model))throw Error('Choose a supported model.');
+ if(!validModelId(provider,model))throw Error('Choose a supported model.');
  const pending=rows.filter(r=>r.status==='pending'),inputs:Input[]=[];
  for(const row of pending){signal?.throwIfAborted();const count=countFromCache(row,{provider,model,effort,prompt,answerFields,answerSettings,knowledge,webSearch});const input:Input=count!==undefined?{tokens:{low:0,high:0},requestTokens:count}:knowledge?{tokens:textTokens(knowledgeItemText(row.fields))}:await fileInput(row.file);for(let n=times?Math.max(1,times(row)):1;n>0;n--)inputs.push(input);}
  const config:EstimateConfig={provider,model,effort,...(cache?{cache,batch}:{}),prompt:prompt.trim()?prompt+answerInstructions(answerFields,answerSettings)+(knowledge?'\n\n'+knowledgeInstructions(webSearch):''):'',defaultExplanation:answerSettings?.plain||answerSettings?.rationale===false?false:true,webSearch,maxTokens:maxOutput??annotationOutputLimit(provider,model),fields:answerSettings?.plain?[{name:'response',type:'string'}]:[...(answerFields.length?answerFields.map(name=>{const spec=answerSettings?.fields?.find(f=>f.name===name);return {name,type:spec?.type==='text'?'string':'category',...(spec?.description?{description:spec.description}:{})};}):[{name:'score',type:'category'}]),...(answerSettings?.rationale===false?[]:[{name:'explanation',type:'string'}])]};

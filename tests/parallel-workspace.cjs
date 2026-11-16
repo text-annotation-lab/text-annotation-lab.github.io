@@ -6,7 +6,7 @@ function transpile(file,require,scope={}){
  const exports={};const code=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8')+(file==='app/page.tsx'?'\nexport {StudyWorkspace};':''),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
  new Function('exports','require',...Object.keys(scope),code)(exports,require,...Object.values(scope));return exports;
 }
-const providers=transpile('lib/providers.ts',require);
+const providers=localModule('lib/providers.ts');
 function localModule(file){return transpile(file,id=>id.startsWith('.')?localModule(path.posix.join(path.posix.dirname(file),id)+'.ts'):require(id));}
 const chunkText=localModule('lib/chunk-text.ts');
 function harness(initial,save=async()=>{},fetcher=async()=>Response.json({score:'POSITIVE',explanation:'Evidence'}),preparePanel=()=>undefined){

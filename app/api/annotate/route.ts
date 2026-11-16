@@ -5,7 +5,7 @@ import {annotationFormatRecord,readAnswerFields,readAnswerSettings,answerInstruc
 import {providerFailure,providerJson,incompleteAnnotation} from '@/lib/provider-errors';
 import { extractText, TextEncodingError, supportedFile as supported } from "@/lib/extract-text";
 
-import {GEMINI_ENABLED,PROVIDERS,reasoningOptions} from '@/lib/providers';
+import {GEMINI_ENABLED,validModelId,reasoningOptions} from '@/lib/providers';
 import {annotateGemini} from '@/lib/gemini';
 import {annotateAnthropic} from '@/lib/anthropic';
 import {knowledgeInstructions,knowledgeDocumentText,validKnowledgeFields,type KnowledgeFields,type KnowledgeResearch} from '@/lib/model-knowledge';
@@ -64,7 +64,8 @@ export async function POST(request:Request){
  if(provider==='anthropic'&&!/^[\x21-\x7e]+$/.test(auth.slice(7)))return json({error:'The Anthropic key contains spaces, line breaks, or unsupported characters. Copy the key again from Claude Console.'},401);
  // Google owns its key format; only enforce safe, nonempty HTTP-header text here.
  if(provider==='gemini'&&!/^[\x21-\x7e]+$/.test(auth.slice(7)))return json({error:'The Gemini key contains spaces, line breaks, or unsupported characters. Copy the key again from Google AI Studio.'},401);
- if(!PROVIDERS[provider].models.includes(String(model))||!reasoningOptions(provider,String(model)).includes(String(effort)))return json({error:'Unsupported model or reasoning setting.'},400);
+ // Any model of the provider, by its ID (research mode offers models outside the Lab's lists).
+ if(!validModelId(provider,model)||!reasoningOptions(provider,model).includes(String(effort)))return json({error:'Unsupported model or reasoning setting.'},400);
  if(!(file instanceof File)||!file.size||file.size>20*1024*1024||!supported.test(file.name))return json({error:'Choose a PDF, DOCX, TXT, MD, HTML, or RTF file up to 20 MB.'},400);
  if(webSearch&&subjectFields){research=await researchKnowledge(provider,String(model),String(effort),auth.slice(7),subjectFields,annotationPrompt);file=new File([knowledgeDocumentText(subjectFields,research)],'subject.txt',{type:'text/plain'});}
  prompt+=answerInstructions(answerFields,answerSettings);
@@ -86,7 +87,7 @@ export async function POST(request:Request){
  doc={filename:file.name,text};}
  const r=await fetch(requestUrl('openai',String(model)),{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('openai',String(model),sent)),body:JSON.stringify(providerBody({provider:'openai',model:String(model),effort:String(effort),prompt,schemaPrompt:annotationPrompt,answerFields,settings:answerSettings,request:sent,knowledge},doc))});
  const out:any=await providerJson(r);
- if(!r.ok)return finish(json(providerFailure('openai',r.status,out,r.headers,sent),r.status));
+ if(!r.ok)return finish(json(providerFailure('openai',r.status,out,r.headers,sent,String(model)),r.status));
  if(!out)return finish(json({error:'OpenAI returned an unreadable response. Check OpenAI Platform usage before retrying; the request may have completed.'},502));
  const noted:Record<string,unknown>=record?{modelReported:replyCode(out.model),stopReason:replyCode([out.status,out.incomplete_details?.reason].filter(part=>typeof part==='string'&&part).join(': '))}:{};
  if(record&&sent?.summary){const summary=reasoningSummary('openai',out);if(summary)noted.reasoningSummary=summary;}
