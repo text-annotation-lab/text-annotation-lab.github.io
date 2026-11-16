@@ -314,3 +314,4 @@
 .other-tab-note{width:calc(100% - 56px);max-width:1384px;margin:16px auto}@media(max-width:780px){.other-tab-note{width:calc(100% - 32px)}}
 /* The system prompt of one's own, under the annotation prompt (research mode). */
 .research-system-prompt{margin:14px 0 0}.research-system-prompt>summary{cursor:pointer;font-size:14px;width:max-content;max-width:100%}.research-system-prompt textarea{min-height:110px;margin-top:8px}.research-system-prompt .hint{margin:6px 0 0}
+.research-warn{color:#805719}

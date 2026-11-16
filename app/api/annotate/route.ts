@@ -1,7 +1,7 @@
 import {allowedOrigin,requestBody} from '@/lib/request-guards';
 import {annotateOpenRouter,openRouterKey} from '@/lib/openrouter';
 import {annotationValidationError} from '@/lib/answer-validation';
-import {annotationFormatRecord,readAnswerFields,readAnswerSettings,answerInstructions,answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from '@/lib/answer-fields';
+import {annotationFormatRecord,readAnswerFields,readAnswerSettings,answerInstructions,readReply,plainAnswer,EMPTY_REPLY,type AnswerSettings} from '@/lib/answer-fields';
 import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from '@/lib/provider-errors';
 import { extractText, TextEncodingError, supportedFile as supported } from "@/lib/extract-text";
 
@@ -63,7 +63,7 @@ export async function POST(request:Request){
   if(!validKnowledgeFields(fields))return json({error:'Provide one subject with unique, nonempty field headings and at least one value.'},400);
   subjectFields=fields;
   file=new File([knowledgeDocumentText(fields,undefined,earlier)],'subject.txt',{type:'text/plain'});
-  prompt+='\n\n'+knowledgeInstructions(webSearch);
+  prompt+='\n\n'+knowledgeInstructions(webSearch,Boolean(answerSettings?.named));
  }
  const provider=f.get('provider')||'openai';
  if(provider!=='openai'&&provider!=='gemini'&&provider!=='anthropic'&&provider!=='openrouter')return json({error:'Unsupported provider.'},400);
@@ -108,8 +108,9 @@ export async function POST(request:Request){
  if(record)noted.output=replyText(raw);
  if(answerSettings?.plain){const plain=plainAnswer(raw);return finish(plain?json({...noted,...plain,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}):json({...noted,error:EMPTY_REPLY},422));}
  let result;try{result=JSON.parse(raw);}catch{return finish(json({...noted,error:'No valid annotation returned. Check OpenAI Logs for a refusal or incomplete output.'},422));}
- if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return finish(json({...noted,error:'Unexpected response format. Check OpenAI Logs.'},422));
- let answers;try{answers=answerValues(result,answerFields);}catch(error){return finish(json({...noted,error:(error as Error).message},422));}
- return finish(json({...noted,rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}));
+ const read=readReply(result,answerFields,answerSettings);
+ if(!read)return finish(json({...noted,error:'Unexpected response format. Check OpenAI Logs.'},422));
+ if(typeof read==='string')return finish(json({...noted,error:read},422));
+ return finish(json({...noted,rawResponse:raw,...read,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}));
  }catch(error){if(error instanceof KnowledgeWebError)return json({error:error.message,...(error.research?{research:error.research,webUsed:true}:{}),...(error.retryAfterMs===undefined?{}:{retryAfterMs:error.retryAfterMs}),...(error.shared?{shared:error.shared}:{})},error.status);return json({error:'Connection interrupted. Check your provider’s usage before retrying; the request may have completed.',...(research?{research,webUsed:true}:{}),...connectionFailure(error)},502);}
 }

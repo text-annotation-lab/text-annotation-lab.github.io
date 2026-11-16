@@ -1,4 +1,4 @@
-import {answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
+import {readReply,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
 import {extractText,TextEncodingError} from './extract-text';
 import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 import {requestTimeout,type RequestSettings} from './request-settings';
@@ -41,8 +41,9 @@ export async function annotateOpenRouter(file:File,prompt:string,model:string,ef
   if(record)accounting.output=replyText(raw);
   if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...accounting,...plain,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}):reply({...accounting,error:EMPTY_REPLY},422);}
   try{result=JSON.parse(raw);}catch{return reply({...accounting,error:'OpenRouter did not return a valid annotation. Check usage before retrying.'},422);}
-  if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return reply({...accounting,error:'OpenRouter returned an unexpected annotation format. Check usage before retrying.'},422);
-  let answers;try{answers=answerValues(result,answerFields);}catch(error){return reply({...accounting,error:(error as Error).message},422);}
-  return reply({...accounting,rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id});
+  const read=readReply(result,answerFields,settings);
+  if(!read)return reply({...accounting,error:'OpenRouter returned an unexpected annotation format. Check usage before retrying.'},422);
+  if(typeof read==='string')return reply({...accounting,error:read},422);
+  return reply({...accounting,rawResponse:raw,...read,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id});
  }catch(error){return reply({error:'OpenRouter connection interrupted or timed out. Refresh your allowance before retrying; the request may have completed and been charged.',...connectionFailure(error)},502);}
 }

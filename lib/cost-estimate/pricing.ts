@@ -40,6 +40,15 @@ export const PRICES:Record<string,Price>={
  'gemini-4-carbon':{...gg(2,10),changes:[{from:'2026-12-01',input:4,output:20}]},
  'gemini-3.1-pro-preview':{...gg(2,12,.1),cacheReadBatch:.1,threshold:200000,longInput:4,longOutput:18},
 };
+// A Claude model's context window in tokens (directly or through OpenRouter), or undefined where the Lab does not
+// know it; then no text is called too long. Claude 5 models, and Opus and Sonnet 4.6 and later, take 1,000,000
+// tokens; earlier Claude models 200,000.
+export function contextWindow(provider:Provider,model:string):number|undefined{
+ const id=provider==='anthropic'?model:provider==='openrouter'&&model.startsWith('anthropic/')?model.slice(10):'';
+ if(/^claude-(fable|mythos)-5|^claude-(opus|sonnet|haiku)-5|^claude-(opus|sonnet)-4[-.][6-9]/.test(id))return 1000000;
+ if(/^claude-/.test(id))return 200000;
+ return undefined;
+}
 export function priceFor(provider:Provider,model:string,date=new Date().toISOString().slice(0,10)):Price|undefined{
  const key=PRICES[model]?model:model.replace(/-\d{4}-\d{2}-\d{2}$/,'');
  const p=PRICES[key];if(!p||p.provider!==provider)return;

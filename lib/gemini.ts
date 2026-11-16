@@ -1,4 +1,4 @@
-import {answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
+import {readReply,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
 import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 import {extractText,TextEncodingError} from './extract-text';
 import {requestTimeout,type RequestSettings} from './request-settings';
@@ -31,8 +31,9 @@ export async function annotateGemini(file:File,prompt:string,model:string,effort
  if(record)noted.output=replyText(raw);
  if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...noted,...plain,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId}):reply({...noted,error:EMPTY_REPLY},422);}
  let result;try{result=JSON.parse(raw);}catch{return reply({...noted,error:'Gemini did not return a valid annotation. Review the response in Google AI Studio before retrying.'},422);}
- if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return reply({...noted,error:'Gemini returned an unexpected annotation format.'},422);
- let answers;try{answers=answerValues(result,answerFields);}catch(error){return reply({...noted,error:(error as Error).message},422);}
- return reply({...noted,rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId});
+ const read=readReply(result,answerFields,settings);
+ if(!read)return reply({...noted,error:'Gemini returned an unexpected annotation format.'},422);
+ if(typeof read==='string')return reply({...noted,error:read},422);
+ return reply({...noted,rawResponse:raw,...read,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId});
  }catch(error){return reply({error:'Gemini connection interrupted or timed out. Check Google AI Studio usage before retrying; the request may have completed.',...connectionFailure(error)},502);}
 }

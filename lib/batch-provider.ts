@@ -1,4 +1,4 @@
-import {answerInstructions,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
+import {answerInstructions,plainAnswer,readReply,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
 import {providerError,incompleteAnnotation} from './provider-errors';
 import {extractText,TextEncodingError} from './extract-text';
 import type {Provider} from './providers';
@@ -110,8 +110,10 @@ export async function createBatch(provider:Provider,key:string,model:string,runI
 }
 // record (research mode): a result also carries the model the provider names, why it stopped, and the text it
 // returned (left out where a plain-text answer already holds that text whole). summary: the requests asked for
-// a summary of the model's reasoning, which is kept as well.
-export function parseBatchAnnotation(provider:Provider,out:any,plain=false,record=false,summary=false):Omit<BatchResult,'id'>{
+// a summary of the model's reasoning, which is kept as well. format: the answer fields and settings of a run in
+// the named format (research mode), whose replies are read by them; without it, a reply is in the earlier format.
+export type ReplyFormat={names:string[];settings?:AnswerSettings};
+export function parseBatchAnnotation(provider:Provider,out:any,plain=false,record=false,summary=false,format?:ReplyFormat):Omit<BatchResult,'id'>{
  const usage=provider==='gemini'?out?.usageMetadata:out?.usage;
  const tokens=provider==='gemini'?usage?.totalTokenCount:provider==='openai'?usage?.total_tokens:
   usage?(usage.input_tokens||0)+(usage.output_tokens||0)+(usage.cache_creation_input_tokens||0)+(usage.cache_read_input_tokens||0):undefined;
@@ -135,11 +137,12 @@ export function parseBatchAnnotation(provider:Provider,out:any,plain=false,recor
  if(record)metadata.output=replyText(raw);
  try{
   const value=JSON.parse(raw);
+  if(format?.settings?.named){const read=readReply(value,format.names,format.settings);if(!read)throw Error();return typeof read==='string'?{...metadata,error:read}:{...metadata,...read};}
   if(!value||typeof value.score!=='string'||typeof value.explanation!=='string')throw Error();
   return {...metadata,answers:value.answers,score:value.score,explanation:value.explanation};
  }catch{return {...metadata,error:'The provider did not return a valid annotation. Check its response before retrying.'};}
 }
-export async function checkBatch(provider:Provider,key:string,id:string,collect:boolean,plain=false,record=false,summary=false):Promise<BatchUpdate>{
+export async function checkBatch(provider:Provider,key:string,id:string,collect:boolean,plain=false,record=false,summary=false,format?:ReplyFormat):Promise<BatchUpdate>{
  const base=provider==='openai'?'https://api.openai.com/v1/batches/':provider==='anthropic'?'https://api.anthropic.com/v1/messages/batches/':'https://generativelanguage.googleapis.com/v1beta/';
  const out=await call(provider,key,base+id);
  const state=String(provider==='openai'?out.status:provider==='anthropic'?out.processing_status:out.metadata?.state||out.state||'processing');
@@ -151,14 +154,14 @@ export async function checkBatch(provider:Provider,key:string,id:string,collect:
  const results:BatchResult[]=[],seen=new Set<string>();let resultBytes=0;
  const append=(result:BatchResult)=>{if(typeof result.id!=='string'||seen.has(result.id))throw new BatchError('The results could not be matched reliably to documents. Check the provider’s batch output.',502);seen.add(result.id);resultBytes+=new TextEncoder().encode(JSON.stringify(result)).length;if(results.length>=MAX_BATCH_ITEMS||resultBytes>(record?MAX_RECORDED_RESULT_BYTES:MAX_RESULT_BYTES))throw new BatchError('The annotations exceed the collection limit. Download them from your provider’s console. Your saved job is unchanged.',413);results.push(result);};
  if(provider==='openai'){
-  for(const fileId of [out.output_file_id,out.error_file_id]){if(!fileId)continue;if(!/^file-[\w-]+$/.test(fileId))throw new BatchError('The provider returned an invalid results reference.',502);for await(const row of resultRows(provider,key,'https://api.openai.com/v1/files/'+fileId+'/content')){append({id:row.custom_id,...(row.error||row.response?.status_code!==200?{error:'This request failed in the batch. Check the provider’s batch results before retrying.'}:parseBatchAnnotation(provider,row.response.body,plain,record,summary))});}}
+  for(const fileId of [out.output_file_id,out.error_file_id]){if(!fileId)continue;if(!/^file-[\w-]+$/.test(fileId))throw new BatchError('The provider returned an invalid results reference.',502);for await(const row of resultRows(provider,key,'https://api.openai.com/v1/files/'+fileId+'/content')){append({id:row.custom_id,...(row.error||row.response?.status_code!==200?{error:'This request failed in the batch. Check the provider’s batch results before retrying.'}:parseBatchAnnotation(provider,row.response.body,plain,record,summary,format))});}}
  }else if(provider==='anthropic'){
   // Use the fixed API origin, never a response-provided results URL.
-  for await(const row of resultRows(provider,key,base+id+'/results')){append({id:row.custom_id,...(row.result?.type==='succeeded'?parseBatchAnnotation(provider,row.result.message,plain,record,summary):{error:`Batch request ${String(row.result?.type||'failed')}. Check provider usage before retrying.`})});}
+  for await(const row of resultRows(provider,key,base+id+'/results')){append({id:row.custom_id,...(row.result?.type==='succeeded'?parseBatchAnnotation(provider,row.result.message,plain,record,summary,format):{error:`Batch request ${String(row.result?.type||'failed')}. Check provider usage before retrying.`})});}
  }else{
   const dest=out.response?.inlinedResponses||out.output?.inlinedResponses||out.dest?.inlinedResponses;
   const rows=Array.isArray(dest)?dest:dest?.inlinedResponses;
-  if(rows){for(const row of rows){append({id:row.metadata?.key,...(row.error?{error:'Gemini could not complete this batch request. Check its batch results before retrying.'}:parseBatchAnnotation(provider,row.response,plain,record,summary))});}}
+  if(rows){for(const row of rows){append({id:row.metadata?.key,...(row.error?{error:'Gemini could not complete this batch request. Check its batch results before retrying.'}:parseBatchAnnotation(provider,row.response,plain,record,summary,format))});}}
  }
  // A terminal batch may legitimately contain no results (e.g., validation failed).
  if(results.some(r=>typeof r.id!=='string')||new Set(results.map(r=>r.id)).size!==results.length)throw new BatchError('The results could not be matched reliably to documents. Check the provider’s batch output.',502);
