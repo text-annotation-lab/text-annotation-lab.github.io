@@ -304,7 +304,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  assert(data.requestParts(textFrame).prompt.startsWith(E_PROMPT.replace('\n','\r\n')),'The prompt of a request is shown with its placeholders, not with marks');
  const pack=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:true});
  const corpus=readCsv(await read(pack,'data/corpus.csv'));
- assert.deepEqual(corpus[0],['doc_id','text','n_characters','source','Year','tone_human','Outlet name','meta_text','file']);
+ assert.deepEqual(corpus[0],['doc_id','text','n_characters','Year','tone_human','Outlet name','meta_text','file'],'No source: no request named the file, and it only repeats the doc_id');
  // The logs: each request as it was sent, with the values kept with its result.
  const logged=jsonLines(await read(pack,'logs/requests.jsonl'));assert.equal(logged.length,4);
  for(const [i,text] of E_TEXTS.entries())assert.equal(JSON.stringify(logged[i].request),JSON.stringify(frames.fillRequest(textFrame.body,{filename:rows[i].name,text,inserts:inserts.insertMap(E_PROMPT,rows[i].inserts)})),'Logged as sent: text '+(i+1));

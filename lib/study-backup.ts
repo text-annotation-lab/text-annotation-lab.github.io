@@ -3,7 +3,9 @@ import {validAnswerFields} from './answer-fields';
 import {FIELD_TYPES,MAX_ANSWER_FIELDS} from './answer-types';
 import {z} from 'zod';
 import {studyWorkspaceKey,WORKING_STUDY_ID,type Study} from './studies';
-const FORMAT='text-annotation-lab-study',VERSION=1;
+// A backup names neither the site nor its build (November 16, 2026): the format has a plain name, and the build
+// recorded with each research result (`lab`) is left out. Backups made before still import.
+const FORMAT='text-annotation-study',EARLIER_FORMAT='text-annotation-lab-study',VERSION=1;
 export const MAX_BACKUP_BYTES=250*1024*1024;
 const secret=/^(?:api[-_]?key|key|keyring|authorization|credentials?|secret|access[-_]?token|refresh[-_]?token|password)$/i;
 const unsafe=new Set(['__proto__','prototype','constructor']);
@@ -53,7 +55,7 @@ export async function encodeStudyBackup(data:StudyBackupData){
    assets.push({id,name:value instanceof File?value.name:'retained-source',type:value.type,lastModified:value instanceof File?value.lastModified:0,bytes:value.size,base64:btoa(binary)});return {$file:id};
   }
   if(Array.isArray(value)){const result=[];for(const item of value)result.push(await encode(item,depth+1));return result;}
-  if(value&&typeof value==='object'){const result:Record<string,any>={};for(const [key,item]of Object.entries(value)){if(secret.test(key)||unsafe.has(key)||item===undefined)continue;result[key]=await encode(item,depth+1);}return result;}
+  if(value&&typeof value==='object'){const result:Record<string,any>={};for(const [key,item]of Object.entries(value)){if(secret.test(key)||unsafe.has(key)||item===undefined||key==='lab'&&typeof item==='string'&&('requestId' in value||'provider' in value))continue;result[key]=await encode(item,depth+1);}return result;}
   return value;
  }
  const workspaces=await encode({texts:cleanWorkspace(data.texts),knowledge:cleanWorkspace(data.knowledge)});
@@ -63,7 +65,7 @@ export async function encodeStudyBackup(data:StudyBackupData){
 export function decodeStudyBackup(json:string):StudyBackupData{
  if(new Blob([json]).size>MAX_BACKUP_BYTES)throw Error('Use a study backup smaller than 250 MB.');
  let data:any;try{data=JSON.parse(json);}catch{throw Error('This is not valid JSON. Choose a .tal-study.json backup, not an Excel or CSV export.');}
- if(data?.format!==FORMAT)throw Error('This file is not a Text Annotation Lab study backup.');
+ if(data?.format!==FORMAT&&data?.format!==EARLIER_FORMAT)throw Error('This file is not a Text Annotation Lab study backup.');
  if(data.version!==VERSION)throw Error(`Unsupported study backup version ${String(data.version)}. This site supports version ${VERSION}. No study was imported.`);
  if(typeof data.name!=='string'||!data.name.trim()||data.name.length>80||typeof data.createdAt!=='string'||!Number.isFinite(Date.parse(data.createdAt))||!data.workspaces||!Array.isArray(data.assets)||data.assets.length>100000)throw Error('The backup has invalid study metadata or missing workspaces.');
  const files=new Map<string,File>();let total=0;

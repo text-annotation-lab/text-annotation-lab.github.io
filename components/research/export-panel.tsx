@@ -5,7 +5,7 @@ import {useEffect,useMemo,useState,useSyncExternalStore} from 'react';
 import {Download} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {extractText} from '@/lib/extract-text';
-import {dateStamp,runLines,slugName,unitOf,type Dataset} from '@/lib/research/export';
+import {dateStamp,publicColumns,runLines,slugName,unitOf,type Dataset} from '@/lib/research/export';
 import {labelPairs} from '@/lib/research/export-agreement';
 import {documentReader,reportableRuns} from '@/lib/research/export-data';
 import {intervalsOf} from '@/lib/research/intervals';
@@ -17,13 +17,19 @@ import {downloadBytes,downloadText} from './download';
 export type ExportSource=Dataset&{requests?:RecordedRequest[]};
 const EMPTY:ExportSource={kind:'texts',rows:[],runs:[],columns:[],samples:[]};
 const DATASET_NAMES={texts:'Uploaded texts',knowledge:'Model knowledge'} as const;
+// The label and metadata columns left out of the supplementary repository, remembered per study and data set in
+// this browser (a column added later is included until it is unticked).
+const leftOutKey=(study:string,kind:string)=>`text-annotation-lab:public-left-out:${kind}:${study}`;
+function readLeftOut(key:string):string[]{
+ try{const value=JSON.parse(localStorage.getItem(key)??'[]');return Array.isArray(value)?value.filter(item=>typeof item==='string'):[];}catch{return [];}
+}
 const when=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(date.getTime())?'':date.toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});};
 
 // The download being built. It is kept outside the page, so leaving the tab and coming back still shows it
 // (the build goes on meanwhile), and a second one cannot start before it is done.
 type Kind='excel'|'research'|'supplementary'|'backup';
 // choices: what the download was started with, shown again when the tab is opened during the build.
-type Choices={run?:number;researchLogs:boolean;options:{texts:boolean;explanations:boolean;logs:boolean}};
+type Choices={run?:number;researchLogs:boolean;options:{texts:boolean;explanations:boolean;logs:boolean;columns?:string[]}};
 type Building={job:{kind:Kind;data:Dataset['kind'];step:string;choices:Choices}|null;error:string};
 let building:Building={job:null,error:''};
 const watchers=new Set<()=>void>();
@@ -51,6 +57,15 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
  const [researchLogs,setResearchLogs]=useState(()=>job?.choices.researchLogs??true),[options,setOptions]=useState(()=>job?.choices.options??{texts:false,explanations:true,logs:false});
  const available=datasets.filter(d=>d.rows.length>0);
  const dataset=available.find(d=>d.kind===kind)||available[0]||datasets[0]||EMPTY;
+ // The columns offered for the supplementary repository, and those left out.
+ const offered=useMemo(()=>publicColumns(dataset).map(c=>dataset.columns[c].name),[dataset.columns,dataset.rows]),storeKey=leftOutKey(studyName||'',dataset.kind);
+ const [leftOut,setLeftOut]=useState<string[]>(()=>readLeftOut(storeKey));
+ useEffect(()=>setLeftOut(readLeftOut(storeKey)),[storeKey]);
+ const toggleColumn=(name:string)=>{
+  const next=leftOut.includes(name)?leftOut.filter(item=>item!==name):[...leftOut,name];setLeftOut(next);
+  try{localStorage.setItem(storeKey,JSON.stringify(next));}catch{/* not remembered: the choice still applies to this download */}
+ };
+ const shownColumns=job?.kind==='supplementary'&&job.choices.options.columns?job.choices.options.columns:offered.filter(name=>!leftOut.includes(name));
  const unit=unitOf(dataset),knowledge=dataset.kind==='knowledge',all=useMemo(()=>runLines(dataset),[dataset.rows,dataset.runs]),runs=useMemo(()=>reportableRuns(dataset),[dataset.rows,dataset.runs]);
  // The run picked; until then the latest finished run with results, else the latest with results. Once shown it
  // stays: a run that is still being sent does not take its place when its first results come in.
@@ -63,7 +78,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
   return {used:pairs.map(pair=>`${fieldLabel(pair.field)} ↔ ${pair.column}`),unused:skipped.map(skip=>`${skip.column} (${skip.reason})`)};
  },[dataset.rows,dataset.columns,dataset.kind,run?.number]);
  const results=all.reduce((n,r)=>n+r.done,0),busy=Boolean(job),here=(which:Kind)=>job?.kind===which&&(which==='backup'||job.data===dataset.kind);
- const choices:Choices={run:run?.number,researchLogs,options},stepLine=(which:Kind,extra='')=>here(which)&&<p className="research-export-step" role="status">{job!.step}…{extra}</p>;
+ const choices:Choices={run:run?.number,researchLogs,options:{...options,columns:shownColumns}},stepLine=(which:Kind,extra='')=>here(which)&&<p className="research-export-step" role="status">{job!.step}…{extra}</p>;
  // The files are made from the study as it is now; the modules that write them are loaded when first needed.
  const context=(progress:(step:string)=>Promise<void>)=>({study:{name:studyName||'Study',dataset,requests:dataset.requests,lab},read:documentReader(dataset,extractText),intervals:intervalsOf,onProgress:progress,backup,now:new Date()});
  const excel=()=>run&&build('excel',dataset.kind,'Excel workbook',choices,async progress=>{
@@ -75,7 +90,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
   downloadBytes(pack.name+'.zip',await zipPackage(pack,progress) as BlobPart,'application/zip');
  });
  const supplementary=()=>run&&build('supplementary',dataset.kind,'supplementary repository',choices,async progress=>{
-  const {buildSupplementary,zipPackage}=await import('@/lib/research/export-packages'),pack=await buildSupplementary(context(progress),run.number,options);
+  const {buildSupplementary,zipPackage}=await import('@/lib/research/export-packages'),pack=await buildSupplementary(context(progress),run.number,{...options,columns:shownColumns});
   downloadBytes(pack.name+'.zip',await zipPackage(pack,progress) as BlobPart,'application/zip');
  });
  const studyBackup=()=>backup&&build('backup',dataset.kind,'study backup',choices,async()=>{
@@ -113,10 +128,14 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
    </section>
    <section className="research-export-card">
     <h3>Supplementary repository</h3>
-    <p className="hint">What a journal or an OSF or Zenodo deposit needs for the chosen run: a record of the settings, the prompt and answer fields, the results, agreement, and a Python script that sends the requests again (with a template marking every inserted value).</p>
+    <p className="hint">What a journal or an OSF or Zenodo deposit needs for the chosen run: a record of the settings, the prompt and output schema, the results, agreement, and a Python script that sends the requests again (with a template marking every inserted value).</p>
     {option(options.texts,texts=>setOptions(now=>({...now,texts})),`Include the ${unit}s`,knowledge?'Off by default. The results name each subject either way; this adds every subject as the requests carried it.':'Off by default: check copyright and privacy before sharing texts publicly.')}
     {option(options.explanations,explanations=>setOptions(now=>({...now,explanations})),'Include the model’s explanations','The explanation written before the answers. An answer field of your own that holds an explanation is always included.')}
     {option(options.logs,logs=>setOptions(now=>({...now,logs})),'Include request and response logs',`These contain the ${unit}s.`)}
+    {offered.length>0&&<details className="research-export-columns"><summary>Label and metadata columns: {shownColumns.length} of {offered.length} included</summary>
+     <p className="hint">In results.csv and data/corpus.csv.</p>
+     {offered.map(name=><label key={name} className="research-check research-export-option"><input type="checkbox" checked={shownColumns.includes(name)} disabled={busy} onChange={()=>toggleColumn(name)}/><span>{name}</span></label>)}
+    </details>}
     <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!run} onClick={()=>{void supplementary();}}><Download size={16}/>{here('supplementary')?'Building…':'Download .zip'}</Button>{stepLine('supplementary')}</div>
    </section>
   </div>

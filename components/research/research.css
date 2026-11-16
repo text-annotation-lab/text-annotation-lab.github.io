@@ -334,3 +334,7 @@
 /* The system prompt of one's own, under the annotation prompt (research mode). */
 .research-system-prompt{margin:14px 0 0}.research-system-prompt>summary{cursor:pointer;font-size:14px;width:max-content;max-width:100%}.research-system-prompt textarea{min-height:110px;margin-top:8px}.research-system-prompt .hint{margin:6px 0 0}
 .research-warn{color:#805719}
+.research-export-columns{margin:4px 0 2px;font-size:14px}
+.research-export-columns summary{cursor:pointer;color:#3c4a63}
+.research-export-columns .hint{margin:6px 0 4px}
+.research-export-columns label{margin:2px 0}

@@ -117,7 +117,7 @@ const race=row=>JSON.parse(row.answers.f0).race;
  const file=async(pack,name)=>{const entry=pack.files.find(item=>item.path===pack.name+'/'+name);assert(entry,name);return typeof entry.data==='string'?entry.data:Buffer.from(entry.data).toString('utf8');};
  const pack=await build(study),metadata=JSON.parse(await file(pack,'metadata.json'));
  assert.equal(metadata.requests.scores_off_scale_left_out_when_combined,2);
- assert((await file(pack,'README.md')).includes('Each text was annotated 3 times; numbers in the answers were combined by the median, other values by majority vote. 2 scores off the scale (for example, a code such as 9 for “can’t tell”) were left out when the answers were combined, like a missing value, where another answer for the same text was on the scale.'));
+ assert((await file(pack,'README.md')).includes('Each text’s 3 annotations were combined: numbers in the answers by the median, other values by majority vote; a score off the scale was left out where another annotation of the same text was on it.'));
  // Without the scale, or with nothing left out: neither.
  const plainPack=await build({...study,dataset:{...dataset,rows,scoreScale:undefined}}),plainMeta=JSON.parse(await file(plainPack,'metadata.json'));
  assert(!('scores_off_scale_left_out_when_combined' in plainMeta.requests));

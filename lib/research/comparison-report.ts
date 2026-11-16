@@ -14,7 +14,6 @@ import {buildWorkbook,type Sheet} from './export-workbook';
 import {BOOTSTRAP_RESAMPLES,type Agreement,type CiStat} from './metrics';
 import {rowForRun,runState,type Row} from './runs';
 import {fieldLabel,valueOf} from './view';
-import {LAB_VERSION} from '../version';
 import {scaleText} from './score-scale';
 
 export type ReportOptions={tolerance:number;groupBy?:string;intervals?:Intervals;onProgress?:(note:string)=>void;now?:Date};
@@ -199,7 +198,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
    mode:facts.processing==='batch'?'batch API':facts.processing==='instant and batch'?'immediate requests and batch API':'immediate requests',
    started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(facts.texts-facts.active),
    ...(removed?{texts_removed_from_study_since:String(removedIn(run.number))}:{}),
-   annotations_per_text:String(run.repeats||1),app_version:facts.labs.join('; ')||'not recorded',
+   annotations_per_text:String(run.repeats||1),
   };
  };
  const sa=settings(runA,factsA),sb=settings(runB,factsB);
@@ -212,11 +211,11 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
   sheets.push({name:`Table ${fieldLabel(field)}`,table:tableOf(all.categories.map(row=>({[corner]:row,...Object.fromEntries(all.categories.map(column=>[column,all.confusion[row]?.[column]??0]))})),[corner,...all.categories]),numbers:column=>column===corner});
  }
 
- const date=(options.now||new Date()).toISOString().slice(0,10),labsA=factsA.labs.join('; '),labsB=factsB.labs.join('; ');
+ const date=(options.now||new Date()).toISOString().slice(0,10);
  const unfinished=(run:RunLine)=>{const state=runState(dataset.rows,run);return state==='running'||state==='submitted'?[{note:`Run #${run.number} was not finished when this report was made (${state==='running'?'it was still running':'its batch was still being processed'}): the figures are those of its results so far and may change once it is done.`}]:[];};
  const plain=compared.some(({p})=>p.scaleSeen),scaled=compared.find(({p})=>p.studyScale)?.p.studyScale;
  const notes:Cells[]=[
-  {note:`Exported from the Text Annotation Lab ${LAB_VERSION} on ${date}${labsA&&labsA===labsB?`; both runs were made with ${labsA}`:labsA&&labsB?`; the runs were made with ${labsA} and ${labsB}`:''}.`},
+  {note:`Exported on ${date}.`},
   {note:`First: ${name(runA)}. Second: ${name(runB)}. ${Many} compared: those with a usable value for the field in both runs. n_texts_in_both_runs: ${many} sent in both runs, including those whose request failed in one (no usable answer).`},
   ...unfinished(runA),...unfinished(runB),
   {note:`Exact agreement: share of ${many} with the same value.${tolerance>0?` Within ${tolerance} point${tolerance===1?'':'s'}: share whose scores differ by at most that much.`:''} Differ by 2 or more points and opposite direction (one below the middle of the scale, the other above): serious disagreements.`},

@@ -100,7 +100,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert.equal(tables.requestsTable(study,undefined,hashes).length,17,'All runs: one row per text and replicate');
  const overview=tables.runsOverview(study,hashes);
  assert.deepEqual(overview.slice(1).map(line=>[line[0],line[overview[0].indexOf('n_texts')],line[overview[0].indexOf('requests_failed')],line[overview[0].indexOf('requests_replaced_by_retries')],line[overview[0].indexOf('model_requested')]]),[[1,3,0,0,'gpt-6-luna'],[2,13,1,1,'claude-haiku-5-5']]);
- assert.equal(overview[0].at(-1),'notes','runs.csv: the shared columns and no others');
+ assert.equal(overview[0].at(-1),'cache_write_tokens','runs.csv: the shared columns and no others');assert(!overview[0].includes('app_version')&&!overview[0].includes('error')&&!overview[0].includes('label'),'No build, and no column that no run has a value in');
  // A name that is already a column of the table gets a prefix, so neither hides the other.
  const clash={name:'Clash',lab:'x',dataset:{kind:'texts',rows:[{id:'a',name:'a.txt',status:'done',runNo:1,...setup,answerFields:['status','document'],answerSettings:undefined,answers:{f0:'open',f1:'letter'},score:'',explanation:'Why.',cells:['x','y']}],runs:[],columns:[{name:'explanation',role:'label'},{name:'Document',role:'meta'}],samples:[]}};
  assert.deepEqual(tables.resultsTable(clash,1)[0],['doc_id','answer_status','document','rationale','explanation','meta_Document','n_ok','n_error']);
@@ -154,9 +154,9 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert.strictEqual(resultSheet[4][0],'2024','A name made of digits stays text');assert.strictEqual(resultSheet[2][5],'0045','So does an identifier with leading zeros');assert.strictEqual(resultSheet[12][3],'NA');
  assert.equal(sheetRows('By replicate').length,14);assert.equal(sheetRows('Agreement').length,4);assert.equal(sheetRows('All runs').length,3);
  const settings=new Map(sheetRows('Settings').map(([key,value])=>[key,value]));
- assert.deepEqual([...settings.keys()].slice(1,19),['Study','Run','Started','Finished','Provider','Model','Effort / reasoning','Thinking','Temperature','Max output tokens','Annotations per text','Prompt caching','Mode','Prompt version','Prompt (sent with each text)','System prompt','Output','Text Annotation Lab version (run)'],'The shared settings in their order');
- assert.equal(settings.get('Model'),'claude-haiku-5-5');assert.equal(settings.get('Max output tokens'),12000);assert.equal(settings.get('Requests'),undefined);assert(String(settings.get('Prompt as sent (with the Lab’s instructions)')).includes('Lab response format'),'A run whose requests carried the Lab’s paragraph on the answer format shows the prompt as sent');
- assert.deepEqual([...settings.keys()].slice(20),['Prompt as sent (with the Lab’s instructions)'],'Nothing else after the shared settings');
+ assert.deepEqual([...settings.keys()].slice(1,18),['Study','Run','Started','Finished','Provider','Model','Effort / reasoning','Thinking','Temperature','Max output tokens','Annotations per text','Prompt caching','Mode','Prompt version','Prompt (sent with each text)','System prompt','Output'],'The shared settings in their order, and no build');
+ assert.equal(settings.get('Model'),'claude-haiku-5-5');assert.equal(settings.get('Max output tokens'),12000);assert.equal(settings.get('Requests'),undefined);assert(String(settings.get('Prompt as sent')).includes('Lab response format'),'A run whose requests carried the Lab’s paragraph on the answer format shows the prompt as sent');
+ assert.deepEqual([...settings.keys()].slice(18),['Prompt as sent'],'Nothing else after the shared settings');
  assert.equal(excel.getWorksheet('Results').views[0].state,'frozen');assert(excel.getWorksheet('Results').autoFilter);
  // A cell holds at most 32,767 characters; a carriage return would show as _x000D_.
  const long=new ExcelJS.Workbook();await long.xlsx.load(await workbook.buildWorkbook([{name:'A/B: [1]*?',table:[['text','n'],['x'.repeat(40000)+'\r\nend','12']],numbers:name=>name==='n'},{name:'a/b: [1]*?',table:[['only header']]}]));
@@ -165,25 +165,26 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  // --- The supplementary repository -------------------------------------------------------------------
  const full=await packages.buildSupplementary(context(),2,{texts:true,explanations:true,logs:true});
  assert.equal(full.name,'tone-study_supplementary_20261116');
- assert.deepEqual(names(full),['README.md','data/corpus.csv','data/files/report.pdf','logs/requests.jsonl','logs/responses.jsonl','metadata.json','prompt/codebook.json','prompt/codebook.md','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt']);
+ assert.deepEqual(names(full),['README.md','data/corpus.csv','data/files/report.pdf','logs/requests.jsonl','logs/responses.jsonl','metadata.json','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt'],'No codebook: the schema gives the fields');
  const metadata=JSON.parse(await read(full,'metadata.json')),kept=study.requests;
- assert.deepEqual([metadata.study,metadata.run.number,metadata.run.status_when_exported,metadata.model.provider,metadata.model.requested,metadata.model.max_output_tokens,metadata.prompt.version,metadata.options.prompt_caching],['Tone study',2,'finished','anthropic','claude-haiku-5-5',12000,2,'off']);
- assert(!('data' in metadata)&&!('cost_usd' in metadata)&&!('samples' in metadata),'Nothing of the Lab’s own: no data source, cost, or list of samples');assert.equal(metadata.study_notes,null,'No samples were drawn');
+ assert.deepEqual([metadata.study,metadata.run.number,metadata.run.status_when_exported,metadata.model.provider,metadata.model.requested,metadata.model.max_output_tokens,metadata.prompt.version,metadata.options.prompt_caching],['Tone study',2,undefined,'anthropic','claude-haiku-5-5',12000,2,'off'],'A finished run says nothing about its status');
+ assert.deepEqual(Object.keys(metadata.run),['number','started_at','finished_at','processing'],'No label, scope, or batch IDs');assert.deepEqual(Object.keys(metadata.prompt),['version','sha256_prefix','answer_format','explanation_requested','answer_fields'],'The fields only because the schema has them under short keys; no system prompt or answer settings (prompt/ has them)');
+ assert(!('data' in metadata)&&!('cost_usd' in metadata)&&!('samples' in metadata),'Nothing of the Lab’s own: no data source, cost, or list of samples');assert(!('study_notes' in metadata)&&!('software' in metadata),'No study notes and nothing that names the Lab or its build');
  assert.deepEqual(metadata.requests,{total:13,ok:12,failed:1,replaced_by_retries:1,sent_in_all:14,first_requested_at:'2026-11-16T09:59:00.000Z',last_completed_at:'2026-11-16T10:02:09.000Z'});
  assert.deepEqual(metadata.requests_as_sent.bodies.map(body=>[body.kind,body.requests,body.recorded,body.url]),[['text',13,true,'https://api.anthropic.com/v1/messages'],['pdf',1,true,'https://api.anthropic.com/v1/messages']]);
- assert.deepEqual(metadata.requests_as_sent.bodies[0].body,JSON.parse(kept[0].body));assert.equal(metadata.software.version,'2026-11-16 abcdef0');assert.deepEqual(metadata.software.versions_used_for_run,[LAB]);
- assert.deepEqual(metadata.corpus,{n_texts_in_run:13,n_texts_with_usable_annotation:12,n_texts_all_requests_failed:1,n_texts_without_result_yet:0});assert.equal(metadata.tokens.known_for_requests,14);
+ const named=JSON.parse(kept[0].body);named.output_config.format.schema='see prompt/output_schema.json';assert.deepEqual(metadata.requests_as_sent.bodies[0].body,named,'The request as sent, with the schema named, not repeated');assert(!('record' in metadata.requests_as_sent));
+ assert.deepEqual(metadata.corpus,{n_texts_in_run:13,n_texts_with_usable_annotation:12,n_texts_all_requests_failed:1},'Counters that are 0 are left out, the totals kept');assert.equal(metadata.tokens.known_for_requests,14);
  assert.equal(await read(full,'prompt/prompt.txt'),PROMPT);assert((await read(full,'prompt/prompt_as_sent.txt')).startsWith(frames.formText(PROMPT)+'\n\nLab response format'));
  assert.deepEqual(JSON.parse(await read(full,'prompt/output_schema.json')),JSON.parse(kept[0].body).output_config.format.schema);
  const resultsCsv=readCsv(await read(full,'results/results.csv'));
- assert((await read(full,'results/results.csv')).startsWith('﻿'),'With a byte-order mark, so Excel reads every letter');assert.deepEqual(resultsCsv[0],results[0]);assert.equal(resultsCsv[1].at(-1),TEXTS[0]);assert.equal(resultsCsv.length,14);
- const byReplicate=readCsv(await read(full,'results/results_by_replicate.csv'));assert.equal(byReplicate.length,14);assert(byReplicate[0].includes('rationale')&&!byReplicate[0].includes('reasoning_summary'),'The supplementary repository leaves out reasoning summaries');
- assert.deepEqual(JSON.parse(await read(full,'prompt/codebook.json')),{outputMode:'structured',includeRationale:true,variables:[{name:'tone',label:'Tone',type:'ordinal',values:['1','2','3','4','5'],description:'Overall tone.'}]});assert.deepEqual(readCsv(await read(full,'results/agreement.csv')).map(line=>line[3]),['compared_with','tone_human','Tone coder2','Tone coder2']);
+ assert((await read(full,'results/results.csv')).startsWith('﻿'),'With a byte-order mark, so Excel reads every letter');assert.deepEqual(resultsCsv[0],results[0].filter(name=>!['n_ok','n_error'].includes(name)),'No n_ok or n_error with one annotation per text');assert.equal(resultsCsv[1].at(-1),TEXTS[0]);assert.equal(resultsCsv.length,14);
+ const byReplicate=readCsv(await read(full,'results/results_by_replicate.csv'));assert.equal(byReplicate.length,14);assert.deepEqual(byReplicate[0],['doc_id','status','error','stop_reason','input_tokens','output_tokens','requested_at','completed_at','response_id'],'One annotation per text: no replicate and no answers (results.csv has them), no column with one value for the run (model_reported among them), none empty throughout');
+ assert.deepEqual(readCsv(await read(full,'results/agreement.csv')).map(line=>line[3]),['compared_with','tone_human','Tone coder2','Tone coder2']);
  assert.deepEqual(readCsv(await read(full,'data/corpus.csv'))[13],['report','','','report.pdf','4','4','north','','good','files/report.pdf']);assert.equal(fileOf(full,'data/files/report.pdf').data,PDF);
  // The logs: every request as it was sent, and what was kept of every reply.
  const sentLines=jsonLines(await read(full,'logs/requests.jsonl')),replies=jsonLines(await read(full,'logs/responses.jsonl'));
  assert.equal(sentLines.length,14);assert.equal(replies.length,14);
- assert.deepEqual(sentLines[0],{doc_id:'text-1',replicate:1,attempt:1,request:frames.fillRequest(kept[0].body,{filename:'text-1.txt',text:TEXTS[0]}),run:2,recorded:'kept when the request was sent',url:'https://api.anthropic.com/v1/messages'});
+ assert.deepEqual(sentLines[0],{doc_id:'text-1',replicate:1,attempt:1,request:frames.fillRequest(kept[0].body,{filename:'text-1.txt',text:TEXTS[0]}),run:2,recorded:true,url:'https://api.anthropic.com/v1/messages'});
  assert.deepEqual(Object.keys(sentLines[0]).slice(0,4),['doc_id','replicate','attempt','request'],'doc_id, replicate, attempt, and the request first');
  assert.deepEqual(sentLines.slice(1,3).map(line=>[line.doc_id,line.attempt,line.sent_again]),[['text-2',1,true],['text-2',2,undefined]]);
  const pdfLine=sentLines[13],pdfData=pdfLine.request.messages[0].content[1].source.data;
@@ -198,7 +199,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert(!/\{\{[A-Z_]+\}\}/.test(script),'Every placeholder is filled');assert.match(await read(full,'scripts/annotate_template.py'),/REQUEST = \{\{REQUEST\}\}/);assert(script.includes('PROVIDER = "anthropic"')&&script.includes('API_KEY_ENV = "ANTHROPIC_API_KEY"')&&script.includes('FIELDS = ["Tone"]')&&script.includes('PLAIN_TEXT = False')&&script.includes('TIMEOUT = 180'));
  // Without the texts, the explanations, and the logs.
  const lean=await packages.buildSupplementary(context(),2,{texts:false,explanations:false,logs:false});
- assert.deepEqual(names(lean),['README.md','metadata.json','prompt/codebook.json','prompt/codebook.md','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt']);
+ assert.deepEqual(names(lean),['README.md','metadata.json','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt']);
  const leanResults=readCsv(await read(lean,'results/results.csv'))[0];assert(!leanResults.includes('text')&&!leanResults.includes('rationale'));assert(!readCsv(await read(lean,'results/results_by_replicate.csv'))[0].includes('rationale'));
  const leanReadme=await read(lean,'README.md');assert(leanReadme.includes('The annotated texts are not included in this package')&&leanReadme.includes('python annotate.py your_corpus.csv')&&!leanReadme.includes('logs/'));
  for(const text of TEXTS)for(const file of lean.files)assert(!(await textOf(file.data)).includes(text.split('\n')[0]),'No text of the corpus is in a package made without the texts: '+file.path);
@@ -207,16 +208,16 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  const repository=await packages.buildResearchRepository(context(),{logs:true});
  assert.equal(repository.name,'tone-study_research_20261116');
  assert.deepEqual(names(repository),['README.md','corpus/corpus.csv','corpus/corpus.jsonl','corpus/files/report.pdf',...['v1','v2'].flatMap(version=>['codebook.json','codebook.md','output_schema.json','prompt.txt'].map(name=>`prompts/${version}/${name}`)),'results/agreement.csv','results/results_all_runs_long.csv','results/results_run-02.xlsx','results/runs.csv',
-  ...['run-01','run-02'].flatMap(run=>['codebook.json','codebook.md','output_schema.json','prompt_as_sent.txt','requests.jsonl','responses.jsonl','results_long.csv','results_wide.csv','run.json'].map(name=>`runs/${run}/${name}`)),'scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt','study-backup.json','study.json'].sort());
+  ...['run-01','run-02'].flatMap(run=>['codebook.json','codebook.md','output_schema.json','prompt_as_sent.txt','requests.jsonl','responses.jsonl','results_long.csv','results_wide.csv','run.json'].map(name=>`runs/${run}/${name}`)),'scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt','software_versions.json','study-backup.json','study.json'].sort());
  assert.equal(await read(repository,'study-backup.json'),'{"format":"backup"}');assert.equal(await read(repository,'prompts/v1/prompt.txt'),before.prompt);
  assert.deepEqual(JSON.parse(await read(repository,'study.json')).runs,[1,2]);assert.equal(readCsv(await read(repository,'results/results_all_runs_long.csv')).length,17);assert.equal(readCsv(await read(repository,'results/runs.csv')).length,3);
  assert.deepEqual(jsonLines(await read(repository,'corpus/corpus.jsonl'))[12],{doc_id:'report',text:null,source:'report.pdf',meta:{tone_human:'4','Tone coder2':'4',region:'north',tone_note:'',quality:'good'},file:'files/report.pdf'});
  assert(!names(repository).includes('results/results_all_runs_wide.csv')&&!names(repository).includes('results/samples.csv'),'No table of the Lab’s own');
  // Run 1 was made before the Lab kept requests: its requests are built again, and say so.
  const earlier=jsonLines(await read(repository,'runs/run-01/requests.jsonl'));
- assert.equal(earlier.length,3);assert.match(earlier[0].recorded,/^built again from the result’s settings/);assert.equal(earlier[0].answer_format_unchanged,true);
+ assert.equal(earlier.length,3);assert.equal(earlier[0].recorded,false);assert.equal(earlier[0].answer_format_unchanged,true);
  assert.deepEqual(earlier[0].request,frames.fillRequest(frames.requestFrame(before,false).body,{filename:'text-1.txt',text:TEXTS[0]}));
- const firstRun=JSON.parse(await read(repository,'runs/run-01/run.json'));assert.match(firstRun.requests_as_sent.record,/^built again from the run’s settings/);assert.equal(firstRun.model.requested,'gpt-6-luna');
+ const firstRun=JSON.parse(await read(repository,'runs/run-01/run.json'));assert.equal(firstRun.requests_as_sent.bodies[0].recorded,false);assert.equal(firstRun.model.requested,'gpt-6-luna');
  assert.match(jsonLines(await read(repository,'runs/run-02/requests.jsonl'))[13].request.messages[0].content[1].source.data,/in this package at corpus\/files\/report\.pdf/);
  const repositoryReadme=await read(repository,'README.md');
  for(const part of ['# Tone study: research repository','- 13 texts, 2 runs, 17 requests with an outcome.','- API keys are never stored or exported.','`study-backup.json` | A backup of the whole study','`results/results_run-02.xlsx` | Excel workbook for run #2','sends the requests of run #2 again'])assert(repositoryReadme.includes(part),'README: '+part);
@@ -238,9 +239,9 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  const plainSetup={...setup,answerFields:['response'],answerSettings:{plain:true}},plainStudy={name:'Plain',lab:'x',dataset:{kind:'texts',columns:[],samples:[],runs:[{...plainSetup,number:1,startedAt:'2026-11-16T10:00:00.000Z'}],
   rows:['One.','Two.'].map((text,i)=>({id:'p'+i,name:`p${i}.txt`,file:new File([text],`p${i}.txt`),status:'done',runNo:1,...plainSetup,answers:{f0:'A free reply about text '+i+', long enough to be prose and not a label, which is why nothing is compared with it here at all.'},startedAt:'2026-11-16T10:00:00.000Z',time:'2026-11-16T10:00:03.000Z',processing:'instant'}))}};
  const plainPack=await packages.buildSupplementary({study:plainStudy,read:data.documentReader(plainStudy.dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:true});
- assert(!names(plainPack).includes('prompt/output_schema.json')&&!names(plainPack).includes('results/agreement.csv'));assert.match(await read(plainPack,'prompt/codebook.md'),/free-text response \(no structured fields\)/);assert(!names(plainPack).includes('prompt/codebook.json'),'No codebook.json for plain text');
- assert((await read(plainPack,'scripts/annotate.py')).includes('PLAIN_TEXT = True'));assert((await read(plainPack,'README.md')).includes('Says that the model returned free text'));
- assert.deepEqual(readCsv(await read(plainPack,'results/results.csv'))[0],['doc_id','response','n_ok','n_error','text'],'A reply that is not JSON stays in the place of the fields');
+ assert(!names(plainPack).includes('prompt/output_schema.json')&&!names(plainPack).includes('results/agreement.csv'));assert(!names(plainPack).some(name=>name.includes('codebook')),'No codebook');
+ assert((await read(plainPack,'scripts/annotate.py')).includes('PLAIN_TEXT = True'));
+ assert.deepEqual(readCsv(await read(plainPack,'results/results.csv'))[0],['doc_id','response','text'],'A reply that is not JSON stays in the place of the fields');
  assert.equal(jsonLines(await read(plainPack,'logs/responses.jsonl'))[0].response.response_text,plainStudy.dataset.rows[0].answers.f0,'The reply of a plain-text run is its answer');
 
  // --- Model knowledge: no texts were supplied, and every file says so ----------------------------------------
@@ -260,14 +261,23 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  const ownReadme=await read(await packages.buildSupplementary({study:{...knowledgeStudy,dataset:ownSet},read:data.documentReader(ownSet,async()=>''),now:NOW},1,{texts:true,explanations:true,logs:true}),'README.md');
  assert(ownReadme.includes('Model knowledge: no texts were supplied.')&&!ownReadme.includes('on judging from learned knowledge'),'A run whose prompt held the paragraph says nothing was added');
  const learnedResults=readCsv(await read(learned,'results/results.csv'));
- assert.deepEqual(learnedResults[0],['doc_id','score','rationale','menace_human','n_ok','n_error','text','subject','Year'],'The shared layout, then the subject and its fields; a heading that only repeats the subject’s name has no column of its own');assert.deepEqual(learnedResults[1],['Jaws','4','Known.','5','1','0',knowledgeText.knowledgeDocumentText(SUBJECT('Jaws')),'Jaws','1975']);
+ assert.deepEqual(learnedResults[0],['doc_id','score','rationale','menace_human','text','subject','Year'],'The shared layout, then the subject and its fields; a heading that only repeats the subject’s name has no column of its own');assert.deepEqual(learnedResults[1],['Jaws','4','Known.','5',knowledgeText.knowledgeDocumentText(SUBJECT('Jaws')),'Jaws','1975']);
  assert.equal(jsonLines(await read(learned,'logs/requests.jsonl'))[0].doc_id,'Jaws');assert.deepEqual(jsonLines(await read(learned,'logs/requests.jsonl'))[0].request,frames.fillRequest(frames.requestFrame({...knowledgeSetup,knowledge:true},false).body,{filename:'subject.txt',text:knowledgeText.knowledgeDocumentText(SUBJECT('Jaws'),undefined,true)}),'A result without a layout was sent in the earlier layout, with the subject as a labeled JSON block');
  // A run whose requests carried web search results has no script: the search was a step of its own.
  const searched=await packages.buildSupplementary(knowledgeContext,2,{texts:false,explanations:true,logs:true});
  assert(!names(searched).some(name=>name.startsWith('scripts/')));assert((await read(searched,'README.md')).includes('No script is included: each request of this run carried web search results'));
  assert(jsonLines(await read(searched,'logs/requests.jsonl'))[0].request.input.some(part=>JSON.stringify(part).includes('Found on the web.')),'The log holds the request with the search results it carried');
- assert.equal(readCsv(await read(searched,'results/results_by_replicate.csv'))[1][readCsv(await read(searched,'results/results_by_replicate.csv'))[0].indexOf('web_search')],'yes');
+ assert(!readCsv(await read(searched,'results/results_by_replicate.csv'))[0].includes('web_search')&&JSON.parse(await read(searched,'metadata.json')).options.web_search===true,'Web search, the same for every request of the run, is given once, in metadata.json');
 
+ // --- Nothing names the Lab or its build, except the research repository's software_versions.json ---------
+ const TRACE=/text annotation lab|\bthe lab\b|lab’s|abcdef0|92310b4|2026-11-16 abcdef0/i;
+ for(const pack of [full,lean,learned,searched,plainPack])for(const file of pack.files)if(!(file.data instanceof File))assert(!TRACE.test(await textOf(file.data)),'No trace of the Lab in '+file.path);
+ for(const file of repository.files)if(!(file.data instanceof File)&&!file.path.endsWith('software_versions.json')&&!file.path.endsWith('.xlsx')&&!/prompt_as_sent\.txt$|requests\.jsonl$|run\.json$/.test(file.path))assert(!TRACE.test(await textOf(file.data)),'No trace of the Lab in '+file.path);
+ const versions=JSON.parse(await read(repository,'software_versions.json'));
+ assert.deepEqual([versions.software,versions.exported_with,versions.runs],['Text Annotation Lab','2026-11-16 abcdef0',[{run:1,made_with:'not recorded'},{run:2,made_with:LAB}]]);assert.match(versions.note,/Keep it private/);
+ assert((await read(repository,'README.md')).includes('`software_versions.json` | Which build of the app made each run'));
+ const bookText=[];for(const sheet of excel.worksheets)sheet.eachRow(row=>row.eachCell(cell=>bookText.push(String(cell.value))));
+ assert(!/text annotation lab|abcdef0|92310b4/i.test(bookText.filter(text=>!text.includes('Lab response format')).join('\n')),'Nor the workbook (the prompt as sent by an earlier run is what the model received)');
  // --- No API key can be part of an export: the files are built from texts, runs, columns, samples, and the kept requests ---
  for(const pack of [full,lean,repository,learned])for(const file of pack.files){const text=await textOf(file.data);assert(!/sk-[A-Za-z0-9]{8}|Bearer [A-Za-z0-9]{8}/.test(text),'No credential in '+file.path);}
 

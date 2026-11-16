@@ -6,6 +6,7 @@ import {useEffect,useMemo,useState,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {applySheet,columnIndex,columnValues,guessKeyColumn,guessRole,markColumn,matchRows,removeColumn,resultsFileColumns,setRole,validColumnName,type Column,type Role,type Sheet} from '@/lib/research/columns';
+import {copiedAnswers} from '@/lib/research/label-guard';
 import {SPREADSHEET_ACCEPT,parseSpreadsheet} from '@/lib/research/parse-table';
 import {allocationNote,drawStratifiedSample,orderStrata,recordSample,sampleRecord,type SampleRecord} from '@/lib/research/sample';
 import type {Row} from '@/lib/research/runs';
@@ -74,10 +75,12 @@ function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,on
  const plan=useMemo(()=>sheet&&chosen?applySheet(all,columns,sheet,keyIndex,roles,{clearUnlisted}):undefined,[sheet,all,columns,keyIndex,roles,clearUnlisted,chosen]);
  // The Lab's own results files hold the model's answers, which are not human labels.
  const exported=useMemo(()=>sheet?resultsFileColumns(sheet.header):[],[sheet]);
+ // A lean results table (the supplementary repository's): a run's answers beside the texts' own columns.
+ const copied=useMemo(()=>sheet&&match&&!exported.length?copiedAnswers(all,columns,sheet,keyIndex,match.rowOf):[],[sheet,match,exported,all,columns,keyIndex]);
  const gone=useMemo(()=>new Set(removed.map(row=>row.id)),[removed]),matchedGone=match?[...match.rowOf.keys()].filter(id=>gone.has(id)).length:0,unlistedGone=plan?plan.unlisted.filter(id=>gone.has(id)).length:0;
  const removedValues=(name:string)=>plan?.removed.get(name)||0;
  function apply(){
-  if(!sheet||!match||!plan||plan.conflicts.length||exported.length)return;
+  if(!sheet||!match||!plan||plan.conflicts.length||exported.length||copied.length)return;
   const result=plan,dropped=[...result.removed.values()].reduce((n,v)=>n+v,0);
   const notes=[`${plural(chosen,'column')} added to ${plural(result.matched,unit)}${matchedGone?` (${matchedGone.toLocaleString('en-US')} of them deleted but kept for their runs)`:''}.`,result.unmatched.length?`${plural(result.unmatched.length,'row')} matched no ${unit}: ${list(result.unmatched)}.`:'',result.ambiguous.length?`${plural(result.ambiguous.length,'row')} matched more than one ${unit} and ${result.ambiguous.length===1?'was':'were'} skipped: ${list(result.ambiguous)}.`:'',result.repeated.length?`${plural(result.repeated.length,unit)} listed more than once with the same values, merged.`:'',result.changed?`${plural(result.changed,'earlier value')} replaced.`:'',dropped?`${plural(dropped,'earlier value')} removed.`:''];
   onApply(result.docs.filter(row=>!gone.has(row.id)),result.columns,samples,notes.filter(Boolean).join(' '),undefined,removed.length?result.docs.filter(row=>gone.has(row.id)):undefined);onClose();
@@ -92,6 +95,7 @@ function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,on
    {sheet&&match&&<>
     <div className="research-field-row"><label htmlFor="labels-key">Column that names the {unit}s</label><select id="labels-key" value={keyIndex} onChange={event=>{const next=Number(event.target.value);setKeyIndex(next);setRoles(current=>current.map((role,i)=>i===next?'':role||(i===keyIndex&&validColumnName(sheet.header[i])?guessRole(sheet.header[i],fields):role)));}}>{sheet.header.map((name,i)=><option key={i} value={i}>{name}</option>)}</select></div>
     {exported.length>0&&<p className="message" role="alert">This is a results file exported from the Lab: it has the column{exported.length===1?'':'s'} {list(exported,4)}. Its values are the model’s answers, not human labels, so it cannot be added. To add metadata from it, delete those columns and the columns with the model’s answers, then add it again.</p>}
+    {copied.length>0&&<p className="message" role="alert">This looks like a results file exported from the Lab: the column{copied.length===1?'':'s'} {list(copied,4)} {copied.length===1?'gives':'give'} a run’s answers exactly, and the other columns are the {unit}s’ own. The model’s answers are not human labels, so the sheet cannot be added. If these are labels that happen to agree with the model everywhere, put them in a column of their own name (for example, tone_human).</p>}
     {plan&&plan.conflicts.length>0&&<p className="message" role="alert">Several rows for the same {unit} with different values ({plan.conflicts.length.toLocaleString('en-US')}): {list(plan.conflicts,3)}. Only one row per {unit} can be used, not one row per coder: put each coder’s labels in a column of their own (tone_coder1, tone_coder2, …). Nothing is added until the sheet is fixed.</p>}
     <p className={match.rowOf.size?'hint':'message'} role="status">{(match.rowOf.size-matchedGone).toLocaleString('en-US')} of {plural(rows.length,unit)} matched by {plural(sheet.rows.length,'row')}{matchedGone?`, and ${plural(matchedGone,`deleted ${unit}`)} kept for ${matchedGone===1?'its':'their'} runs`:''}.{match.unmatched.length?` ${plural(match.unmatched.length,'row')} matched no ${unit}: ${list(match.unmatched.map(row=>sheet.rows[row][keyIndex]||'(blank)'),3)}.`:''}{match.ambiguous.length?` ${plural(match.ambiguous.length,'row')} matched more than one ${unit}.`:''}</p>
     <div className="research-table-scroll"><table className="research-table"><thead><tr><th>Column</th><th>First values</th><th>Add as</th></tr></thead><tbody>{sheet.header.map((name,i)=>i===keyIndex?null:<tr key={i}>
@@ -101,7 +105,7 @@ function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,on
     <p className="hint">For the {unit}s this sheet lists, a column that is already there gets the sheet’s values, and a blank cell leaves no value. {unit==='text'?'Texts':'Subjects'} it does not list keep theirs.{plan&&plan.replaced.length>0?` Already present: ${plan.replaced.map(name=>name+(removedValues(name)?` (${plural(removedValues(name),'earlier value')} removed: blank here${clearUnlisted?' or not listed':''})`:'')).join(', ')}.`:''}{plan&&plan.repeated.length>0?` Listed more than once with the same values, merged: ${list(plan.repeated,3)}.`:''}</p>
     {plan&&plan.unlisted.length>0&&<label className="research-check"><input type="checkbox" checked={clearUnlisted} onChange={event=>setClearUnlisted(event.target.checked)}/> Also remove the values of the {plan.unlisted.length===1?unit:plural(plan.unlisted.length,unit)} this sheet does not list (in {list(plan.replaced,3)}{unlistedGone?`; ${plan.unlisted.length===1?'':unlistedGone===plan.unlisted.length?'all ':`${unlistedGone.toLocaleString('en-US')} of them `}deleted but kept for ${unlistedGone===1?'its':'their'} runs`:''}), for example when it replaces an earlier sheet for all {unit}s</label>}
    </>}
-   <div className="research-dialog-actions"><Button type="button" disabled={!sheet||!match?.rowOf.size||!chosen||!plan||plan.conflicts.length>0||exported.length>0} onClick={apply}>Add {chosen?plural(chosen,'column'):'columns'}</Button><Button type="button" variant="outline" onClick={onClose}>Cancel</Button></div>
+   <div className="research-dialog-actions"><Button type="button" disabled={!sheet||!match?.rowOf.size||!chosen||!plan||plan.conflicts.length>0||exported.length>0||copied.length>0} onClick={apply}>Add {chosen?plural(chosen,'column'):'columns'}</Button><Button type="button" variant="outline" onClick={onClose}>Cancel</Button></div>
   </DialogContent>
  </Dialog>;
 }

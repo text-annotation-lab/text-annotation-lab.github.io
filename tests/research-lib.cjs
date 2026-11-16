@@ -155,7 +155,7 @@ assert.equal(second.eligible,32);assert(second.ids.every(id=>!drawn.ids.includes
 assert.equal(sample.drawStratifiedSample(pool,sampleColumns,{...options,exclude:{column:'party',value:'r'},strata:[]}).eligible,30);
 assert.equal(sample.drawStratifiedSample(pool,sampleColumns,{...options,size:500,strata:[]}).ids.length,40,'Never more than there are');
 const record=sample.sampleRecord(options,drawn,'2026-11-15');
-assert.equal(sample.sampleNote(record),'Sample sample = validation (2026-11-15): 8 of 40 texts drawn at random within party strata (proportional allocation, at least one per stratum); seed 7 (Text Annotation Lab sampling method 1).');
+assert.equal(sample.sampleNote(record),'Sample sample = validation (2026-11-15): 8 of 40 texts drawn at random within party strata (proportional allocation, at least one per stratum); seed 7 (sampling method 1).');
 assert.equal(sample.recordSample([record],{...record,seed:9}).length,1);assert.equal(sample.recordSample([record],{...record,value:'test'}).length,2);
 assert.deepEqual(sample.cleanSamples([record,{column:'',value:'x'},null,'x']),[record]);
 
@@ -259,7 +259,7 @@ assert.deepEqual(longRows[0].slice(0,4),['study','run','run_label','prompt_versi
 assert.deepEqual(longRows.slice(1).map(row=>[row[longAt('doc_id')],row[longAt('run')],row[longAt('score')],row[longAt('model_requested')],row[longAt('status')]]),[['a',1,'MIXED','gpt-6-luna','ok'],['b',1,'NEGATIVE','gpt-6-luna','ok'],['a',2,'POSITIVE','gpt-6.1-terra','ok']],'In the order of the runs');
 const runRows=tables.runsOverview(exportStudy,new Map()),runAt=name=>runRows[0].indexOf(name);
 assert.deepEqual(runRows.slice(1).map(row=>[row[0],row[runAt('model_requested')],row[runAt('requests_ok')]]),[[1,'gpt-6-luna',2],[2,'gpt-6.1-terra',1]]);
-assert.equal(runRows[0].at(-1),'notes');for(const name of ['data','prompt','answer_format','system_prompt','cost_usd'])assert(!runRows[0].includes(name),'runs.csv has no '+name+' column');
+assert(!runRows[0].includes('app_version')&&!runRows[0].includes('notes'),'runs.csv: no build, and no column that no run has a value in');for(const name of ['data','prompt','answer_format','system_prompt','cost_usd'])assert(!runRows[0].includes(name),'runs.csv has no '+name+' column');
 
 assert.deepEqual(exporting.uniqueNames(['document','Year','year','run','year']),['document','Year','year_2','run','year_3']);
 assert.equal(tables.resultsTable({...exportStudy,dataset:{...dataset,columns:[{name:'DOC_ID',role:'meta'},{name:'year',role:'meta'}]}},1)[0][3],'meta_DOC_ID','An imported column never repeats a column name of the Lab’s own');

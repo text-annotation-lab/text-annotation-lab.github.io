@@ -78,4 +78,20 @@ assert.equal(guessRole('pilot',['pilot']),'label','A field may itself be a marke
 const appended=appendTexts([],[],[{name:'x.txt',text:'x',values:['NEGATIVE','1999']}],['tone_gold','year'],text=>({id:'x',name:text.name}),fields);
 assert.deepEqual(appended.columns,[{name:'tone_gold',role:'label'},{name:'year',role:'meta'}]);assert.deepEqual(appended.docs[0].cells,['NEGATIVE','1999']);
 
+// A lean results table (the supplementary repository's results.csv: no n_ok or n_error) is refused too: a column
+// under an answer field's name gives one run's answers exactly, and the other columns are the texts' own.
+{
+ const guard=load('lib/research/label-guard.ts'),score=i=>String((i%7)-3);
+ const many=Array.from({length:30},(_,i)=>({id:'L'+i,name:`art_${i}.md`,cells:[i%2?'early':'late'],status:'done',runNo:1,provider:'openai',model:'m',effort:'low',prompt:'p',answerFields:['tone'],answerSettings:{named:true,fields:[{name:'tone',type:'ordinal',values:['-3','-2','-1','0','1','2','3'],description:''}]},answers:{f0:score(i)},score:''}));
+ const cols=[{name:'era',role:'meta'}];
+ const sheet=(header,value)=>({header:['doc_id',...header],rows:many.map((row,i)=>[`art_${i}`,...header.map(name=>value(name,i))])});
+ const judge=table=>guard.copiedAnswers(many,cols,table,0,columns.matchRows(many,table.rows.map(row=>row[0])).rowOf);
+ const meta=(name,i)=>name==='era'?many[i].cells[0]:score(i);
+ assert.equal(many[0].answers.f0,'-3');
+ assert.deepEqual(judge(sheet(['tone','era'],meta)),['tone'],'The run’s answers beside the texts’ own metadata: refused');
+ assert.deepEqual(judge(sheet(['tone_gold','era'],meta)),[],'A coder’s column under its own name is accepted');
+ assert.deepEqual(judge(sheet(['tone','era'],(name,i)=>name==='tone'&&i===4?'3':meta(name,i))),[],'Labels that differ from the model’s anywhere are accepted');
+ assert.deepEqual(judge(sheet(['tone','coder'],(name,i)=>name==='coder'?'x':score(i))),[],'A sheet with a column of its own may be a coder’s');
+}
+
 console.log('Label sheet checks passed.');
