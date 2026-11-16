@@ -156,9 +156,9 @@
 .research-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:22px 0 0}
 .research-filters select,.research-selectors select,.research-selectors input{font:inherit;font-size:13px;padding:7px 28px 7px 10px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#19334f;max-width:220px;min-height:36px}
 .research-search{display:flex!important;align-items:center;gap:6px;margin:0!important;padding:0 10px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#64728b;min-height:36px;font-weight:400!important}
-.research-search input{border:0!important;padding:6px 0!important;width:150px!important;font-size:13px;outline:0;background:transparent}
+.research-search input{border:0!important;padding:6px 0!important;width:120px!important;font-size:13px;outline:0;background:transparent}
 .research-search:focus-within{outline:2px solid #003d73;outline-offset:1px}
-.research-pick{display:inline-flex!important;align-items:center;gap:8px;margin:0 0 0 6px!important;font-size:13px!important;font-weight:400!important;color:#52617c}
+.research-filters .research-pick{max-width:200px}
 .research-filter-count{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:13px;color:#64728b}
 .research-filter-count:empty{display:none}
 /* Chart, Excel, and the menu for clearing: at the right end of the row above the table. */
