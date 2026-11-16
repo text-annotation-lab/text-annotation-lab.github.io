@@ -2,7 +2,7 @@ import {allowedOrigin,requestBody} from '@/lib/request-guards';
 import {annotateOpenRouter,openRouterKey} from '@/lib/openrouter';
 import {annotationValidationError} from '@/lib/answer-validation';
 import {annotationFormatRecord,readAnswerFields,readAnswerSettings,answerInstructions,answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from '@/lib/answer-fields';
-import {providerFailure,providerJson,incompleteAnnotation} from '@/lib/provider-errors';
+import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from '@/lib/provider-errors';
 import { extractText, TextEncodingError, supportedFile as supported } from "@/lib/extract-text";
 
 import {GEMINI_ENABLED,validModelId,reasoningOptions} from '@/lib/providers';
@@ -105,5 +105,5 @@ export async function POST(request:Request){
  if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return finish(json({...noted,error:'Unexpected response format. Check OpenAI Logs.'},422));
  let answers;try{answers=answerValues(result,answerFields);}catch(error){return finish(json({...noted,error:(error as Error).message},422));}
  return finish(json({...noted,rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}));
- }catch(error){if(error instanceof KnowledgeWebError)return json({error:error.message,...(error.research?{research:error.research,webUsed:true}:{}),...(error.retryAfterMs===undefined?{}:{retryAfterMs:error.retryAfterMs})},error.status);return json({error:'Connection interrupted. Check your provider’s usage before retrying; the request may have completed.',...(research?{research,webUsed:true}:{})},502);}
+ }catch(error){if(error instanceof KnowledgeWebError)return json({error:error.message,...(error.research?{research:error.research,webUsed:true}:{}),...(error.retryAfterMs===undefined?{}:{retryAfterMs:error.retryAfterMs}),...(error.shared?{shared:error.shared}:{})},error.status);return json({error:'Connection interrupted. Check your provider’s usage before retrying; the request may have completed.',...(research?{research,webUsed:true}:{}),...connectionFailure(error)},502);}
 }

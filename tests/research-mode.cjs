@@ -272,6 +272,66 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.equal(stuck.calls.length,8);assert.equal(stuck.latest().docs[0].status,'error');assert.equal(stuck.latest().docs[0].error,'OpenAI reports a rate limit.');
  }
 
+ // When a text fails, research mode marks it and carries on. A failure every request would meet (the reply marks
+ // it `shared`) stops the run once the first three requests, for at least two texts, all failed that way.
+ {
+  const until=async(h,ready)=>{for(let n=0;n<200&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
+  const five=extra=>({docs:Array.from({length:5},(_,i)=>({id:String(i),name:`text-${i}.txt`,file:new File([`Text ${i}`],`text-${i}.txt`),status:'pending'})),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1,...extra});
+  const research=async h=>{await h.flush();h.find(n=>n.type==='ModeSwitch').props.onChange(true);await h.flush();h.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-carry'},false);await h.flush();};
+  const notices=h=>h.all(n=>n.props?.role==='alert'||n.props?.role==='status').map(n=>h.text(n)),statuses=h=>(h.latest()?.docs||[]).map(doc=>doc.status),ended=h=>()=>Boolean(h.latest())&&!h.latest().docs.some(doc=>doc.status==='running')&&h.all(n=>['Button','button'].includes(n.type)&&h.text(n).trim()==='Pause').length===0;
+  const fine=()=>Response.json({score:'POSITIVE',explanation:'Evidence'}),refusal=()=>Response.json({error:'OpenAI rejected the API key.',shared:'account'},{status:401}),named=options=>options.body.get('file').name;
+  // A failure about one text: the others are annotated, the notice counts it, and "Remaining" sends it again.
+  let failing=true;const one=harness(five(),async()=>{},async(url,options)=>failing&&named(options)==='text-1.txt'?Response.json({error:'OpenAI reports that the input is too large.'},{status:413}):fine());
+  await research(one);one.button('Remaining').props.onClick();await until(one,()=>one.latest()?.docs[4].status==='done');await until(one,ended(one));
+  assert.equal(one.calls.length,5);assert.deepEqual(statuses(one),['done','error','done','done','done']);assert.equal(one.latest().docs[1].error,'OpenAI reports that the input is too large.');
+  assert(notices(one).includes('1 of 5 requests failed, and the run carried on. “Remaining” sends it again.'),notices(one).join(' | '));
+  assert(one.text(one.button('Remaining')).includes('Remaining (1)'));failing=false;one.button('Remaining').props.onClick();await until(one,()=>one.latest().docs[1].status==='done');await until(one,ended(one));
+  assert.equal(one.calls.length,6);assert.deepEqual(one.latest().docs.map(doc=>doc.runNo),[1,1,1,1,1],'The text sent again joins the same run');assert.equal(one.latest().docs[1].history.length,1);
+  // Every request fails the same way: three requests, and the rest of the texts wait.
+  const refused=harness(five(),async()=>{},async()=>refusal());
+  await research(refused);refused.button('Remaining').props.onClick();await until(refused,()=>notices(refused).some(text=>text.startsWith('Stopped:')));await until(refused,ended(refused));
+  assert.equal(refused.calls.length,3);assert.deepEqual(statuses(refused),['error','error','error','pending','pending']);
+  assert(notices(refused).includes('Stopped: the first 3 requests all failed the same way, which points to the settings or the account rather than the texts. Requests under way will finish, and completed results are kept. See the error of a failed text before running again.'));
+  assert(!JSON.stringify(refused.latest().docs.map(({file,...doc})=>doc)).includes('"shared"'),'The mark is never kept with a result');
+  // No connection: the notice names it.
+  const offline=harness(five(),async()=>{},async()=>Response.json({error:'Connection interrupted.',shared:'connection'},{status:502}));
+  await research(offline);offline.button('Remaining').props.onClick();await until(offline,()=>notices(offline).some(text=>text.startsWith('Stopped:')));await until(offline,ended(offline));
+  assert.equal(offline.calls.length,3);assert(notices(offline).some(text=>text.startsWith('Stopped: the first 3 requests all failed the same way, which points to the connection rather than the texts.')));
+  // A reply without a mark is not read for one, whatever its message says (here: a timeout, which the route does not mark).
+  const timed=harness(five(),async()=>{},async()=>Response.json({error:'Connection interrupted. Check your provider’s usage before retrying; the request may have completed.'},{status:502}));
+  await research(timed);timed.button('Remaining').props.onClick();await until(timed,()=>statuses(timed).every(status=>status==='error'));await until(timed,ended(timed));
+  assert.equal(timed.calls.length,5);assert(notices(timed).includes('All 5 requests failed. “Remaining” sends them again.'));
+  // A request that never got as far as a reply (the page itself is offline): the connection.
+  const unsent=harness(five(),async()=>{},async()=>{throw new TypeError('Failed to fetch');});
+  await research(unsent);unsent.button('Remaining').props.onClick();await until(unsent,()=>notices(unsent).some(text=>text.startsWith('Stopped:')));await until(unsent,ended(unsent));
+  assert.equal(unsent.calls.length,3);assert(notices(unsent).some(text=>text.includes('which points to the connection rather than the texts.')));
+  // An HTTP 400 counts only when it repeats with the same message: two different ones do not stop a run.
+  let at=0;const varied=harness(five(),async()=>{},async()=>Response.json({error:'OpenAI rejected the request.',shared:'same:'+(at++%2?'aaaaaaaa':'bbbbbbbb')},{status:400}));
+  await research(varied);varied.button('Remaining').props.onClick();await until(varied,()=>statuses(varied).every(status=>status==='error'));await until(varied,ended(varied));
+  assert.equal(varied.calls.length,5);assert(notices(varied).includes('All 5 requests failed. “Remaining” sends them again.'));
+  // One result among the first requests: the failures are not about every request, and the run goes through.
+  at=0;const mixed=harness(five(),async()=>{},async()=>at++===0?fine():refusal());
+  await research(mixed);mixed.button('Remaining').props.onClick();await until(mixed,()=>statuses(mixed).join()==='done,error,error,error,error');await until(mixed,ended(mixed));
+  assert.equal(mixed.calls.length,5);assert(notices(mixed).includes('4 of 5 requests failed, and the run carried on. “Remaining” sends them again.'));
+  // Several annotations of one text never stop a run: three failures of the first text, and the second text is still sent.
+  const repeated=harness(five({repeats:3}),async()=>{},async()=>refusal());
+  await research(repeated);repeated.button('Remaining').props.onClick();await until(repeated,()=>notices(repeated).some(text=>text.startsWith('Stopped:')));await until(repeated,ended(repeated));
+  assert.equal(repeated.calls.length,4);assert.deepEqual(statuses(repeated),['error','error','pending','pending','pending']);assert(notices(repeated).some(text=>text.startsWith('Stopped: the first 4 requests all failed the same way')));
+  // Several at once: the requests under way when the run stops finish and are kept.
+  const many=harness(five({concurrency:4}),async()=>{},async()=>refusal());
+  await research(many);many.button('Remaining').props.onClick();await until(many,()=>notices(many).some(text=>text.startsWith('Stopped:')));await until(many,ended(many));
+  assert(many.calls.length>=3&&many.calls.length<=4,String(many.calls.length));assert.equal(statuses(many).filter(status=>status==='error').length,many.calls.length);assert.equal(statuses(many).at(-1),'pending');
+  // "Annotate next" sends one request and says that it failed.
+  const next=harness(five(),async()=>{},async()=>refusal());
+  await research(next);next.button('Annotate next').props.onClick();await until(next,()=>statuses(next)[0]==='error');await until(next,ended(next));
+  assert.equal(next.calls.length,1);assert(notices(next).includes('The request failed. “Remaining” sends it again.'));
+  // The standard Lab stops at the first failure, whatever the reply carries.
+  const first=harness(five(),async()=>{},async()=>refusal());await first.flush();first.find(n=>n.props?.id==='key').props.onChange({target:{value:'sk-first'}});await first.flush();
+  await first.button('Run all').props.onClick();await first.flush();
+  assert.equal(first.calls.length,1);assert.deepEqual(statuses(first),['error','pending','pending','pending','pending']);assert(!('shared' in first.latest().docs[0]));
+  assert(notices(first).includes('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.'));
+ }
+
  // Annotations per text: each text is sent several times and its answers are combined; what is missing is filled in.
  {
   const until=async(h,ready)=>{for(let n=0;n<200&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
@@ -284,10 +344,12 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   await once.button('Run all').props.onClick();await once.flush();
   assert.equal(once.calls.length,3);assert(once.latest().docs.every(doc=>doc.status==='done'&&!('annotations' in doc)&&doc.repeats===undefined&&doc.score==='POSITIVE'));assert.equal(once.latest().runs[0].repeats,undefined);assert.equal(once.latest().repeats,3,'The stored number is kept for research mode');
 
-  // Research mode, one request at a time. The second annotation of the second text fails.
+  // Research mode, one request at a time. The second annotation of the second text fails, and the person
+  // pauses the run there (a failure by itself no longer stops a run; see the carry-on checks below).
   const plan={'text-0.txt':['POSITIVE','NEGATIVE','POSITIVE'],'text-1.txt':['POSITIVE',null,'POSITIVE','NEGATIVE'],'text-2.txt':['NEGATIVE','NEGATIVE','NEGATIVE']},sent=new Map();
   const r=harness(stored(),async()=>{},async(url,options)=>{
    const name=options.body.get('file').name,at=sent.get(name)||0,score=at<plan[name].length?plan[name][at]:'POSITIVE';sent.set(name,at+1);
+   if(!score){await r.flush();r.button('Pause').props.onClick();}
    return score?Response.json({score,explanation:`${name} ${at+1}`,tokens:10,usage:{input_tokens:8,output_tokens:2},responseId:`r-${name}-${at+1}`}):Response.json({error:'The request failed.'},{status:400});
   });
   await research(r);
@@ -296,7 +358,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.equal(String(select().value),'3');assert.deepEqual(select().children.map(option=>String(option.props.value)),['1','2','3','4','5','6','7','8','9','10']);assert(r.text(r.button('Processing options')).includes('3 annotations per text'));
   assert(remaining(r).includes('Remaining (3)'));r.button('Remaining').props.onClick();await until(r,()=>r.latest()?.docs[1].status==='done');
   let docs=r.latest().docs;
-  assert.equal(r.calls.length,5,'Three requests for the first text, two for the second; nothing is started after a failure');assert.deepEqual(docs.map(doc=>doc.status),['done','done','pending']);
+  assert.equal(r.calls.length,5,'Three requests for the first text, two for the second; nothing is started after the pause');assert.deepEqual(docs.map(doc=>doc.status),['done','done','pending']);
   assert.deepEqual([docs[0].score,docs[0].explanation,docs[0].tokens,docs[0].repeats,docs[0].runNo],['POSITIVE','text-0.txt 1',30,3,1]);assert(near(docs[0].consistency.score,2/3));
   assert.deepEqual(docs[0].annotations.map(a=>[a.n,a.status,a.score,a.responseId,a.requestId,a.runId===docs[0].runId,a.processing]),[[1,'done','POSITIVE','r-text-0.txt-1','q1',true,'instant'],[2,'done','NEGATIVE','r-text-0.txt-2','q1',true,'instant'],[3,'done','POSITIVE','r-text-0.txt-3','q1',true,'instant']]);
   for(const key of ['usage','responseId','rawResponse'])assert.equal(docs[0][key],undefined,key+' belongs to each annotation');assert.deepEqual(docs[0].annotations[0].usage,{input_tokens:8,output_tokens:2});
@@ -304,7 +366,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.equal(docs[2].annotations,undefined);assert.equal(docs[2].repeats,undefined);assert.equal(docs[0].runSize,9,'A run’s size counts requests');
   assert.deepEqual(r.latest().runs.map(run=>[run.number,run.repeats]),[[1,3]]);assert.equal(r.latest().repeats,3);
   assert(r.all(n=>n.type==='span'&&String(n.props.className).includes('partial')).some(n=>r.text(n)==='1 of 3 annotations'),'A text with fewer annotations than planned says so');
-  assert(r.all(n=>n.props?.role==='alert'||n.props?.role==='status').some(n=>r.text(n).includes('Stopped starting new annotations after an error.')));
+  assert(r.all(n=>n.props?.role==='alert'||n.props?.role==='status').some(n=>r.text(n)==='Paused. Active annotations have finished; completed results are kept. 1 of 5 requests failed. “Remaining” sends it again.'));
   // Remaining: the two missing annotations of the second text, then the third text; all in the same run.
   assert(remaining(r).includes('Remaining (2)'));r.button('Remaining').props.onClick();await until(r,()=>r.latest()?.docs[2].status==='done');
   docs=r.latest().docs;

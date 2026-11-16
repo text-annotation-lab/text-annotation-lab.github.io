@@ -31,6 +31,7 @@ import {ResearchTools,ResearchDetail,ResearchRequestOptions,ResearchRequestPrevi
 import {cleanRequestSettings,sentRequestSettings,requestSummary,type RequestSettings} from '@/lib/request-settings';
 import {requestFrame} from '@/lib/request-frame';
 import {cleanRequests,recordRequest,usedRequests,replyNotes,NOT_RECORDED,type RecordedRequest,type Recorded} from '@/lib/research/requests';
+import {carriedOnNotice,connectionFailure,earlyStopNotice,earlyStopper,takeShared} from '@/lib/research/early-stop';
 import {promptInserts,fixedLength,insertMap} from '@/lib/prompt-inserts';
 import {insertValues} from '@/lib/research/inserts';
 import {LAB_VERSION} from '@/lib/version';
@@ -117,6 +118,9 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   lock.current=true;stop.current=false;setBusy(true);reportBusy(true);setNotice('');
   const runId=newId(),runStartedAt=new Date().toISOString(),runSize=all?latest.current.filter(r=>r.status==='pending').length:1;
   let claimed=0,failed=false;const noted=recorded(false);
+  // Research mode: a failed subject is marked and the run carries on; it stops only when its first requests all
+  // failed in a way every request would meet. answered, failures: the requests that came back, and those that failed.
+  const early=research?earlyStopper():undefined;let answered=0,failures=0;
   try{await runAnnotationQueue({
    concurrency:all?parallel:1,
    shouldStop:()=>stop.current,
@@ -130,15 +134,27 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
     return item;
    },
    perform:async(item,place)=>{
+   // The mark of a failure every request of the run would meet. It is read off the reply and never kept.
+   // back: a reply came back (a request that did not get as far as a reply may have had no connection).
+   let shared:string|undefined,back=false;
    try{const form=new FormData();form.set('mode','model-knowledge');form.set('fields',JSON.stringify(item.fields));form.set('provider',provider);form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('webSearch',String(webSearch));if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,item,columns)));
     const sent=await sendAnnotation(()=>fetch('/api/annotate',{method:'POST',headers:{Authorization:`Bearer ${apiKey.trim()}`},body:form}),place);
     // The run stopped while this subject waited out a rate limit: it was not annotated and waits again as before.
     if(!sent){latest.current=latest.current.map(x=>x.id===item.id?item:x);setItems(latest.current);return;}
+    back=true;shared=takeShared(sent.out);
     const response=sent.response,out=sent.out as {responseFormat?:string;rawResponse?:string;answers?:Record<string,string>;score?:string;explanation?:string;error?:string;tokens?:number;usage?:any;responseId?:string;webUsed?:boolean;research?:KnowledgeResearch}|null;if(out?.usage)update(item.id,{usage:out.usage,tokens:out.tokens,responseId:out.responseId});if(research&&out)update(item.id,replyNotes(out));if(out?.rawResponse&&!response.ok)update(item.id,{...out,time:new Date().toISOString()});if(out?.research)update(item.id,{research:out.research,webUsed:out.webUsed});if(!out||!response.ok||typeof out.score!=='string'||typeof out.explanation!=='string')throw Error(out?.error||'The response could not be read. Check provider usage before retrying.');
     update(item.id,{status:'done',responseFormat:out.responseFormat,answers:answerValues(out,sentFields),score:out.score,explanation:out.explanation,tokens:out.tokens,usage:out.usage,responseId:out.responseId,webUsed:out.webUsed===true,time:new Date().toISOString()});
-   }catch(error){stop.current=true;failed=true;update(item.id,{status:'error',error:error instanceof Error?error.message:'Request failed.'});setSelected(item.id);setNotice('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.');}
+    answered++;early?.(item.id);
+   }catch(error){
+    if(early){
+     update(item.id,{status:'error',error:error instanceof Error?error.message:'Request failed.'});
+     answered++;failures++;
+     const stopped=early(item.id,back?shared:connectionFailure(error).shared);
+     if(stopped&&!failed){stop.current=true;failed=true;setNotice(earlyStopNotice(stopped,'subject'));}
+    }else{stop.current=true;failed=true;update(item.id,{status:'error',error:error instanceof Error?error.message:'Request failed.'});setSelected(item.id);setNotice('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.');}
    }
-  });}finally{if(stop.current&&!failed)setNotice('Paused. Active annotations have finished; completed results are kept.');lock.current=false;setBusy(false);reportBusy(false);}
+   }
+  });}finally{if(stop.current&&!failed)setNotice('Paused. Active annotations have finished; completed results are kept.'+(failures?' '+carriedOnNotice(failures,answered,'knowledge',true):''));else if(failures&&!failed)setNotice(carriedOnNotice(failures,answered,'knowledge'));lock.current=false;setBusy(false);reportBusy(false);}
  }
  async function batchRequest(action:string,job:BatchJob,extra?:FormData){
   const form=extra||new FormData();form.set('action',action);form.set('provider',job.provider);if(job.id)form.set('id',job.id);if(job.answerSettings?.plain)form.set('plain','true');if(research&&action==='collect'){form.set('record','true');if(job.requestSettings?.summary)form.set('summary','true');}

@@ -1,5 +1,5 @@
 import {answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
-import {providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
+import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 import {extractText,TextEncodingError} from './extract-text';
 import {requestTimeout,type RequestSettings} from './request-settings';
 import {providerBody,requestUrl,replyCode,replyText,reasoningSummary,type RequestDocument} from './request-frame';
@@ -39,5 +39,5 @@ export async function annotateAnthropic(file:File,prompt:string,model:string,eff
   if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return reply({...noted,error:'Claude returned an unexpected annotation format.'},422);
   let answers;try{answers=answerValues(result,answerFields);}catch(error){return reply({...noted,error:(error as Error).message},422);}
  return reply({...noted,rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens,usage:u,responseId:out.id});
- }catch{return reply({error:'Anthropic connection interrupted or timed out. Check Claude Console usage before retrying; the request may have completed.'},502);}
+ }catch(error){return reply({error:'Anthropic connection interrupted or timed out. Check Claude Console usage before retrying; the request may have completed.',...connectionFailure(error)},502);}
 }

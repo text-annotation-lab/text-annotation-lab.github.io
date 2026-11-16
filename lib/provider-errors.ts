@@ -1,5 +1,6 @@
 import {isListedModel,type Provider} from './providers';
 import type {RequestSettings} from './request-settings';
+export {connectionFailure} from './research/early-stop';
 const names={openrouter:'OpenRouter',openai:'OpenAI',anthropic:'Anthropic',gemini:'Gemini'};
 const consoles={openrouter:'OpenRouter',openai:'OpenAI Platform',anthropic:'Claude Console',gemini:'Google AI Studio'};
 // Interpret upstream diagnostics, but never display arbitrary provider text.
@@ -130,10 +131,47 @@ export function retryWait(provider:Provider,status:number,body:unknown,headers?:
  const wait=namedWait(e,details,headers)??0;
  return wait>MAX_AUTOMATIC_WAIT_MS?undefined:Math.ceil(wait);
 }
-// The reply for a failed provider request: the message, and `retryAfterMs` when a paced run may send it again.
-export function providerFailure(provider:Provider,status:number,body:unknown,headers?:Headers,request?:RequestSettings,model?:string):{error:string;retryAfterMs?:number}{
- const wait=retryWait(provider,status,body,headers);
- return {error:providerError(provider,status,body,headers,request,model),...(wait===undefined?{}:{retryAfterMs:wait})};
+// Research mode, where a run carries on past a failed text (lib/research/early-stop.ts): whether a failed request
+// says something about every request of the run rather than about its own text.
+//  'account': the key, the account, or the model: HTTP 401, 402, 403, or 404, a key, billing, or quota code, or a
+//   limit that cannot be waited out.
+//  'same:…': another HTTP 400 that is not about the size or the content of one text. An unknown wording may still
+//   be about one text, so such a failure counts only when it repeats with the same message. The mark stands for
+//   the message without its words (a number worked out from it): a provider's words are never returned.
+//  Undefined: it may be about its text, or it passes (a rate limit, a server error, a timeout).
+const ABOUT_ONE_TEXT=/too long|context length|context window|context limit|maximum context|too many tokens|input token count|context_length_exceeded|request_too_large|input_too_long|invalid_prompt|flagged|moderation|usage polic|safety|content (?:policy|filter)|pdf pages|too many pages/i;
+const KEY_CODES=['api_key_invalid','api_key_expired','invalid_api_key','authentication_error'];
+function messageMark(text:string):string{
+ // (Without the IDs each reply carries, such as a request ID.)
+ const same=text.replace(/\b(?:req|msg|msgbatch|batch|file|resp|gen|chatcmpl)[-_][A-Za-z0-9_-]+/g,'').replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,'').replace(/request[ _-]?id\W*\S+/gi,'').replace(/\s+/g,' ').trim();
+ let hash=0x811c9dc5;
+ for(let i=0;i<same.length;i++){hash^=same.charCodeAt(i);hash=Math.imul(hash,0x01000193);}
+ return (hash>>>0).toString(16).padStart(8,'0');
+}
+export function sharedFailure(provider:Provider,status:number,body:unknown,headers?:Headers):string|undefined{
+ const e=(body as any)?.error,diagnostics=provider==='openrouter'?openRouterDiagnostics(e):undefined;
+ const details=[...(Array.isArray(e?.details)?e.details:[]),...(diagnostics?.details??[])];
+ const codes=[e?.code,e?.type,e?.status,...details.map((d:any)=>d?.reason)].filter((x:unknown)=>typeof x==='string').map((x:string)=>x.toLowerCase());
+ // Read only to recognize what the failure is about; none of it is returned.
+ let raw=e?.metadata?.raw;if(raw&&typeof raw==='object')try{raw=JSON.stringify(raw);}catch{raw='';}
+ const said=[...codes,e?.message,raw].filter((x:unknown)=>typeof x==='string').map((x:string)=>x.slice(0,16384)).join(' ');
+ if(provider==='openrouter'&&e?.metadata?.limit_source==='openrouter_key_limit')return 'account';
+ if(codes.some(code=>KEY_CODES.includes(code)||NOT_SHORT_TERM.includes(code))||diagnostics?.cause==='quota')return 'account';
+ if(status===401||status===402||status===404)return 'account';
+ // A provider may refuse one text under its content rules with a 403.
+ if(status===403)return ABOUT_ONE_TEXT.test(said)?undefined:'account';
+ if(status===429)return retryWait(provider,status,body,headers)===undefined?'account':undefined;
+ if(status!==400)return undefined;
+ if(/credit balance/i.test(said))return 'account';
+ if(ABOUT_ONE_TEXT.test(said))return undefined;
+ return 'same:'+messageMark(said);
+}
+// The reply for a failed provider request: the message, `retryAfterMs` when a paced run may send it again, and
+// `shared` when the failure is one that every request of the run would meet (see sharedFailure). Neither is
+// kept with a result.
+export function providerFailure(provider:Provider,status:number,body:unknown,headers?:Headers,request?:RequestSettings,model?:string):{error:string;retryAfterMs?:number;shared?:string}{
+ const wait=retryWait(provider,status,body,headers),shared=sharedFailure(provider,status,body,headers);
+ return {error:providerError(provider,status,body,headers,request,model),...(wait===undefined?{}:{retryAfterMs:wait}),...(shared?{shared}:{})};
 }
 export function incompleteAnnotation(provider:Provider,reason:unknown){
  const label=names[provider],consoleName=consoles[provider];

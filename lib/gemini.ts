@@ -1,5 +1,5 @@
 import {answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
-import {providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
+import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 import {extractText,TextEncodingError} from './extract-text';
 import {requestTimeout,type RequestSettings} from './request-settings';
 import {providerBody,requestUrl,replyCode,replyText,reasoningSummary,type RequestDocument} from './request-frame';
@@ -34,5 +34,5 @@ export async function annotateGemini(file:File,prompt:string,model:string,effort
  if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return reply({...noted,error:'Gemini returned an unexpected annotation format.'},422);
  let answers;try{answers=answerValues(result,answerFields);}catch(error){return reply({...noted,error:(error as Error).message},422);}
  return reply({...noted,rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId});
- }catch{return reply({error:'Gemini connection interrupted or timed out. Check Google AI Studio usage before retrying; the request may have completed.'},502);}
+ }catch(error){return reply({error:'Gemini connection interrupted or timed out. Check Google AI Studio usage before retrying; the request may have completed.',...connectionFailure(error)},502);}
 }
