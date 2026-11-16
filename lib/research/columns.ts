@@ -12,6 +12,23 @@ const tidy=(value:unknown)=>String(value??'').normalize('NFC').trim();
 const fold=(value:unknown)=>tidy(value).toLowerCase();
 // A file name without its extension: "1961-Kennedy.txt" and "1961-Kennedy" match.
 export const stem=(name:string)=>name.replace(/\.(txt|md|markdown|pdf|docx?|html?|rtf|odt|csv|tsv|xlsx?|ods|jsonl?)$/i,'');
+// doc_id: the name of each text in the exports' tables, the key that joins them, and what {{id}} fills in. A
+// text's name without the extension of its file (article.md → article; a text from a table, named after its ID,
+// keeps the ID), a subject's name as it is; a name another text of the study already has gets _2, _3, … in the
+// study's order (deleted texts a run used keep their place: lib/research/removed.ts, withRemoved).
+type Named={id:unknown;name?:unknown};
+const idCache=new WeakMap<Named[],Map<string,string>>();
+export function docIds(dataset:{kind:string;rows:Named[]}):Map<string,string>{
+ let ids=idCache.get(dataset.rows);if(ids)return ids;
+ ids=new Map();const taken=new Set<string>();
+ for(const row of dataset.rows){
+  const name=String(row.name??''),base=(dataset.kind==='knowledge'?name:stem(name))||String(row.id);
+  let id=base;for(let n=2;taken.has(id.toLowerCase());n++)id=`${base}_${n}`;
+  taken.add(id.toLowerCase());ids.set(String(row.id),id);
+ }
+ idCache.set(dataset.rows,ids);return ids;
+}
+export const docIdOf=(dataset:{kind:string;rows:Named[]},row:Named)=>docIds(dataset).get(String(row.id))??String(row.name??row.id);
 export const validColumnName=(name:string)=>{const n=tidy(name);return n.length>0&&n.length<=60;};
 // A table that holds a whole corpus, one text per row (research mode's drop zone).
 export const CORPUS_TABLE=/\.(csv|tsv|xlsx?|jsonl?)$/i;

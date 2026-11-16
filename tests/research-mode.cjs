@@ -187,7 +187,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.equal(typed.all(n=>n.type==='ResearchAnswerFields').length,0,'The standard Lab keeps its own answer fields');assert.deepEqual(standard().names,[]);assert.deepEqual(notes(),[]);
   mode().onChange(true);await typed.flush();
   assert.equal(typed.all(n=>n.type==='AnswerFields').length,0);assert.deepEqual(editor().names,[]);assert.equal(editor().settings,undefined);
-  const tone={name:'Tone',type:'category',values:['positive','negative'],description:'Overall tone.'},asked={rationale:false,fields:[tone,{name:'Notes',type:'text',values:[],description:''}]},sentForm={rationale:false,named:true,fields:[tone]};
+  const tone={name:'Tone',type:'category',values:['positive','negative'],description:'Overall tone.'},asked={rationale:false,fields:[tone,{name:'Notes',type:'text',values:[],description:''}]},sentForm={rationale:false,named:true,slugKeys:true,fields:[tone]};
   editor().onChange(['Tone','Notes'],asked);await typed.flush();
   assert.deepEqual(typed.latest().answerFields,['Tone','Notes']);assert.deepEqual(typed.latest().answerSettings,asked,'The study keeps the fields as they were entered');assert.deepEqual(editor().settings,asked);
   await typed.button('All (').props.onClick();await typed.flush();
@@ -202,7 +202,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert(typed.text(typed.button('Remaining')).includes('Remaining (3)'));
   replies.push(...Array(3).fill({score:'',explanation:'Hopeful wording.',answers:{f0:'negative',f1:'Dry.'}}));
   await typed.button('Remaining').props.onClick();await typed.flush();
-  assert.deepEqual(typed.latest().docs.map(doc=>[doc.runNo,doc.answers.f0,JSON.stringify(doc.answerSettings),doc.earlier.map(entry=>[entry.runNo,JSON.stringify(entry.answerSettings)])]),Array(3).fill([2,'negative',JSON.stringify({named:true,fields:[tone]}),[[1,JSON.stringify(sentForm)]]]));
+  assert.deepEqual(typed.latest().docs.map(doc=>[doc.runNo,doc.answers.f0,JSON.stringify(doc.answerSettings),doc.earlier.map(entry=>[entry.runNo,JSON.stringify(entry.answerSettings)])]),Array(3).fill([2,'negative',JSON.stringify({named:true,slugKeys:true,fields:[tone]}),[[1,JSON.stringify(sentForm)]]]));
   assert.deepEqual(typed.latest().runs.map(run=>run.number),[1,2]);
   // Plain text: one field named “response”, and no settings of the fields are sent.
   editor().onChange(['Tone','Notes'],{...asked,plain:true});await typed.flush();

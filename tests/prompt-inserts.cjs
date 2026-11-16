@@ -14,7 +14,7 @@ function load(file){
 }
 const inserts=load('lib/prompt-inserts.ts'),research=load('lib/research/inserts.ts'),route=load('app/api/annotate/route.ts'),batchRoute=load('app/api/batch/route.ts'),batch=load('lib/batch-provider.ts'),providers=load('lib/providers.ts'),frames=load('lib/request-frame.ts'),knowledgeLib=load('lib/model-knowledge.ts');
 const {extractText}=load('lib/extract-text.ts'),records=load('lib/research/requests.ts'),runs=load('lib/research/runs.ts'),safety=load('lib/workflow-safety.ts'),backup=load('lib/study-backup.ts'),requestSettings=load('lib/request-settings.ts'),notes=load('lib/cache-note.ts'),view=load('lib/research/request-view.ts');
-const data=load('lib/research/export-data.ts'),tables=load('lib/research/export-tables.ts'),packages=load('lib/research/export-packages.ts'),python=load('lib/research/export-python.ts'),formatsLib=load('lib/answer-fields.ts'),{toCsv}=load('lib/research/parse-table.ts');
+const columnsLib=load('lib/research/columns.ts'),data=load('lib/research/export-data.ts'),tables=load('lib/research/export-tables.ts'),packages=load('lib/research/export-packages.ts'),python=load('lib/research/export-python.ts'),formatsLib=load('lib/answer-fields.ts'),{toCsv}=load('lib/research/parse-table.ts');
 const source=file=>fs.readFileSync(path.join(root,file),'utf8');
 
 // A CSV file read back: rows of cells, without the byte-order mark.
@@ -73,9 +73,9 @@ assert(!/^\s*import\s/m.test(source('lib/prompt-inserts.ts')),'lib/prompt-insert
 // --- The values of a text, and the lines under the prompt box ---------------------------------------------
 const COLUMNS=[{name:'Year',role:'meta'},{name:'Outlet name',role:'meta'},{name:'tone_human',role:'label'},{name:'text',role:'meta'},{name:'Year (first ed.)',role:'meta'}];
 const ROW={name:'text “1”.txt',cells:['1975','The Post','5','body','1974']};
-assert.deepEqual(research.insertValues(['id','meta.year','meta.OUTLET NAME','meta.tone_human','meta.none','meta.text','meta.Year (first ed.)'],ROW,COLUMNS),['text “1”.txt','1975','The Post','','','body','1974'],'A column by its name in any case; a label column and a missing column give nothing');
-assert.deepEqual(research.insertValues(['id','meta.year'],{name:'bare'},COLUMNS),['bare',''],'A text without values');assert.deepEqual(research.insertValues(['id'],{},[]),['']);
-assert.deepEqual(research.insertNotes('Rate the tone.',COLUMNS,'text'),['{{text}} in the prompt places each text there instead of after the prompt; {{meta.Year}} inserts its value of that column, and {{id}} its name.']);
+assert.deepEqual(research.insertValues(['id','meta.year','meta.OUTLET NAME','meta.tone_human','meta.none','meta.text','meta.Year (first ed.)'],ROW,COLUMNS,'text “1”'),['text “1”','1975','The Post','','','body','1974'],'A column by its name in any case; a label column and a missing column give nothing');
+assert.deepEqual(research.insertValues(['id','meta.year'],{name:'bare'},COLUMNS,'bare'),['bare',''],'A text without values');assert.deepEqual(research.insertValues(['id'],{},[],''),['']);
+assert.deepEqual(research.insertNotes('Rate the tone.',COLUMNS,'text'),['{{text}} in the prompt places each text there instead of after the prompt; {{meta.Year}} inserts its value of that column, and {{id}} its name without the file extension.']);
 assert.deepEqual(research.insertNotes('Rate the tone.',[{name:'tone_human',role:'label'}],'text'),['{{text}} in the prompt places each text there instead of after the prompt.'],'No metadata: only {{text}}');assert.deepEqual(research.insertNotes('Rate the tone.',[],'subject'),['{{text}} in the prompt places each subject there instead of after the prompt.']);
 assert.deepEqual(research.insertNotes('Rate {{text}} now.',COLUMNS,'text'),['The text goes where the prompt has {{text}}, instead of after the prompt.']);
 assert.deepEqual(research.insertNotes('{{id}} from {{meta.year}}.',COLUMNS,'text'),['Filled in for each text: {{id}}, {{meta.year}}.']);
@@ -294,7 +294,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  const rows=[...E_TEXTS,null].map((text,i)=>{
   const name=text===null?'report.pdf':`text-${i+1}.txt`,reply=JSON.stringify({explanation:'Because.',score:'',answers:{f0:'4'}}),row={id:'doc-'+(i+1),name,cells:CELLS[i]};
   // Sent while the study still had the column "gone" (a value for each text), and before text 2's year was corrected.
-  const sentWith=research.insertValues(E_NAMES,row,E_COLUMNS);sentWith[4]='was here '+(i+1);if(i===1)sentWith[1]='1890';
+  const sentWith=research.insertValues(E_NAMES,row,E_COLUMNS,columnsLib.stem(name));sentWith[4]='was here '+(i+1);if(i===1)sentWith[1]='1890';
   return {...row,file:text===null?E_PDF:new File([text],name,{type:'text/plain'}),status:'done',runNo:1,...setup,answers:{f0:'4'},score:'',explanation:'Because.',output:reply,usage:{input_tokens:120,output_tokens:40},startedAt:`2026-11-16T10:00:0${i}.000Z`,time:`2026-11-16T10:01:0${i}.000Z`,processing:'instant',requestId:record(text===null),inserts:sentWith,modelReported:'claude-haiku-5-5-20260901',stopReason:'end_turn',lab:'2026-11-16 abc1234',responseId:'msg_'+i,responseFormat:format};
  });
  const dataset={kind:'texts',rows,runs:[{...setup,number:1,startedAt:'2026-11-16T10:00:00.000Z'}],columns:E_COLUMNS,samples:[]},study={name:'Tone study',dataset,requests:list,lab:'2026-11-16 abcdef0'};
@@ -316,10 +316,10 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  const asSent=await read(pack,'prompt/prompt_as_sent.txt');assert(asSent.startsWith(E_PROMPT.replace('\n','\r\n'))&&!asSent.includes('<<INSERT:')&&!asSent.includes('<text>')&&!asSent.includes('DOCUMENT'),'The prompt as sent shows the placeholders where each request had the values');
  assert((await read(pack,'metadata.json')).includes('<<INSERT:meta.year>>'),'The recorded request bodies keep their marks');
  const readme=await read(pack,'README.md');
- for(const part of ['| `prompt/prompt.txt` | The annotation prompt as written. Its placeholders were filled in for each text: `{{id}}` with the text’s name; `{{meta.year}}`, `{{meta.Outlet name}}`, `{{meta.text}}`, and `{{meta.gone}}` with its values in those metadata columns; `{{meta.tone_human}}` was filled in empty for every text (it names no metadata column, or an empty one) |','(marks stand for the document and for the values of the prompt’s placeholders)','; the placeholders stand where each request had the values','The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent (the logs hold the requests as they were sent).','For each text, the prompt was completed with its name and its values of the metadata columns year, Outlet name, text, and gone.'])assert(readme.includes(part),'README: '+part);
+ for(const part of ['| `prompt/prompt.txt` | The annotation prompt as written. Its placeholders were filled in for each text: `{{id}}` with the text’s doc_id; `{{meta.year}}`, `{{meta.Outlet name}}`, `{{meta.text}}`, and `{{meta.gone}}` with its values in those metadata columns; `{{meta.tone_human}}` was filled in empty for every text (it names no metadata column, or an empty one) |','(marks stand for the document and for the values of the prompt’s placeholders)','; the placeholders stand where each request had the values','The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent (the logs hold the requests as they were sent).','For each text, the prompt was completed with its name and its values of the metadata columns year, Outlet name, text, and gone.'])assert(readme.includes(part),'README: '+part);
  // Without the texts, the README names the columns a corpus of one's own needs.
  const lean=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:false,explanations:false,logs:false});
- assert((await read(lean,'README.md')).includes('and the columns the prompt’s placeholders take their values from (source, Year, Outlet name, meta_text). The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent. '));
+ assert((await read(lean,'README.md')).includes('and the columns the prompt’s placeholders take their values from (doc_id, Year, Outlet name, meta_text). The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent. '));
  // A study without placeholders says nothing of them.
  const bareSetup={...setup,prompt:'Rate the tone from 1 to 5.'},bareFrame=records.recordRequest(undefined,frames.requestFrame(bareSetup,false));
  const bareStudy={name:'Plain',lab:study.lab,requests:bareFrame.list,dataset:{...dataset,rows:rows.slice(0,3).map(row=>{const {inserts:_,...rest}=row;return {...rest,...bareSetup,requestId:bareFrame.id,responseFormat:formatsLib.annotationFormatRecord(E_FIELDS,bareSetup.prompt,false,E_SETTINGS)};}),runs:[{...bareSetup,number:1,startedAt:'2026-11-16T10:00:00.000Z'}]}};
@@ -333,9 +333,13 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
 
  // The script: where the corpus holds each placeholder's values.
  const script=await read(pack,'scripts/annotate.py');
+ // A run made before {{id}} was the doc_id filled in the name as it was: the script reads it from source.
+ const byName={...study,dataset:{...dataset,rows:rows.map(row=>({...row,inserts:[row.name,...row.inserts.slice(1)]}))}};
+ const oldPack=await packages.buildSupplementary({study:byName,read:data.documentReader(byName.dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:true});
+ assert((await read(oldPack,'scripts/annotate.py')).includes('\n    "id": "source",\n')&&(await read(oldPack,'README.md')).includes('`{{id}}` with the text’s name;'),'An earlier run’s {{id}} is read from source');
  assert.deepEqual(JSON.parse(python.scriptValues({lab:'x',studyName:'s',runDescription:'r',provider:'anthropic',text:textFrame,fields:E_FIELDS,plain:false,inserts:[['id','document'],['meta.gone',null]]}).INSERTS.replace(/,\n\}/,'\n}').replace('None','null')),{id:'document','meta.gone':null});
  assert.equal(python.scriptValues({lab:'x',studyName:'s',runDescription:'r',provider:'anthropic',text:textFrame,fields:E_FIELDS,plain:false}).INSERTS,'{}');
- for(const line of ['"id": "source",','"meta.year": "Year",','"meta.Outlet name": "Outlet name",','"meta.text": "meta_text",','"meta.gone": None,','"meta.tone_human": None,'])assert(script.includes('\n    '+line+'\n'),'annotate.py: '+line);
+ for(const line of ['"id": "doc_id",','"meta.year": "Year",','"meta.Outlet name": "Outlet name",','"meta.text": "meta_text",','"meta.gone": None,','"meta.tone_human": None,'])assert(script.includes('\n    '+line+'\n'),'annotate.py: '+line);
  if(spawnSync('python3',['--version']).status!==0){console.log('prompt-inserts: python3 is not installed; the script itself was not run.');}
  else{
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),'lab-inserts-')),run=(args,env={})=>new Promise(resolve=>execFile('python3',args,{cwd:folder,env:{...process.env,NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost',...env},encoding:'utf8'},(error,stdout,stderr)=>resolve({code:error?error.code??1:0,stdout,stderr})));
@@ -353,7 +357,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
    const home=path.join(pack.name,'scripts'),sent=await run([path.join(home,'annotate.py'),path.join(pack.name,'data','corpus.csv'),'--base-url',base,'--out','out.csv','--log','out.jsonl'],{ANTHROPIC_API_KEY:KEY});
    assert.equal(sent.code,0,sent.stderr);assert.equal(received.length,4);
    // Byte for byte the request the Lab would send for the corpus as it is now.
-   const now=i=>inserts.insertMap(E_PROMPT,research.insertValues(E_NAMES,rows[i],E_COLUMNS));
+   const now=i=>inserts.insertMap(E_PROMPT,research.insertValues(E_NAMES,rows[i],E_COLUMNS,columnsLib.stem(rows[i].name)));
    for(const [i,text] of E_TEXTS.entries())assert.equal(received[i],JSON.stringify(frames.fillRequest(textFrame.body,{filename:rows[i].name,text,inserts:now(i)})),'The script’s request for text '+(i+1));
    assert.equal(received[3],JSON.stringify(frames.fillRequest(pdfFrame.body,{filename:'report.pdf',file:Buffer.from(await E_PDF.arrayBuffer()).toString('base64'),inserts:now(3)})),'The script’s request for the PDF');
    // Where nothing changed since the run, that is the request the run sent; a column the study no longer has is filled in empty.

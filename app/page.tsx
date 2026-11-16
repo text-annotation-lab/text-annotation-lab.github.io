@@ -54,7 +54,7 @@ import {readResearchMode,writeResearchMode,keepSiteData,readSavedKeys,writeSaved
 import {addRetry,addScope,adoptUnnumbered,beginRun,cleanRuns,clearRuns,deleteRun,earlierCount,labelRun,lowerRun,raiseRun,remainingFor,requeue,resumable,retryable,runRequestSettings,runSummaries,type RunRecord,type Earlier} from '@/lib/research/runs';
 import {carriedOnNotice,connectionFailure,earlyStopNotice,earlyStopper,retriedNotice,takeShared} from '@/lib/research/early-stop';
 import {MAX_REPEATS,annotationCount,annotationFrom,claimRepeats,cleanRepeats,incomplete,repeatsHint,missingRepeats,repeatsOf,settle,unclaimed,withAnnotation,type Annotation} from '@/lib/research/repeats';
-import {CORPUS_TABLE,appendTexts,cleanColumns,columnIndex,removeColumn,type Column,type NewText} from '@/lib/research/columns';
+import {CORPUS_TABLE,appendTexts,cleanColumns,columnIndex,docIdOf,removeColumn,type Column,type NewText} from '@/lib/research/columns';
 import {bringBack,cleanRemoved,matchReturning,pruneRemoved,removeTexts,usedByRuns,withRemoved} from '@/lib/research/removed';
 import {cleanScoreScale,type ScoreScale} from '@/lib/research/score-scale';
 import {onScaleItems,onScaleRows} from '@/lib/research/scale-combine';
@@ -133,7 +133,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // Research mode is a view of the same study: one switch, remembered in this browser. Texts, prompts, and results are shared by both modes.
  const [researchOwn,setResearch]=useState(()=>researchMode??readResearchMode()),research=researchMode??researchOwn,researchNow=useRef(research);researchNow.current=research;
  // Research mode sends the answer fields in the named format (lib/answer-fields.ts); the standard Lab, as it always has.
- const sent=sentAnswers(answerFields,answerSettings,research),sentFields=sent.names,sentSettings=sent.settings;
+ const sent=sentAnswers(answerFields,answerSettings,research,answerSettings?.inPrompt===true,research),sentFields=sent.names,sentSettings=sent.settings;
  const {names:resultNames,showLegacy:showLegacyScore}=resultColumns(docs,sentFields);
  // Switching on is refused while another tab of this browser is in research mode (lib/research/tab-lock.ts).
  const [otherTab,setOtherTab]=useState(false);
@@ -349,10 +349,12 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   if(research&&errors.key)setKeysOpen(true);else document.getElementById(errors.key?'key':errors.prompt?'prompt':'workspace')?.focus();
   return false;
  }
+ // Research mode: each text's doc_id as the exports name it, which {{id}} fills in; worked out once for a run.
+ const studyIds=()=>{const study={kind:'texts',rows:withRemoved(latest.current,removedNow.current)};return (d:Doc)=>docIdOf(study,d);};
  // Research mode: what a result about to be made records of its request: the request itself (kept once in the
  // list) and the build of the Lab. The standard Lab records nothing.
  function recorder(batch:boolean,use=useNow){
-  const made=new Map<boolean,Recorded>();
+  const made=new Map<boolean,Recorded>(),idOf=studyIds();
   return (d:Doc):Recorded=>{
    if(!research)return {};
    const pdf=/\.pdf$/i.test(d.file.name);let noted=made.get(pdf);
@@ -362,7 +364,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
     noted={...NOT_RECORDED,requestId:kept.id,lab:LAB_VERSION};made.set(pdf,noted);
    }
    // The values this text gives the prompt's placeholders are kept with its result.
-   return use.insertNames.length?{...noted,inserts:insertValues(use.insertNames,d,columns)}:noted;
+   return use.insertNames.length?{...noted,inserts:insertValues(use.insertNames,d,columns,idOf(d))}:noted;
   };
  }
  // `only` limits the run to some texts (research mode); without it every ready text is annotated.
@@ -371,7 +373,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // the settings of that run. Inside this function the names of the settings stand for whichever settings apply.
  async function run(all:boolean,only?:Set<string>,newRun=false,resume?:Set<string>,retryOf?:{number:number;use:typeof useNow}){
   const {provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,placed,key,layout}=retryOf?.use||useNow;
-  const scope=scopeNote.current;scopeNote.current='';
+  const scope=scopeNote.current;scopeNote.current='';const idOf=studyIds();
   if(lock.current||batchJob||!ready||storageConflict||(keyRejected&&!retryOf))return;
   if(!retryOf&&!setupReady())return;
   lock.current=true;stop.current=false;setBusy(true);setNotice('');
@@ -445,7 +447,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      // back: a reply came back (a request that did not get as far as a reply may have had no connection).
      let shared:string|undefined,back=false;
      try{
-      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,d,columns)));if(layout!==LAYOUT)form.set('layout','earlier');else if(placed)form.set('placeText','true');
+      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,d,columns,idOf(d))));if(layout!==LAYOUT)form.set('layout','earlier');else if(placed)form.set('placeText','true');
       const sent=await sendAnnotation(()=>fetch('/api/annotate',{method:'POST',headers:{Authorization:`Bearer ${key.trim()}`},body:form}),place);
       // The run stopped while this text waited out a rate limit: it was not annotated and waits again as before.
       if(!sent){if(n)close(d.id);else{latest.current=latest.current.map(x=>x.id===d.id?failedBefore.get(d.id)||d:x);setDocs(latest.current);}return;}
@@ -495,7 +497,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   if(!out||!r.ok){const error=new Error(out?.error||'The connection was interrupted. Check your provider before submitting again.') as Error&{uncertain:boolean};error.uncertain=out?.uncertain??true;throw error;}return out;
  }
  async function submitBatch(only?:Set<string>,newRun=false,resume?:Set<string>){
-  const scope=scopeNote.current;scopeNote.current='';
+  const scope=scopeNote.current;scopeNote.current='';const idOf=studyIds();
   if(lock.current||batchJob||!ready||storageConflict||keyRejected)return;
   if(!setupReady())return;
   const createdAt=new Date().toISOString();
@@ -514,7 +516,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   const queuedIds=new Set(job.docIds),recorded=recorder(true);
   const queued=begun.docs.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runNo:begun.number,runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout:LAYOUT,concurrency:undefined,processing:'batch',...recorded(d),...claimRepeats(d,times)}:d);
   const save=(next:BatchJob|null,docs:Doc[]=queued)=>storage.current.save({provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,customModel,chunkWords,chunkMethod,processing,concurrency,repeats:storedRepeats,requestSettings,requests:requestsNow.current,batchJob:next,runs:begun.runs,columns,samples,...(removed.length?{removed}:{}),...(scoreScale?{scoreScale}:{})});
-  const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns))));if(placed)form.set('placeText','true');pending.forEach(d=>form.append('files',d.file));
+  const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns,idOf(d)))));if(placed)form.set('placeText','true');pending.forEach(d=>form.append('files',d.file));
   // Research mode: one batch of the prepared run goes up.
   const partForm=(k:number)=>{const f=new FormData();f.set('model',model);f.set('runId',job.runId);f.set('part',String(k));return f;};
   let sending=job,submitted=false;
@@ -767,7 +769,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // "Preview request" (research mode): the request a run would send for the first text.
  const previewSource=()=>({settings:{provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,batch:processing==='batch',inserts:insertNames.length>0,placed},document:async()=>{
   const first=docs[0];if(!first)return undefined;
-  const inserts=insertMap(prompt,insertValues(insertNames,first,columns));
+  const inserts=insertMap(prompt,insertValues(insertNames,first,columns,docIdOf({kind:'texts',rows:withRemoved(docs,removed)},first)));
   if(/\.pdf$/i.test(first.file.name))return {filename:first.file.name,pdf:true as const,inserts};
   const {extractText}=await import('@/lib/extract-text');return {filename:first.file.name,text:await extractText(first.file),inserts};
  }});

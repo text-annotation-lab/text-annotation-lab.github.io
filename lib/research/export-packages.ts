@@ -174,18 +174,29 @@ function promptFiles(study:ExportStudy,report:RunReport,which:'all'|'version'|'r
 }
 // The placeholders of a run's prompt that were filled in for each text, read from the marks of its request.
 const runInserts=(sent:RunRequests):string[]=>markedInserts((sent.text||sent.pdf)?.frame.body||'');
-// Where the corpus table holds the values of each: {{id}} is the text's name, {{meta.<column>}} a metadata
-// column (null: the study no longer has it).
-function insertColumns(dataset:ExportStudy['dataset'],names:string[]):[string,string|null][]{
+// Where the corpus table holds the values of each: {{id}} is the text's doc_id (idColumn), {{meta.<column>}} a
+// metadata column (null: the study no longer has it).
+function insertColumns(dataset:ExportStudy['dataset'],names:string[],run:number):[string,string|null][]{
  const columns=corpusColumnNames(dataset);
  return names.map(name=>{
-  if(name==='id')return [name,dataset.kind==='knowledge'?'subject':'source'];
+  if(name==='id')return [name,idColumn(dataset,run)];
   const index=columnIndex(dataset.columns,name.slice(5));
   return [name,index>=0&&dataset.columns[index].role==='meta'?columns[index]:null];
  });
 }
 const listed=(items:string[])=>items.length>2?items.slice(0,-1).join(', ')+', and '+items[items.length-1]:items.join(' and ');
 const written=(names:string[])=>listed(names.map(name=>`\`{{${name}}}\``));
+// {{id}} is filled in with a text's doc_id; a run made before 2026-11-16 filled in its name as it was (with the
+// file's extension), which the corpus holds as source (a subject's name: subject). Read from the values kept with
+// the run's results: doc_id unless one of them is the name and not the doc_id.
+function idColumn(dataset:ExportStudy['dataset'],run:number):string{
+ for(const line of requestLines(dataset)){
+  if(line.run!==run||!Array.isArray(line.result.inserts))continue;
+  const value=insertMap(String(line.result.prompt??''),line.result.inserts).get('id');
+  if(value!==undefined&&value!==docIdOf(dataset,line.row)&&value===String(line.row.name??''))return dataset.kind==='knowledge'?'subject':'source';
+ }
+ return 'doc_id';
+}
 // The placeholders that held a value in at least one request of a run, read from the values kept with its
 // results. One that names a column of human labels, no column at all, or an empty column held none.
 function valuedInserts(dataset:ExportStudy['dataset'],run:number):Set<string>{
@@ -205,7 +216,7 @@ function scriptFiles(study:ExportStudy,report:RunReport,exportedAt:string):{file
   facts.processing!=='instant'?'The run used the provider’s batch interface; this script sends the same request bodies one by one.':''].filter(Boolean);
  // Lines of at most about 78 characters, as in the rest of the script's opening text.
  const wrap=(text:string)=>text.split(' ').reduce<string[]>((lines,word)=>{const last=lines[lines.length-1];if(last!==undefined&&(last+' '+word).length<=78)lines[lines.length-1]=last+' '+word;else lines.push(word);return lines;},[]).join('\n');
- const values=scriptValues({lab:study.lab,studyName:study.name,runDescription:`#${run.number}, started ${run.startedAt}${facts.labs.length?` with the Lab’s version ${facts.labs.join('; ')}`:''}; exported ${exportedAt}`,provider:run.provider as Provider,text:sent.text?.frame,pdf:sent.pdf?.frame,fields:run.answerFields,plain:Boolean(run.answerSettings?.plain),settings:run.answerSettings,repeats:run.repeats||1,note:notes.map(wrap).join('\n'),inserts:insertColumns(study.dataset,runInserts(sent))});
+ const values=scriptValues({lab:study.lab,studyName:study.name,runDescription:`#${run.number}, started ${run.startedAt}${facts.labs.length?` with the Lab’s version ${facts.labs.join('; ')}`:''}; exported ${exportedAt}`,provider:run.provider as Provider,text:sent.text?.frame,pdf:sent.pdf?.frame,fields:run.answerFields,plain:Boolean(run.answerSettings?.plain),settings:run.answerSettings,repeats:run.repeats||1,note:notes.map(wrap).join('\n'),inserts:insertColumns(study.dataset,runInserts(sent),run.number)});
  return {files:[{path:'annotate_template.py',data:SCRIPT_TEMPLATE},{path:'annotate.py',data:fillScript(SCRIPT_TEMPLATE,values)},{path:'requirements.txt',data:REQUIREMENTS}],why:''};
 }
 
@@ -268,7 +279,7 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
  const {dataset}=study,{facts}=report,{run}=facts,unit=unitOf(dataset),knowledge=dataset.kind==='knowledge',plain=Boolean(run.answerSettings?.plain);
  // Placeholders of the prompt that were filled in for each text, and where the corpus holds their values.
  const inserted=runInserts(report.sent),valued=valuedInserts(dataset,run.number),metaFilled=inserted.filter(name=>name!=='id'&&valued.has(name)),unfilled=inserted.filter(name=>!valued.has(name));
- const insertedNote=inserted.length?`. Its placeholders were filled in for each ${unit}: ${[inserted.includes('id')&&valued.has('id')?`\`{{id}}\` with the ${unit}’s name`:'',metaFilled.length?`${written(metaFilled)} with its value${metaFilled.length===1?' in that metadata column':'s in those metadata columns'}`:'',unfilled.length?`${written(unfilled)} ${unfilled.length===1?'was':'were'} filled in empty for every ${unit} (${unfilled.length===1?'it names':'they name'} no metadata column, or an empty one)`:''].filter(Boolean).join('; ')}`:'';
+ const insertedNote=inserted.length?`. Its placeholders were filled in for each ${unit}: ${[inserted.includes('id')&&valued.has('id')?`\`{{id}}\` with the ${unit}’s ${idColumn(dataset,run.number)==='doc_id'?'doc_id':'name'}`:'',metaFilled.length?`${written(metaFilled)} with its value${metaFilled.length===1?' in that metadata column':'s in those metadata columns'}`:'',unfilled.length?`${written(unfilled)} ${unfilled.length===1?'was':'were'} filled in empty for every ${unit} (${unfilled.length===1?'it names':'they name'} no metadata column, or an empty one)`:''].filter(Boolean).join('; ')}`:'';
  const lines=[`# ${study.name}: LLM annotation materials`,'',
   `Supplementary materials for the LLM-based annotation (run #${run.number}), exported from the Text Annotation Lab (version ${study.lab}) on ${record.exported_at.slice(0,10)}.${facts.labs.length&&facts.labs.some(lab=>lab!==study.lab)?` The run was made with version ${facts.labs.join('; ')}.`:''}`,'',
   ...(run.active?['**This run was not finished when these materials were exported**: they describe the results so far.','']:[]),
@@ -294,7 +305,7 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   ...(has.script?[tableRow(['`scripts/annotate.py`','Python script that sends the requests again (values inserted)']),tableRow(['`scripts/annotate_template.py`','The same script with `{{PLACEHOLDERS}}` marking every value that comes from the study']),tableRow(['`scripts/requirements.txt`','Says that the script needs no packages besides Python itself'])]:[]),
   '',CSV_NOTE,'',TOKEN_NOTE,'',...(options.logs?[LOG_NOTE+' A failed attempt’s request may never have reached the provider (a connection that broke, say).','']:[])];
  if(has.script)lines.push('## Reproducing','','```bash','cd scripts',`export ${keyVariable(run.provider as Provider)}=...`,`python annotate.py ${options.texts?'../data/corpus.csv':'your_corpus.csv'}`,'```','',
-  `The script needs Python 3.9 or later and nothing else. ${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files?' (or file, with the path of a PDF)':''}${[report.sent.text,report.sent.pdf].some(sent=>sent?.frame.body.includes('<<DOCUMENT_FILENAME>>'))?'; a column source gives the name each request states for the document':''}${inserted.length?`; and the columns the prompt’s placeholders take their values from (${insertColumns(dataset,inserted).filter(pair=>pair[1]).map(pair=>pair[1]).join(', ')})`:''}. `}${inserted.length?`The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent${options.logs?' (the logs hold the requests as they were sent)':''}. `:''}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
+  `The script needs Python 3.9 or later and nothing else. ${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files?' (or file, with the path of a PDF)':''}${[report.sent.text,report.sent.pdf].some(sent=>sent?.frame.body.includes('<<DOCUMENT_FILENAME>>'))?'; a column source gives the name each request states for the document':''}${inserted.length?`; and the columns the prompt’s placeholders take their values from (${insertColumns(dataset,inserted,run.number).filter(pair=>pair[1]).map(pair=>pair[1]).join(', ')})`:''}. `}${inserted.length?`The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent${options.logs?' (the logs hold the requests as they were sent)':''}. `:''}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
  else if(has.scriptWhy)lines.push('## Reproducing','',has.scriptWhy+(options.logs?' The logs hold every request as it was sent.':' The requests as sent are in the logs when the package includes them.'),'');
  if(!options.texts)lines.push(`The annotated ${unit}s are not included in this package (for example, for copyright or privacy reasons).`,'');
  if(has.unread)lines.push(`${count(has.unread)} ${unit}${has.unread===1?'':'s'} could not be read when this package was made and ${has.unread===1?'has':'have'} no text here.`,'');

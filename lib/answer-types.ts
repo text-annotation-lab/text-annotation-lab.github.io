@@ -9,7 +9,10 @@ export type FieldSpec={name:string;type:FieldType;values:string[];description:st
 // paragraph on the answer format after the prompt.
 // inPrompt (Model knowledge, research mode): the Lab adds no instructions of its own after the prompt; the prompt
 // box holds them, where they can be changed or removed (lib/model-knowledge.ts, knowledgeAddition).
-export type AnswerSettings={plain?:true;rationale?:false;named?:true;inPrompt?:true;fields?:FieldSpec[]};
+// slugKeys (named format, from 2026-11-16): every key is made from its field's name, always in lower case (Tone →
+// tone). Earlier runs kept a name that is already a key as it was (Tone). Set only where that makes a difference,
+// so a run whose keys are the same either way records the same settings as before.
+export type AnswerSettings={plain?:true;rationale?:false;named?:true;slugKeys?:true;inPrompt?:true;fields?:FieldSpec[]};
 export const FIELD_TYPES:FieldType[]=['category','ordinal','number','boolean','text'];
 export const FIELD_TYPE_LABELS:Record<FieldType,string>={category:'Category',ordinal:'Ordinal scale',number:'Number',boolean:'Yes / no',text:'Free text'};
 export const MAX_ANSWER_FIELDS=40;
@@ -36,21 +39,22 @@ const validSpec=(f:any):f is FieldSpec=>Boolean(f)&&typeof f==='object'&&typeof 
 export function cleanAnswerSettings(value:unknown):AnswerSettings|undefined{
  if(!value||typeof value!=='object'||Array.isArray(value))return undefined;
  const v=value as any,fields:FieldSpec[]=Array.isArray(v.fields)?v.fields.filter(validSpec).slice(0,MAX_ANSWER_FIELDS).map((f:FieldSpec)=>({name:f.name,type:f.type,values:[...f.values],description:f.description})):[];
- const out:AnswerSettings={...(v.plain===true?{plain:true as const}:{}),...(v.rationale===false?{rationale:false as const}:{}),...(v.named===true&&v.plain!==true?{named:true as const}:{}),...(v.inPrompt===true?{inPrompt:true as const}:{}),...(fields.length?{fields}:{})};
+ const out:AnswerSettings={...(v.plain===true?{plain:true as const}:{}),...(v.rationale===false?{rationale:false as const}:{}),...(v.named===true&&v.plain!==true?{named:true as const}:{}),...(v.slugKeys===true&&v.named===true&&v.plain!==true?{slugKeys:true as const}:{}),...(v.inPrompt===true?{inPrompt:true as const}:{}),...(fields.length?{fields}:{})};
  return Object.keys(out).length?out:undefined;
 }
 export const fieldSpec=(settings:AnswerSettings|undefined,name:string)=>settings?.fields?.find(f=>f.name.toLowerCase()===name.toLowerCase());
 // What a request uses and a result records: the field names, and only the settings that differ from
 // the standard format. Two setups ask for the same answers exactly when these are the same.
-// named: the fields go under their own names and types (research mode). inPrompt: see AnswerSettings.
-export function sentAnswers(names:string[]=[],settings?:AnswerSettings,named=settings?.named===true,inPrompt=settings?.inPrompt===true):{names:string[];settings?:AnswerSettings}{
+// named: the fields go under their own names and types (research mode). inPrompt, slug (slugKeys): see AnswerSettings.
+export function sentAnswers(names:string[]=[],settings?:AnswerSettings,named=settings?.named===true,inPrompt=settings?.inPrompt===true,slug=settings?.slugKeys===true):{names:string[];settings?:AnswerSettings}{
  if(settings?.plain)return {names:[PLAIN_FIELD],settings:{plain:true,...(inPrompt?{inPrompt:true as const}:{})}};
  const fields=names.flatMap(name=>{
   const found=fieldSpec(settings,name);if(!found)return [];
   const spec:FieldSpec={name,type:found.type,values:allowedValues(found),description:found.description.trim()};
   return spec.type==='text'&&!spec.description?[]:[spec];
  });
- const out:AnswerSettings={...(settings?.rationale===false?{rationale:false as const}:{}),...(named?{named:true as const}:{}),...(inPrompt?{inPrompt:true as const}:{}),...(fields.length?{fields}:{})};
+ const slugged=named&&slug&&namedKeys(names,false).join('\n')!==namedKeys(names,true).join('\n');
+ const out:AnswerSettings={...(settings?.rationale===false?{rationale:false as const}:{}),...(named?{named:true as const}:{}),...(slugged?{slugKeys:true as const}:{}),...(inPrompt?{inPrompt:true as const}:{}),...(fields.length?{fields}:{})};
  return {names,settings:Object.keys(out).length?out:undefined};
 }
 // The key of the shared explanation in the named format.
@@ -63,14 +67,16 @@ export function slugKey(label:string):string{
 }
 // A field explains the answers in place of the shared explanation when it is named Explanation.
 export const isExplanationField=(name:string)=>name.toLowerCase()==='explanation';
-// The key each field is sent under, in the order of the names. Earlier format: f0, f1, …. Named format: the name
-// itself where it is one (letters, digits, and _, not starting with a digit), else a key made from it; never
-// “rationale” (the shared explanation's) and never another field's key (a number is added: tone_2).
+// The key each field is sent under, in the order of the names. Earlier format: f0, f1, …. Named format: a key
+// made from the name, in lower case (slugKeys; before it, a name that is already a key, such as Tone, was kept as
+// it is); never “rationale” (the shared explanation's) and never another field's key (a number is added: tone_2).
 export function wireKeys(names:string[]=[],settings?:AnswerSettings):string[]{
- if(!settings?.named)return names.map((_,i)=>'f'+i);
+ return settings?.named?namedKeys(names,settings.slugKeys===true):names.map((_,i)=>'f'+i);
+}
+function namedKeys(names:string[],slug:boolean):string[]{
  const taken:string[]=[];
  for(const name of names){
-  let key=/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)?name:slugKey(name);
+  let key=!slug&&/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)?name:slugKey(name);
   if(key.toLowerCase()===RATIONALE_KEY)key=key+'_field';
   const base=key;for(let n=2;taken.some(k=>k.toLowerCase()===key.toLowerCase());n++)key=base+'_'+n;
   taken.push(key);

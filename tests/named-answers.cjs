@@ -25,6 +25,19 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.deepEqual(types.wireKeys(['Tone','Word count','tone_2','2nd','Rationale','Æble','tone'.toUpperCase()+'!'],{named:true}),['Tone','word_count','tone_2','f_2nd','Rationale_field','aeble','tone_3']);
  assert.deepEqual(types.wireKeys(['Tone','Notes']),['f0','f1'],'The earlier format keeps its short keys');
  assert.deepEqual(types.wireKeys(['Positive score','positive_score'],{named:true}),['positive_score','positive_score_2']);
+ // From 2026-11-16 every key is made from its name, in lower case: Tone goes as tone. Runs before kept Tone.
+ assert.deepEqual(types.wireKeys(['Tone','Word count','tone_2','2nd','Rationale','Æble','TONE!'],{named:true,slugKeys:true}),['tone','word_count','tone_2','f_2nd','rationale_field','aeble','tone_3']);
+ const fieldsOf=names=>({fields:names.map(name=>({name,type:'text',values:[],description:'What it is.'}))});
+ const slugged=types.sentAnswers(['Tone'],fieldsOf(['Tone']),true,false,true).settings,same=types.sentAnswers(['tone','Word count'],fieldsOf(['tone','Word count']),true,false,true).settings;
+ assert.equal(slugged.slugKeys,true,'Marked where the key changes');assert.equal(same.slugKeys,undefined,'Not marked where the keys are the same either way, so the setup is the same as before');
+ assert.deepEqual(types.wireKeys(['Tone'],slugged),['tone']);assert.deepEqual(types.wireKeys(['tone','Word count'],same),['tone','word_count']);
+ assert.equal(types.sentAnswers(['Tone'],fieldsOf(['Tone']),true).settings.slugKeys,undefined,'The standard rule unless asked for');
+ // A request's settings are read back as sent: a run from before keeps Tone, a new one sends tone.
+ for(const settings of [slugged,types.sentAnswers(['Tone'],fieldsOf(['Tone']),true).settings])assert.deepEqual(types.readAnswerSettings(JSON.stringify(settings),['Tone']),settings);
+ assert.deepEqual(types.cleanAnswerSettings({slugKeys:true,fields:[]}),undefined,'Only with the named format');
+ assert.deepEqual(Object.keys(fields.annotationSchema(['Tone'],false,'',false,slugged).properties),['rationale','tone'],'The schema asks for tone');
+ assert.deepEqual(fields.readReply({rationale:'Why.',tone:'Hopeful'},['Tone'],slugged),{answers:{f0:'Hopeful'},score:'',explanation:'Why.'},'A reply keyed tone is read for Tone');
+ assert.deepEqual(fields.readReply({rationale:'Why.',Tone:'Hopeful'},['Tone'],types.sentAnswers(['Tone'],fieldsOf(['Tone']),true).settings).answers,{f0:'Hopeful'},'An earlier run’s reply keyed Tone is still read');
 
  // --- The schema -------------------------------------------------------------------------
  const schema=fields.annotationSchema(names,false,'',false,sent.settings);

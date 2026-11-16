@@ -105,8 +105,8 @@ REQUEST = {{REQUEST}}
 REQUEST_PDF = {{REQUEST_PDF}}
 
 # The placeholders of the prompt that were filled in for each document, and the
-# column of the corpus that holds a document's value for each ({{id}} is the
-# document's name). In the bodies above a mark stands for each placeholder, such
+# column of the corpus that holds a document's value for each (for {{id}}, its
+# doc_id). In the bodies above a mark stands for each placeholder, such
 # as <<INSERT:meta.year>>. An empty dictionary: the prompt has none. None for a
 # column: the study no longer has that column, and nothing is filled in.
 INSERTS = {{INSERTS}}
