@@ -1,13 +1,15 @@
 import {TabsContent} from '@/components/ui/tabs';
+import {ResearchChanges} from '@/components/research-mode';
 
 declare const __BUILD_DATE__:string|undefined;
 // Set when the site is built (vite.config.ts); absent in tests.
 const lastUpdated=typeof __BUILD_DATE__==='string'?new Date(__BUILD_DATE__+'T12:00:00Z').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric',timeZone:'UTC'}):'';
 
-export function About(){
+export function About({research}:{research?:boolean}){
  return <TabsContent value="about" className="reading-panel panel">
   <p className="eyebrow">BACKGROUND AND CREDITS</p>
   <h2 id="about" tabIndex={-1}>About Text Annotation Lab</h2>
+  {research&&<section className="about-research" aria-label="What research mode adds"><p><strong>What research mode adds</strong></p><ResearchChanges/></section>}
   <p>Text Annotation Lab is a teaching and research resource for AI-assisted text annotation and content analysis. It brings together an annotation workspace, example corpora, teaching guidance, and methodological resources.</p>
   <p>The project is based in the Department of English at Aarhus University and is associated with the American Studies Center Aarhus (ASCA). It was developed for teaching and research in the department, with examples grounded in English and American Studies. Students, teachers, and researchers elsewhere are welcome to use it wherever they find it useful.</p>
   <p>The site is free to use. To run annotations, enter an API key from your instructor or your own provider account. Charges and usage limits apply to the account behind that key.</p>
