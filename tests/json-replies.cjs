@@ -82,10 +82,11 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const dataset={kind:'texts',rows,runs:[run],columns:[{name:'coder',role:'label'}],samples:[]},wide=exporting.wideTable(dataset);
  assert.deepEqual(wide[0],['document','coder','run1_tone_score','run1_tone_label','run1_length','run1_explanation','run1_response']);
  assert.deepEqual(wide[1],['a.txt','1','1','calm','10','One.',rows[0].answers.f0]);assert.deepEqual(wide[3],['c.txt','2','','','','','The tone is warm; I would say 2.']);assert.deepEqual(wide[6],['f.txt','3','','','','',''],'A failed result has no values');
- const long=exporting.longTable(dataset),head=long[0],at=name=>head.indexOf(name);
- assert.deepEqual(long.filter(line=>line[0]==='b.txt').map(line=>[line[at('field')],line[at('value')]]),[['tone_score','2'],['tone_label','warm'],['length','20'],['explanation','Two.'],['response',rows[1].answers.f0]]);
- assert.deepEqual(long.filter(line=>line[0]==='c.txt').map(line=>line[at('field')]),['response'],'Prose has its one row');
- assert.match(exporting.runsTable(dataset)[1][exporting.runsTable(dataset)[0].indexOf('answer_format')],/^plain text: the whole reply is stored as “response” \(a reply that is one JSON object also has a column for each of its values\); no answer format was sent$/);
+ const tables=load('lib/research/export-tables.ts'),exported={name:'JSON replies',dataset,lab:'test'},long=tables.requestsTable(exported,undefined,new Map()),head=long[0],at=name=>head.indexOf(name),values=name=>['tone_score','tone_label','length','explanation','response'].map(field=>long.find(line=>line[at('document')]===name)[at(field)]);
+ assert.deepEqual(values('b.txt'),['2','warm','20','Two.',rows[1].answers.f0]);assert.deepEqual(values('c.txt'),['','','','','The tone is warm; I would say 2.'],'Prose has only the reply itself');
+ assert.deepEqual([long.find(line=>line[at('document')]==='f.txt')[at('status')],...values('f.txt')],['error','','','','',rows[5].answers.f0],'A failed request has no values, but the reply that could not be read is kept');
+ const overview=tables.runsOverview(exported,new Map());
+ assert.match(overview[1][overview[0].indexOf('answer_format')],/^plain text: the whole reply is stored as “response” \(a reply that is one JSON object also has a column for each of its values\); no answer format was sent$/);
  assert.equal(types.answersLabel(['response'],plain),'Plain text');
 
  // --- The Excel workbook ----------------------------------------------------------------

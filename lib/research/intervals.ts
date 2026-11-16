@@ -19,3 +19,16 @@ export function computeIntervals(job:AgreementJob,done:(ci:Agreement['ci'])=>voi
  worker.postMessage(job);
  return stop;
 }
+// The intervals of one job in a worker of its own, for the Export tab's files: a job there must not stop the
+// one on Runs & agreement, nor be stopped by it.
+export function intervalsOf(job:AgreementJob):Promise<Agreement['ci']>{
+ return new Promise(resolve=>{
+  const direct=()=>resolve(runJob(job,true).ci);
+  let worker:Worker;
+  try{worker=new Worker(new URL('./ci.worker.ts',import.meta.url),{type:'module'});}
+  catch{direct();return;}
+  worker.onmessage=(event:MessageEvent<Agreement['ci']>)=>{worker.terminate();resolve(event.data);};
+  worker.onerror=()=>{worker.terminate();direct();};
+  try{worker.postMessage(job);}catch{worker.terminate();direct();}
+ });
+}

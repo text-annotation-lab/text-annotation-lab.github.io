@@ -200,13 +200,28 @@
 .research-confusion td.agree{background:#e6f5ed;color:#1f6740;font-weight:600}
 .research-confusion td.disagree{background:#fff0ed;color:#a33f2b}
 .research-page-actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0 0}
-.research-exports{list-style:none;margin:20px 0 18px;padding:0;border-top:1px solid #e3e9f1;max-width:900px}
-.research-exports li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid #e3e9f1}
-.research-exports li>div{display:flex;flex-direction:column;gap:3px;min-width:0}
-.research-exports strong{font-size:15px}
-.research-exports span{font-size:13px;line-height:1.55;color:#64728b}
-.research-exports button{flex-shrink:0;min-width:96px}
-@media(max-width:780px){.research-panel{width:calc(100% - 32px);padding:24px}.research-page h2{font-size:25px}.research-exports li{flex-direction:column;align-items:flex-start}.research-filter-count{margin-left:0}}
+.research-export-run{border:1px solid #dce2ec;border-radius:10px;background:#fff;padding:18px 20px;margin:20px 0 14px}
+.research-export-run label{margin:0 0 7px;font-size:13px;color:#53657a;font-weight:600}
+.research-export-run select{font:inherit;font-size:14px;width:100%;max-width:640px;min-height:38px;padding:8px 28px 8px 10px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#19334f}
+.research-export-run select:focus-visible{outline:2px solid #003d73;outline-offset:1px}
+.research-export-run .hint{margin:10px 0 0;max-width:1000px}
+.research-export-note{font-size:13px;line-height:1.6;background:#fff4dc;border-radius:6px;padding:9px 12px;margin:10px 0 0;max-width:1000px}
+.research-export-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.research-export-card{display:flex;flex-direction:column;gap:12px;border:1px solid #dce2ec;border-radius:10px;background:#fff;padding:18px 20px 20px}
+.research-page .research-export-card h3{font-size:16px;margin:0}
+.research-export-card .hint{margin:0}
+.research-check.research-export-option{align-items:flex-start}
+.research-export-option input[type=checkbox]{margin:2px 0 0}
+.research-export-option small{display:block;font-size:12px;line-height:1.55;color:#64728b;margin-top:2px}
+.research-export-go{margin-top:auto;padding-top:4px}
+.research-export-step{font-size:13px;line-height:1.55;color:#53657a;margin:8px 0 0;overflow-wrap:anywhere}
+.research-export-backup{display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid #dce2ec;border-radius:10px;background:#fff;padding:14px 20px;margin:14px 0 4px}
+.research-export-backup>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+.research-export-backup strong{font-size:15px}
+.research-export-backup span{font-size:13px;line-height:1.55;color:#64728b}
+.research-export-backup button{flex-shrink:0}
+@media(max-width:1000px){.research-export-grid{grid-template-columns:1fr}}
+@media(max-width:780px){.research-panel{width:calc(100% - 32px);padding:24px}.research-page h2{font-size:25px}.research-export-backup{flex-direction:column;align-items:flex-start}.research-filter-count{margin-left:0}}
 /* The count is not part of the tab's name, so the active tab's underline skips it. */
 .study-tabs .tab-count{margin-left:6px;font-size:13px;font-weight:400;color:#64728b}
 .study-tabs .tab-count>span{display:inline-block}
