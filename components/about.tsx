@@ -10,9 +10,9 @@ export function About({research}:{research?:boolean}){
   <p className="eyebrow">BACKGROUND AND CREDITS</p>
   <h2 id="about" tabIndex={-1}>About Text Annotation Lab</h2>
   {research&&<section className="about-research" aria-label="What research mode adds"><p><strong>What research mode adds</strong></p><ResearchChanges/></section>}
-  <p>Text Annotation Lab is a teaching and research resource for AI-assisted text annotation and content analysis. It brings together an annotation workspace, example corpora, teaching guidance, and methodological resources.</p>
+  <p>Text Annotation Lab is a teaching and research resource for AI-assisted text annotation and content analysis. {research?'Research mode shows the annotation workspace and its research tools; the teaching material is in the standard Lab.':'It brings together an annotation workspace, example corpora, teaching guidance, and methodological resources.'}</p>
   <p>The project is based in the Department of English at Aarhus University and is associated with the American Studies Center Aarhus (ASCA). It was developed for teaching and research in the department, with examples grounded in English and American Studies. Students, teachers, and researchers elsewhere are welcome to use it wherever they find it useful.</p>
-  <p>The site is free to use. To run annotations, enter an API key from your instructor or your own provider account. Charges and usage limits apply to the account behind that key.</p>
+  <p>The site is free to use. To run annotations, enter an API key {research?'from your own provider account':'from your instructor or your own provider account'}. Charges and usage limits apply to the account behind that key.</p>
    <p>For questions or feedback, contact <a href="mailto:jkc@cc.au.dk">Jens Kjeldgaard-Christiansen</a>.</p>
   <article>
    <h3>People</h3>
