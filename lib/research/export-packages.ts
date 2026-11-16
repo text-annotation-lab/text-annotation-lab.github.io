@@ -318,8 +318,10 @@ export async function buildResearchRepository(ctx:ExportContext,options:Research
  const hashes=await promptHashes(dataset),find=requestFinder(study),lines=requestLines(dataset),withRequests=new Set(lines.map(line=>line.run)),runs=runLines(dataset).filter(run=>run.done+run.failed>0||withRequests.has(run.number));
  const reports=new Map<number,RunReport>();
  for(const run of runs)reports.set(run.number,await reportRun(ctx,run.number,hashes,find));
+ // Texts deleted from the study but kept for the runs that used them (lib/research/removed.ts).
+ const gone=dataset.rows.filter(row=>row.removedAt).length,inStudy=dataset.rows.length-gone;
  const corpus=await readCorpus(ctx,dataset.rows,name+'/corpus',true);
- await add('study.json',pretty({study:study.name,data:sourceOf(dataset),exported_at:exportedAt,software:{name:'Text Annotation Lab',version:study.lab},[`n_${unit}s`]:dataset.rows.length,runs:runs.map(run=>run.number),columns:dataset.columns,samples:dataset.samples}));
+ await add('study.json',pretty({study:study.name,data:sourceOf(dataset),exported_at:exportedAt,software:{name:'Text Annotation Lab',version:study.lab},[`n_${unit}s`]:inStudy,...(gone?{[`n_${unit}s_deleted_but_kept_for_runs`]:gone}:{}),runs:runs.map(run=>run.number),columns:dataset.columns,samples:dataset.samples}));
  let backupNote='';
  if(ctx.backup){
   await ctx.onProgress?.('Writing study-backup.tal-study.json');
@@ -373,7 +375,7 @@ export async function buildResearchRepository(ctx:ExportContext,options:Research
   ...(script.files.length&&main?[['`scripts/`',`Python script that sends the requests of run #${main.number} again (\`annotate.py\`), and its template with placeholders. \`corpus/corpus.csv\` holds every ${unit} of the study: to reproduce that run, use its ${unit}s (the doc_ids in \`runs/${runFolder(main.number)}/results_wide.csv\`)`] as [string,string]]:[])];
  const readme=[`# ${study.name}: research repository`,'',`Complete record of this annotation study, exported from the Text Annotation Lab (version ${study.lab}) on ${exportedAt}.`,'',
   ...(knowledge?['Model knowledge: no texts were supplied. The model judged named subjects from what it has learned.','']:[]),
-  `- ${count(dataset.rows.length)} ${unit}${dataset.rows.length===1?'':'s'}, ${runs.length} run${runs.length===1?'':'s'}, ${count(lines.length)} request${lines.length===1?'':'s'} with an outcome.`,'- API keys are never stored or exported.','',
+  `- ${count(inStudy)} ${unit}${inStudy===1?'':'s'}${gone?` (plus ${count(gone)} deleted from the study but kept for the runs that used ${gone===1?'it':'them'}; marked in \`corpus/corpus.csv\`)`:''}, ${runs.length} run${runs.length===1?'':'s'}, ${count(lines.length)} request${lines.length===1?'':'s'} with an outcome.`,'- API keys are never stored or exported.','',
   '## Layout','','| Path | Contents |','|---|---|',...rows.map(([path,contents])=>tableRow([path,contents])),'',
   ...(script.why&&main?[`Run #${main.number} has the most usable answers. ${script.why}`,'']:[]),
   CSV_NOTE+(main?' To read the results in Excel, open the .xlsx workbook instead.':''),'',TOKEN_NOTE,'',

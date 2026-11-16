@@ -5,6 +5,7 @@ import {fieldsOf,valueOf} from './view';
 import {explanationOf,runLines,sourceOf,subjectField,subjectHeadings,uniqueNames,unitOf,type Dataset,type RunLine} from './export';
 import {costOf,latencyOf,requestLines,rowForRun,shortHash,tokensOf,type ExportStudy,type RequestLine} from './export-data';
 import type {Row} from './runs';
+import {removedOn} from './removed';
 import {consistencyOf} from './repeats';
 import {defaultOutputLimit} from '../request-settings';
 
@@ -126,25 +127,27 @@ export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
 
 // The corpus: one row per text, with the text as it was sent. A PDF is sent as a file, so it has no text here;
 // `file` then names the PDF in the package. filename is the name each request gave for the document.
+// removed_from_study: the date a text was deleted from the study, kept for the runs that used it (only when
+// the study has such texts).
 function corpusHeader(dataset:Dataset,withFiles:boolean){
- const lead=identity(dataset),uploaded=dataset.kind==='texts';
- const taken=new Set([...lead.header,'filename','text','n_characters','file'].map(lower));
- return {lead,uploaded,header:uniqueNames([...lead.header,...(uploaded?['filename']:[]),'text','n_characters',...(withFiles?['file']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_')])};
+ const lead=identity(dataset),uploaded=dataset.kind==='texts',removed=dataset.rows.some(row=>row.removedAt);
+ const taken=new Set([...lead.header,'filename','text','n_characters','file','removed_from_study'].map(lower));
+ return {lead,uploaded,removed,header:uniqueNames([...lead.header,...(uploaded?['filename']:[]),'text','n_characters',...(withFiles?['file']:[]),...(removed?['removed_from_study']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_')])};
 }
 // The names the corpus table gives the study's label and metadata columns, in the columns' order.
 export const corpusColumnNames=(dataset:Dataset):string[]=>dataset.columns.length?corpusHeader(dataset,false).header.slice(-dataset.columns.length):[];
 export function corpusTable(dataset:Dataset,rows:Row[],texts:Map<string,string>,files:Map<string,string>):Table{
- const {lead,uploaded,header}=corpusHeader(dataset,files.size>0);
+ const {lead,uploaded,removed,header}=corpusHeader(dataset,files.size>0);
  return [header,...rows.map(row=>{
   const text=texts.get(row.id);
-  return [...lead.cells(row),...(uploaded?[String(row.file?.name??row.name??'')]:[]),text??'',text===undefined?'':text.length,...(files.size?[files.get(row.id)??'']:[]),...dataset.columns.map((_,c)=>row.cells?.[c]??'')];
+  return [...lead.cells(row),...(uploaded?[String(row.file?.name??row.name??'')]:[]),text??'',text===undefined?'':text.length,...(files.size?[files.get(row.id)??'']:[]),...(removed?[removedOn(row)]:[]),...dataset.columns.map((_,c)=>row.cells?.[c]??'')];
  })];
 }
 // The same corpus as JSON Lines, for software that reads one record per line.
 export function corpusRecords(dataset:Dataset,rows:Row[],texts:Map<string,string>,files:Map<string,string>):Record<string,unknown>[]{
  const knowledge=dataset.kind==='knowledge';
  return rows.map(row=>({doc_id:String(row.id),[knowledge?'subject':'document']:String(row.name??''),...(knowledge?{fields:row.fields||[]}:{filename:String(row.file?.name??row.name??''),...(row.sourceId?{source_document:String(row.sourceName??''),chunk:`${row.chunkIndex} of ${row.chunkCount}`}:{})}),
-  text:texts.get(row.id)??null,...(files.has(row.id)?{file:files.get(row.id)}:{}),columns:Object.fromEntries(dataset.columns.map((column,c)=>[column.name,row.cells?.[c]??'']))}));
+  text:texts.get(row.id)??null,...(files.has(row.id)?{file:files.get(row.id)}:{}),...(row.removedAt?{removed_from_study:removedOn(row)}:{}),columns:Object.fromEntries(dataset.columns.map((column,c)=>[column.name,row.cells?.[c]??'']))}));
 }
 
 // The answer fields of a run as a page of Markdown: what the model had to return, and where each answer is found.

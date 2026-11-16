@@ -118,7 +118,8 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
  // settings window is open.
  const texts=dataset.kind==='texts',[inspect,setInspect]=useState<number>();
  const facts=useMemo(()=>{const all=requestLines(dataset);return new Map(lines.map(run=>[run.number,runFacts(dataset,run,all)]));},[lines]);
- const retries=useMemo(()=>new Map(lines.map(run=>[run.number,texts?retryable(dataset.rows,run.number).requests:0])),[lines,texts]);
+ // A text deleted from the study is never sent again; it stays in its runs' results.
+ const retries=useMemo(()=>{const active=dataset.rows.filter(row=>!row.removedAt);return new Map(lines.map(run=>[run.number,texts?retryable(active,run.number).requests:0]));},[lines,texts]);
  const inspected=lines.find(run=>run.number===inspect);
  function retry(run:RunLine,requests:number){
   const what=`${count(requests)} request${requests===1?'':'s'} of run #${run.number}`,batch=facts.get(run.number)?.processing!=='instant';
@@ -144,7 +145,9 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
  const fields=a?.kind==='run'?fieldsA:fieldsB;
  const field=pickField(fields,fieldChoice,a?.kind==='column'?a.name:b?.kind==='column'?b.name:'');
  const fieldA=a?.kind==='run'?field:'',fieldB=b?.kind==='run'?pickField(fieldsB,field):'';
- const pairing=useMemo(()=>a&&b?pairSources(dataset.rows,dataset.columns,a,fieldA,b,fieldB):undefined,[dataset.rows,dataset.columns,a&&sourceKey(a),b&&sourceKey(b),fieldA,fieldB]);
+ // Two label columns are compared on the texts in the study; a run also on the texts it used that were deleted since.
+ const pairing=useMemo(()=>a&&b?pairSources(a.kind==='column'&&b.kind==='column'?dataset.rows.filter(row=>!row.removedAt):dataset.rows,dataset.columns,a,fieldA,b,fieldB):undefined,[dataset.rows,dataset.columns,a&&sourceKey(a),b&&sourceKey(b),fieldA,fieldB]);
+ const gone=useMemo(()=>new Set(dataset.rows.filter(row=>row.removedAt).map(row=>row.id)),[dataset.rows]);
  const tol=Math.max(0,Number(tolerance)||0);
  const job=useMemo(()=>pairing?agreementJob(pairing,level,tol):undefined,[pairing,level,tol]);
  const stats=useMemo(()=>job?runJob(job,false):undefined,[job]);
@@ -234,7 +237,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
      </div>
      {reportError&&<p className="message" role="alert">{reportError}</p>}
      <h4>Disagreements ({differing.length.toLocaleString('en-US')})</h4>
-     {differing.length?<><div className="research-table-scroll"><table className="research-table"><thead><tr><th>{unit==='text'?'Document':'Subject'}</th><th>{sourceLabel(a)}</th><th>{sourceLabel(b)}</th></tr></thead><tbody>{differing.slice(0,showAll?2000:25).map(d=><tr key={d.id}><td>{dataset.kind==='texts'?<button type="button" className="docbutton" onClick={()=>onOpenText(d.id)}>{d.name}</button>:d.name}</td><td><span className="answer-cell">{d.a}</span></td><td><span className="answer-cell">{d.b}</span></td></tr>)}</tbody></table></div>{differing.length>25&&<button type="button" className="textbutton" onClick={()=>setShowAll(v=>!v)}>{showAll?'Show fewer':`Show all ${Math.min(differing.length,2000).toLocaleString('en-US')}`}</button>}</>:<p className="hint">The two sources give the same value for every compared {unit}.</p>}
+     {differing.length?<><div className="research-table-scroll"><table className="research-table"><thead><tr><th>{unit==='text'?'Document':'Subject'}</th><th>{sourceLabel(a)}</th><th>{sourceLabel(b)}</th></tr></thead><tbody>{differing.slice(0,showAll?2000:25).map(d=><tr key={d.id}><td>{dataset.kind==='texts'&&!gone.has(d.id)?<button type="button" className="docbutton" onClick={()=>onOpenText(d.id)}>{d.name}</button>:d.name}{gone.has(d.id)&&<span className="research-tag" title="Deleted from the study; kept for the runs that used it">deleted</span>}</td><td><span className="answer-cell">{d.a}</span></td><td><span className="answer-cell">{d.b}</span></td></tr>)}</tbody></table></div>{differing.length>25&&<button type="button" className="textbutton" onClick={()=>setShowAll(v=>!v)}>{showAll?'Show fewer':`Show all ${Math.min(differing.length,2000).toLocaleString('en-US')}`}</button>}</>:<p className="hint">The two sources give the same value for every compared {unit}.</p>}
     </>:<p className="research-empty">No {unit} has a value in both {sourceLabel(a)} and {sourceLabel(b)} yet.</p>)}
    </>}
   </section>

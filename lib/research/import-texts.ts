@@ -119,19 +119,23 @@ export const countWords=(text:string)=>(text.match(/\S+/g)||[]).length;
 
 // Fit new texts into the study: a text the study already holds (the same name
 // and the same text) is left out, and a text whose name is taken by a
-// different text gets _2, _3, … so every name stays unique.
-export async function fitIntoStudy(texts:NewText[],existing:{name:string;file?:Blob}[]):Promise<{texts:NewText[];already:number;renamed:number}>{
- const held=new Map<string,{name:string;file?:Blob}[]>();
- for(const doc of existing){const key=fold(doc.name),list=held.get(key);if(list)list.push(doc);else held.set(key,[doc]);}
+// different text gets _2, _3, … so every name stays unique. removed: texts
+// deleted from the study but kept for the runs that used them; one of them
+// added again (the same name and the same text) is brought back (`back`).
+type Held={id?:string;name:string;file?:Blob;removedAt?:string};
+export async function fitIntoStudy(texts:NewText[],existing:Held[],removed:Held[]=[]):Promise<{texts:NewText[];already:number;renamed:number;back:number}>{
+ const held=new Map<string,Held[]>();
+ for(const doc of [...existing,...removed.map(doc=>({...doc,removedAt:doc.removedAt||'removed'}))]){const key=fold(doc.name),list=held.get(key);if(list)list.push(doc);else held.set(key,[doc]);}
  // A new name avoids the names in the study and the names of the other new texts.
  const used=new Set(held.keys()),coming=new Set(texts.map(text=>fold(text.name))),contents=new Map<Blob,Promise<string>>(),fitted:NewText[]=[];
  const read=(file:Blob)=>{let content=contents.get(file);if(!content){content=file.text();contents.set(file,content);}return content;};
- let already=0,renamed=0;
+ let already=0,renamed=0;const returning=new Set<Held>();
  for(const text of texts){
   const same=held.get(fold(text.name));
   if(same){
-   const size=new Blob([text.text]).size;let found=false;
-   for(const doc of same)if(doc.file&&doc.file.size===size&&await read(doc.file)===text.text){found=true;break;}
+   const size=new Blob([text.text]).size;let found:Held|undefined;
+   for(const doc of same)if(doc.file&&doc.file.size===size&&!returning.has(doc)&&await read(doc.file)===text.text){found=doc;break;}
+   if(found?.removedAt&&found.id){returning.add(found);fitted.push({...text,name:found.name,back:found.id});continue;}
    if(found){already++;continue;}
   }
   let name=text.name;
@@ -142,5 +146,5 @@ export async function fitIntoStudy(texts:NewText[],existing:{name:string;file?:B
   }
   used.add(fold(name));fitted.push(name===text.name?text:{...text,name});
  }
- return {texts:fitted,already,renamed};
+ return {texts:fitted,already,renamed,back:returning.size};
 }
