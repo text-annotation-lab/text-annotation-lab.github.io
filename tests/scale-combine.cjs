@@ -108,7 +108,7 @@ const race=row=>JSON.parse(row.answers.f0).race;
   assert.equal(kept,figures.n,`Case ${c+1}: ${JSON.stringify(pairs)}`);
  }
 
- // Exports: the run's record counts the numbers left out, and the methods text says so.
+ // Exports: the run's record counts the numbers left out, and the README’s note on combining says so.
  const runList=[{...setup,number:1,startedAt:'2026-11-16T09:00:00.000Z',repeats:undefined},{...setup,number:2,startedAt:'2026-11-16T10:00:00.000Z'}];
  const dataset={kind:'texts',rows:scaled.rows,runs:runList,columns,samples:[],scoreScale:SCALE},study={name:'Scale study',dataset,lab:'test'};
  const results=tables.resultsTable(study,2);

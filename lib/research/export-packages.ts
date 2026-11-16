@@ -1,10 +1,10 @@
 // The Export tab's files. An Excel workbook reports one run. The research repository is the whole study for
 // the researcher's own archive: every run, the corpus, the requests and replies, and a backup that can be
 // imported again. The supplementary repository is what a journal or an OSF or Zenodo deposit needs for one
-// run: a record of the settings, the prompt and answer fields, the results, agreement with human labels, a
-// draft methods paragraph, and a Python script that sends the requests again.
+// run: a record of the settings, the prompt and answer fields, the results, agreement with human labels, and a
+// Python script that sends the requests again.
 import {fieldSpec,PLAIN_FIELD} from '../answer-types';
-import {reasoningOptionLabel,type Provider} from '../providers';
+import type {Provider} from '../providers';
 import {fillRequest} from '../request-frame';
 import {insertMap,markedInserts,placesText} from '../prompt-inserts';
 import {columnIndex} from './columns';
@@ -20,7 +20,6 @@ import {rowForRun,type Row} from './runs';
 import {tiedVote} from './repeats';
 import {sampleNote} from './sample';
 import {fieldLabel} from './view';
-import {scaleText} from './score-scale';
 import {offScaleLeftOut} from './scale-combine';
 
 // Told each step as it starts: "Computing agreement", or the file about to be written.
@@ -220,14 +219,10 @@ function scriptFiles(study:ExportStudy,report:RunReport,exportedAt:string):{file
  return {files:[{path:'annotate_template.py',data:SCRIPT_TEMPLATE},{path:'annotate.py',data:fillScript(SCRIPT_TEMPLATE,values)},{path:'requirements.txt',data:REQUIREMENTS}],why:''};
 }
 
-// A draft paragraph for a paper's methods section, written from the run's record.
-export function methodsParagraph(study:ExportStudy,report:RunReport,record:RunRecord):string{
- const {facts}=report,{run}=facts,knowledge=study.dataset.kind==='knowledge',unit=unitOf(study.dataset),units=(n:number)=>`${count(n)} ${unit}${n===1?'':'s'}`,was=(n:number)=>n===1?'was':'were';
- const dates=[facts.requests.first,facts.requests.last].filter(Boolean).map(time=>time.slice(0,10)),period=!dates.length?'':dates.length<2||dates[0]===dates[1]?` on ${dates[0]}`:` between ${dates[0]} and ${dates[1]}`;
- const effort=run.effort==='off'?'reasoning switched off':run.effort&&run.effort!=='default'?`reasoning effort “${reasoningOptionLabel(run.effort).toLowerCase()}”`:'the provider’s default reasoning effort',limit=record.model.max_output_tokens;
- const reported=facts.models.length?`; model ${run.provider==='openrouter'?'and upstream provider ':'version '}reported by the API: ${facts.models.join(', ')}`:'';
- const {total,failed,replaced}=facts.requests,failedText=failed?`${count(failed)} of ${count(total)} request${total===1?'':'s'} did not return a usable annotation (an API error, a refusal, or an answer that could not be read) and ${was(failed)} excluded${facts.allFailed?`, leaving ${units(facts.allFailed)} without an annotation`:''}`:'';
- const retried=replaced?`${count(replaced)} failed request${replaced===1?' was':'s were'} sent again`:'';
+// How a run that annotated each text several times combined the annotations, as a record (empty for one
+// annotation per text).
+function combiningNote(study:ExportStudy,report:RunReport,record:RunRecord):string{
+ const {facts}=report,{run}=facts,unit=unitOf(study.dataset),units=(n:number)=>`${count(n)} ${unit}${n===1?'':'s'}`,was=(n:number)=>n===1?'was':'were';
  // Several annotations per text: how they were combined, how many texts combine fewer, and how many votes were tied.
  const reps=run.repeats||1,plain=Boolean(run.answerSettings?.plain),typeOf=(name:string)=>fieldSpec(run.answerSettings,name)?.type;
  const annotated=run.fewer?`Each ${unit} was to be annotated ${reps} times, but ${units(run.fewer)} had fewer usable annotations, so ${run.fewer===1?'its answers combine':'their answers combine'} fewer`:`Each ${unit} was annotated ${reps} times`;
@@ -239,21 +234,7 @@ export function methodsParagraph(study:ExportStudy,report:RunReport,record:RunRe
  const offScale=record.requests.scores_off_scale_left_out_when_combined??0;
  const offScaleText=offScale?` ${count(offScale)} score${offScale===1?'':'s'} off the scale (for example, a code such as 9 for “can’t tell”) ${was(offScale)} left out when the answers were combined, like a missing value, where another answer for the same ${unit} was on the scale.`:'';
  const combined=reps<2?'':plain?`${annotated}; numbers in the answers were combined by the median, other values by majority vote.${offScaleText}`:`${annotated}; ${!run.answerFields.some(name=>typeOf(name))?'the answers were combined by majority vote':kinds.length>2?kinds.slice(0,-1).join(', ')+', and '+kinds[kinds.length-1]:kinds.join(' and ')}.${tieText}`;
- // Placeholders of the prompt that held a text's own value.
- const valued=valuedInserts(study.dataset,run.number),inserted=runInserts(report.sent).filter(name=>valued.has(name)),metaNames=inserted.filter(name=>name!=='id').map(name=>name.slice(5)),insertedParts=[...(inserted.includes('id')?['its name']:[]),...(metaNames.length?[`its value${metaNames.length===1?'':'s'} of the metadata column${metaNames.length===1?'':'s'} ${listed(metaNames)}`]:[])];
- const insertedText=insertedParts.length?`For each ${unit}, the prompt was completed with ${insertedParts.join(' and ')}.`:'';
- // What the package holds: no request without recorded settings, and no script for a run that carried web search results.
- const known=Boolean(report.sent.text||report.sent.pdf),provided=['The full prompt',...(known?['the requests as sent']:[]),...(known&&!facts.webSearch?['an executable script']:[])];
- return [
-  `${unit==='text'?'Texts':'Subjects'} (N = ${count(facts.usable)}) were annotated with ${run.model} (${run.provider==='openrouter'?'through the OpenRouter API':(PROVIDER_NAMES[run.provider]||run.provider)+' API'}${reported})${period}, using ${[effort,...(typeof record.model.temperature==='number'?[`temperature ${record.model.temperature}`]:[])].join(', ')}${limit?`${typeof record.model.temperature==='number'?',':''} and a maximum of ${count(limit)} output tokens`:''}.`,
-  knowledge?`No source texts were supplied: the model answered from what it has learned, given a few identifying details for each subject (see the prompt and the list of subjects).${facts.webSearch?' Web search results collected beforehand for each subject were supplied with the request.':''}${run.answerSettings?.inPrompt?'':' The Lab added a fixed paragraph after the prompt that asked the model to answer “INSUFFICIENT_KNOWLEDGE” where its knowledge was insufficient for a reliable judgment (see the prompt as sent).'}`:'',
-  insertedText,
-  run.answerSettings?.plain?`The model returned free-text responses.${study.dataset.scoreScale?` Scores in replies that were JSON were compared on a scale set for them, ${scaleText(study.dataset.scoreScale)} (not sent to the model); a number off the scale was left out of the agreement figures and reported.`:''}`:`The model was required to return the answer fields listed in the codebook as JSON conforming to a schema (structured outputs)${explanationRequested(facts)?', with an explanation written before the answers':''}${run.answerSettings?.named?'':'; the Lab added a paragraph describing this format after the prompt'}.`,
-  combined,
-  retried?`${retried}${failedText?`; after this, ${failedText}`:''}.`:failedText?failedText+'.':'',
-  facts.active?`The run was not finished when this was exported: ${units(facts.active)} had no result yet.`:'',
-  `Requests were sent ${facts.processing==='batch'?'through the provider’s batch interface':facts.processing==='instant'?'individually':'partly individually and partly through the provider’s batch interface'}${run.caching==='off'?'':run.caching==='on'?' with prompt caching':' (partly with prompt caching)'}. The annotation was run with the Text Annotation Lab (version ${facts.labs.join('; ')||study.lab}). ${provided.length>2?provided.slice(0,-1).join(', ')+', and '+provided[provided.length-1]:provided.join(' and ')} ${provided.length>1?'are':'is'} provided in the supplementary material.`,
- ].filter(Boolean).join(' ');
+ return combined;
 }
 
 const tableRow=(cells:(string|number)[])=>'| '+cells.join(' | ')+' |';
@@ -290,7 +271,7 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   ...(facts.requests.replaced?[tableRow(['Failed attempts sent again',`${facts.requests.replaced} (their tokens are included in the token totals${options.logs?'; the logs keep them':''})`])]:[]),
   tableRow(['Annotation period',`${facts.requests.first||'—'} to ${facts.requests.last||'—'}`]),tableRow(['Prompt version / hash',`v${run.promptVersion} / \`${report.hash}\``]),tableRow(['Prompt caching',run.caching]),tableRow(['Sent through',processingWords(facts)]),'',
   ...agreementSection(study,report),
-  '## Methods text (draft)','','> '+methodsParagraph(study,report,record),'','Edit as needed; check every detail against `metadata.json`.','',
+  ...(combining=>combining?['## How annotations were combined','',combining,'']:[])(combiningNote(study,report,record)),
   '## Files','','| File | Contents |','|---|---|',
   tableRow(['`metadata.json`','Machine-readable record of the model, settings, dates, counts, and token use, with the bodies of the requests as sent (marks stand for the document'+(inserted.length?' and for the values of the prompt’s placeholders':'')+')']),
   tableRow(['`prompt/prompt.txt`','The annotation prompt as written'+insertedNote]),

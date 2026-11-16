@@ -113,7 +113,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
    </section>
    <section className="research-export-card">
     <h3>Supplementary repository</h3>
-    <p className="hint">What a journal or an OSF or Zenodo deposit needs for the chosen run: a record of the settings, the prompt and answer fields, the results, agreement, a draft methods paragraph, and a Python script that sends the requests again (with a template marking every inserted value).</p>
+    <p className="hint">What a journal or an OSF or Zenodo deposit needs for the chosen run: a record of the settings, the prompt and answer fields, the results, agreement, and a Python script that sends the requests again (with a template marking every inserted value).</p>
     {option(options.texts,texts=>setOptions(now=>({...now,texts})),`Include the ${unit}s`,knowledge?'Off by default. The results name each subject either way; this adds every subject as the requests carried it.':'Off by default: check copyright and privacy before sharing texts publicly.')}
     {option(options.explanations,explanations=>setOptions(now=>({...now,explanations})),'Include the model’s explanations','The explanation written before the answers. An answer field of your own that holds an explanation is always included.')}
     {option(options.logs,logs=>setOptions(now=>({...now,logs})),'Include request and response logs',`These contain the ${unit}s.`)}
