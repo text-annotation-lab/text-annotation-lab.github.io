@@ -70,7 +70,7 @@ export function labelPairs(dataset:Dataset,run:number):{fields:string[];pairs:La
   if(words.some(word=>NOT_LABEL_WORDS.has(word)))reason='a note or rating';
   else if(words.some(word=>AUTHOR_WORDS.has(word)))reason='about the author';
   else{
-   const p=pairSources(rows,dataset.columns,{kind:'run',run},field,{kind:'column',name:column.name},'');
+   const p=pairSources(rows,dataset.columns,{kind:'run',run},field,{kind:'column',name:column.name},'',dataset.scoreScale);
    // A missing-value marker (NA for a text nobody coded) is no label, unless the field has it as a value.
    const labels=p.b.filter(value=>!isMissingLabel(value)||fits(value,p));
    if(!labels.length)reason=p.ids.length||p.onlyB?`no labels for ${label} among this run’s ${unit}s with an answer`:`no labels among this run’s ${unit}s`;
@@ -110,7 +110,7 @@ export async function runAgreement(dataset:Dataset,run:number,intervals:Interval
   return {run,field,source,comparedWith,stats:{...stats,ci:stats.n>=10?await intervals(job):{}},withLabel:p.ids.length+p.onlyB,basis:p.basis};
  };
  for(const {field,column} of pairs){
-  const p=pairSources(rows,dataset.columns,{kind:'run',run},field,{kind:'column',name:column},'');
+  const p=pairSources(rows,dataset.columns,{kind:'run',run},field,{kind:'column',name:column},'',dataset.scoreScale);
   if(!own.has(field))own.set(field,p);
   lines.push(await line(field,'model',column,p));
  }

@@ -11,6 +11,7 @@ import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSour
 import {computeIntervals,intervalsOf} from '@/lib/research/intervals';
 import {comparisonReport,groupColumns} from '@/lib/research/comparison-report';
 import {fileStem,runLines,sourceOf,unitOf,type Dataset,type RunLine} from '@/lib/research/export';
+import {scaleText} from '@/lib/research/score-scale';
 import {requestLines,runRequests} from '@/lib/research/export-data';
 import {runFacts,type RunFacts} from '@/lib/research/export-tables';
 import type {RecordedRequest} from '@/lib/research/requests';
@@ -62,6 +63,7 @@ function RunSettings({dataset,run,facts,state,onClose}:{dataset:PanelData;run:Ru
     {item('Reasoning summary',run.summary==='on'?'recorded':run.summary==='off'?'not requested':'recorded in part')}
     {knowledge&&item('Web search',run.webSearch?'yes':'no')}
     {item('Answer fields',answersLabel(run.answerFields,run.answerSettings))}
+    {run.answerSettings?.plain&&dataset.scoreScale&&item('Scale of the scores',`${scaleText(dataset.scoreScale)} (set for the study, for the statistics; not sent)`)}
     {run.scope&&item('Scope',run.scope)}
     {item('Started',when(run.startedAt))}
     {facts.finished&&item('Latest result',when(facts.finished))}
@@ -146,7 +148,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
  const field=pickField(fields,fieldChoice,a?.kind==='column'?a.name:b?.kind==='column'?b.name:'');
  const fieldA=a?.kind==='run'?field:'',fieldB=b?.kind==='run'?pickField(fieldsB,field):'';
  // Two label columns are compared on the texts in the study; a run also on the texts it used that were deleted since.
- const pairing=useMemo(()=>a&&b?pairSources(a.kind==='column'&&b.kind==='column'?dataset.rows.filter(row=>!row.removedAt):dataset.rows,dataset.columns,a,fieldA,b,fieldB):undefined,[dataset.rows,dataset.columns,a&&sourceKey(a),b&&sourceKey(b),fieldA,fieldB]);
+ const pairing=useMemo(()=>a&&b?pairSources(a.kind==='column'&&b.kind==='column'?dataset.rows.filter(row=>!row.removedAt):dataset.rows,dataset.columns,a,fieldA,b,fieldB,dataset.scoreScale):undefined,[dataset.rows,dataset.columns,dataset.scoreScale,a&&sourceKey(a),b&&sourceKey(b),fieldA,fieldB]);
  const gone=useMemo(()=>new Set(dataset.rows.filter(row=>row.removedAt).map(row=>row.id)),[dataset.rows]);
  const tol=Math.max(0,Number(tolerance)||0);
  const job=useMemo(()=>pairing?agreementJob(pairing,level,tol):undefined,[pairing,level,tol]);

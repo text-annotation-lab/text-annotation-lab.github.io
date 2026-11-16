@@ -6,8 +6,10 @@ import {requestsOf} from './repeats';
 import type {Column} from './columns';
 import {fieldsOf,valueOf} from './view';
 import {sampleNote,type SampleRecord} from './sample';
+import type {ScoreScale} from './score-scale';
 
-export type Dataset={kind:'texts'|'knowledge';rows:Row[];runs:RunRecord[];columns:Column[];samples:SampleRecord[]};
+// scoreScale: the study's scale for the scores of plain-text replies that are JSON (see score-scale.ts).
+export type Dataset={kind:'texts'|'knowledge';rows:Row[];runs:RunRecord[];columns:Column[];samples:SampleRecord[];scoreScale?:ScoreScale};
 export const unitOf=(dataset:{kind:string})=>dataset.kind==='knowledge'?'subject':'text';
 export const sourceOf=(dataset:{kind:string})=>dataset.kind==='knowledge'?'model knowledge (no texts supplied)':'uploaded texts';
 
