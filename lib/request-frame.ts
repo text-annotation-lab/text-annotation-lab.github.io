@@ -5,7 +5,7 @@ import {annotationSchema,answerInstructions,type AnswerSettings} from './answer-
 import type {Provider} from './providers';
 import {anthropicMark,anthropicSystem,cachedParts,openaiPrompt,openRouterSystem,OPENAI_CACHE_MODE,OPENAI_MARK,sentRequestSettings,outputLimit,budgetedClaude,marksOpenAICache,type RequestSettings} from './request-settings';
 import {knowledgeInstructions} from './model-knowledge';
-import {fixedLength,markInserts,INSERT_MARK} from './prompt-inserts';
+import {fixedLength,markInserts,fillPlaces,INSERT_MARK} from './prompt-inserts';
 
 // The document of one request: its text, or a whole PDF (base64) sent as a file.
 export type RequestDocument={filename:string;text:string}|{filename:string;pdf:string};
@@ -17,15 +17,17 @@ export type RequestDocument={filename:string;text:string}|{filename:string;pdf:s
 // schemaPrompt keeps them as written. The answer format is still read from schemaPrompt, and a cache mark
 // then stands before the first placeholder, where the texts' prompts part.
 // earlier: the layout of requests before `layout` (see below), for "Retry failed" on a run made then and for the
-// record of a result made then.
-export type BodyOptions={provider:Provider;model:string;effort:string;prompt:string;schemaPrompt:string;answerFields:string[];settings?:AnswerSettings;request?:RequestSettings;knowledge?:boolean;batch?:boolean;inserts?:boolean;earlier?:boolean};
+// record of a result made then. spots (research mode): where the prompt had {{text}}, taken out of `prompt`; the
+// text goes there (lib/prompt-inserts.ts, fillPlaces).
+export type BodyOptions={provider:Provider;model:string;effort:string;prompt:string;schemaPrompt:string;answerFields:string[];settings?:AnswerSettings;request?:RequestSettings;knowledge?:boolean;batch?:boolean;inserts?:boolean;earlier?:boolean;spots?:number[]};
 
 export const requestUrl=(provider:Provider,model:string)=>provider==='openai'?'https://api.openai.com/v1/responses':provider==='anthropic'?'https://api.anthropic.com/v1/messages':provider==='gemini'?`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`:'https://openrouter.ai/api/v1/chat/completions';
 
 // Where the prompt goes. Results and runs made since November 16, 2026 record `layout: 'message'`: the annotation
 // prompt, with the Lab's instructions, and the document go in one message, the prompt first, then a text between
 // <text> tags (a subject's fields between <entry> tags) or a PDF as a file. A system prompt is sent only where
-// research mode's own is set. Before (no `layout`), the annotation prompt was the system prompt, and the message
+// research mode's own is set. Where the prompt has {{text}} (research mode), the text stands there instead, without
+// tags (a PDF still follows the prompt, and the places are left empty). Before (no `layout`), the annotation prompt was the system prompt, and the message
 // opened with a line naming the document (documentNote); with research mode's own system prompt, the annotation
 // prompt opened the message, before that line.
 export type Layout='message';
@@ -44,21 +46,23 @@ export function framePrompt(slot:string,content:unknown):{prompt:string;system?:
  const lead=parts.findIndex(opensDocument);
  if(lead>=0)return lead?{prompt:words(parts.slice(0,lead)),system:slot}:{prompt:slot};
  const whole=words(parts),end=whole.search(/\n\n<(?:text|entry)>\n<<DOCUMENT_TEXT>>\n<\/(?:text|entry)>$/);
- return {prompt:end<0?whole:whole.slice(0,end),...(slot?{system:slot}:{})};
+ return {prompt:end<0?whole.split(REQUEST_MARKS.text).join('{{text}}'):whole.slice(0,end),...(slot?{system:slot}:{})};
 }
 
 export function providerBody(o:BodyOptions,doc:RequestDocument):Record<string,unknown>{
  const {provider,model,effort}=o,knowledge=Boolean(o.knowledge),plain=Boolean(o.settings?.plain),pdf='pdf' in doc?doc.pdf:undefined,text='pdf' in doc?'':doc.text;
  const note=documentNote(provider,knowledge,doc.filename),schema=(google:boolean)=>annotationSchema(o.answerFields,google,o.schemaPrompt,knowledge,o.settings);
  const request=sentRequestSettings(provider,model,o.request,effort),limit=outputLimit(provider,model,request),temperature=request?.temperature===undefined?{}:{temperature:request.temperature};
- const shared=o.inserts?fixedLength(o.schemaPrompt):o.schemaPrompt.length,fixed=shared<o.schemaPrompt.length?shared:undefined;
- const system=request?.system,earlier=Boolean(o.earlier);
- // The message with the document: the prompt, then the text between tags, or the prompt and then the PDF. With
- // prompt caching, a mark ends the part every text shares: the prompt with the opening tag, or the prompt up to
- // its first placeholder (none where the prompt begins with one). The prompt ends where its last line does.
+ const system=request?.system,earlier=Boolean(o.earlier),spots=earlier?[]:o.spots||[],placed=spots.length>0;
+ const shared=o.inserts||placed?fixedLength(o.schemaPrompt,placed):o.schemaPrompt.length,fixed=shared<o.schemaPrompt.length?shared:undefined;
+ // The message with the document: the prompt, then the text between tags (or in the prompt's places for it), or
+ // the prompt and then the PDF. With prompt caching, a mark ends the part every text shares: the prompt with the
+ // opening tag, or the prompt up to its first placeholder (none where the prompt begins with one). The prompt
+ // ends where its last line does, unless the text is placed in it.
  const message=(part:(text:string)=>object,file:object,mark?:object):object[]=>{
-  const base=o.prompt.trimEnd(),tags=documentTags(knowledge),whole=pdf===undefined?base+tags.open+text+tags.close:base;
-  const at=fixed!==undefined&&fixed<base.length?fixed:pdf===undefined?base.length+tags.open.length:base.length;
+  const base=placed?o.prompt:o.prompt.trimEnd(),tags=documentTags(knowledge);let whole=pdf===undefined?base+tags.open+text+tags.close:base;
+  if(placed){whole='';let from=0;for(const spot of spots){whole+=base.slice(from,spot)+(pdf===undefined?text:'');from=spot;}whole+=base.slice(from);}
+  const at=fixed!==undefined&&fixed<base.length?fixed:placed?whole.length:pdf===undefined?base.length+tags.open.length:base.length;
   const parts=mark&&whole.slice(0,at).trim()?[{...part(whole.slice(0,at)),...mark},...(at<whole.length?[part(whole.slice(at))]:[])]:[part(whole)];
   return pdf===undefined?parts:[...parts,file];
  };
@@ -153,14 +157,15 @@ export const formText=(value:string)=>value.replace(/\r\n|\r|\n/g,'\r\n');
 export const REQUEST_MARKS={filename:'<<DOCUMENT_FILENAME>>',text:'<<DOCUMENT_TEXT>>',file:'<<FILE_BASE64>>'} as const;
 // What a result was made with, as the page records it. prompt: the annotation prompt as written (its line
 // breaks are put in the form they were sent in). inserts: the prompt's placeholders were filled in for each text.
+// placed: the text went where the prompt has {{text}} (research mode, current layout).
 // layout: as the result records it (absent: the earlier layout, see Layout).
-export type FrameSettings={provider:Provider;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;requestSettings?:RequestSettings;knowledge?:boolean;webSearch?:boolean;batch?:boolean;inserts?:boolean;layout?:string};
+export type FrameSettings={provider:Provider;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;requestSettings?:RequestSettings;knowledge?:boolean;webSearch?:boolean;batch?:boolean;inserts?:boolean;placed?:boolean;layout?:string};
 export type RequestFrame={url:string;body:string};
 // The request of one result, with marks for its document. The Lab's own instructions are added to the prompt
 // here exactly as the request handlers add them.
 export function requestFrame(s:FrameSettings,pdf:boolean):RequestFrame{
- const knowledge=Boolean(s.knowledge),written=formText(s.prompt),added=knowledge?'\n\n'+knowledgeInstructions(Boolean(s.webSearch)&&!s.batch):'';
- const body=providerBody({provider:s.provider,model:s.model,effort:s.effort,prompt:(s.inserts?markInserts(written):written)+added+answerInstructions(s.answerFields,s.answerSettings),schemaPrompt:s.batch?written+added:written,answerFields:s.answerFields,settings:s.answerSettings,request:s.requestSettings,knowledge,batch:s.batch,inserts:s.inserts,earlier:s.layout!==LAYOUT},pdf?{filename:REQUEST_MARKS.filename,pdf:REQUEST_MARKS.file}:{filename:REQUEST_MARKS.filename,text:REQUEST_MARKS.text});
+ const knowledge=Boolean(s.knowledge),written=formText(s.prompt),framed=s.placed&&s.layout===LAYOUT?fillPlaces(written,(name,whole)=>s.inserts?`<<INSERT:${name}>>`:whole):{prompt:s.inserts?markInserts(written):written,spots:undefined},added=knowledge?'\n\n'+knowledgeInstructions(Boolean(s.webSearch)&&!s.batch):'';
+ const body=providerBody({provider:s.provider,model:s.model,effort:s.effort,prompt:framed.prompt+added+answerInstructions(s.answerFields,s.answerSettings),schemaPrompt:s.batch?written+added:written,answerFields:s.answerFields,settings:s.answerSettings,request:s.requestSettings,knowledge,batch:s.batch,inserts:s.inserts,earlier:s.layout!==LAYOUT,spots:framed.spots},pdf?{filename:REQUEST_MARKS.filename,pdf:REQUEST_MARKS.file}:{filename:REQUEST_MARKS.filename,text:REQUEST_MARKS.text});
  return {url:requestUrl(s.provider,s.model),body:JSON.stringify(body)};
 }
 // A recorded request with one document put back. `file` stands for a PDF's data (the data itself, or a note
