@@ -310,6 +310,8 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   let runNo:number|undefined;
   if(eligible.length){const begun=beginRun(latest.current,runsNow.current,setupNow,newRun,runStartedAt,new Set((all?eligible:eligible.slice(0,1)).map(r=>r.id)));latest.current=begun.docs;runsNow.current=begun.runs;setDocs(begun.docs);setRuns(begun.runs);runNo=begun.number;}
   let claimed=0,failed=false;const recorded=recorder(false);
+  // Each text is taken once per run: one whose missing annotations fail again is not sent over and over.
+  const taken=new Set<string>();
   // Research mode: a failed text is marked and the run carries on; it stops only when its first requests all
   // failed in a way every request would meet. answered, failures: the requests that came back, and those that failed.
   const early=research?earlyStopper():undefined;let answered=0,failures=0;
@@ -341,8 +343,8 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      // The annotations of a text already begun come before a new text.
      const next=waitingTasks.shift();if(next)return next;
      if(!all&&claimed)return;
-     const d=latest.current.find(x=>(x.status==='pending'||resumes(x)&&x.runNo===runNo)&&(!only||only.has(x.id)));if(!d)return;
-     claimed++;
+     const d=latest.current.find(x=>!taken.has(x.id)&&(x.status==='pending'||resumes(x)&&x.runNo===runNo)&&(!only||only.has(x.id)));if(!d)return;
+     taken.add(d.id);claimed++;
      // n: the number of the annotation; 0 for a text's single annotation, which is written on the text itself.
      const ns=times===1?[0]:d.status==='pending'?Array.from({length:times},(_,i)=>i+1):missingRepeats(d);
      update(d.id,{inputMode:provider==='openrouter'?(/\.pdf$/i.test(d.file.name)?'pdf-native':'text'):undefined,status:'running',runNo,runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,concurrency:all?parallel:1,processing:'instant',batchId:undefined,...recorded(d),...claimRepeats(d)});
