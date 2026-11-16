@@ -7,7 +7,7 @@
 // stored as `runNo`; `runNumber` belongs to the Model knowledge workspace,
 // where charts and the Excel workbook read it.
 import {cleanAnswerSettings,type AnswerSettings} from '../answer-types';
-import {cleanRepeats,incomplete} from './repeats';
+import {cleanRepeats,incomplete,missingRepeats,repeatsOf} from './repeats';
 
 // answerSettings: the types of the answer fields, plain text, or no explanation (absent: the standard format).
 // repeats: annotations per text, when more than one (lib/research/repeats.ts).
@@ -17,7 +17,12 @@ import {cleanRepeats,incomplete} from './repeats';
 export type Setup={provider:string;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;repeats?:number;temperature?:number;maxOutput?:number};
 const tuning=(value:{temperature?:unknown;maxOutput?:unknown}|undefined)=>({...(typeof value?.temperature==='number'&&Number.isFinite(value.temperature)?{temperature:value.temperature}:{}),...(typeof value?.maxOutput==='number'&&Number.isInteger(value.maxOutput)?{maxOutput:value.maxOutput}:{})});
 // A deleted run keeps its record (marked), so its number is never used again.
-export type RunRecord=Setup&{number:number;startedAt:string;deleted?:boolean};
+// label: a name the researcher gives the run. scope: which texts each start of the run covered, in words.
+// retries: each time the run's failed requests were sent again (when, and how many requests came back).
+export type Retry={at:string;requests:number};
+export type RunRecord=Setup&{number:number;startedAt:string;deleted?:boolean;label?:string;scope?:string;retries?:Retry[]};
+export const LABEL_LENGTH=80;
+const SCOPE_LENGTH=400;
 // The fields of a result the research views read by name; a result may hold more.
 type ResultFields={provider?:string;model?:string;effort?:string;prompt?:string;answerFields?:string[];answerSettings?:AnswerSettings;repeats?:number;answers?:Record<string,string>;score?:string;explanation?:string;[key:string]:any};
 export type Earlier=ResultFields&{runNo:number;status:string};
@@ -72,8 +77,32 @@ export function beginRun<T extends Row>(docs:T[],runs:RunRecord[]|undefined,setu
 export function cleanRuns(value:unknown):RunRecord[]{
  if(!Array.isArray(value))return [];
  const seen=new Set<number>();
- return value.filter((r):r is RunRecord=>Boolean(r)&&typeof r==='object'&&Number.isInteger(r.number)&&r.number>0&&!seen.has(r.number)&&Boolean(seen.add(r.number))&&typeof r.model==='string'&&typeof r.prompt==='string').map(r=>({provider:String(r.provider||''),model:r.model,effort:String(r.effort||''),prompt:r.prompt,answerFields:Array.isArray(r.answerFields)?r.answerFields.filter((n:unknown)=>typeof n==='string'):[],...(cleanAnswerSettings(r.answerSettings)?{answerSettings:cleanAnswerSettings(r.answerSettings)}:{}),...(cleanRepeats(r.repeats)?{repeats:cleanRepeats(r.repeats)}:{}),...tuning(r),number:r.number,startedAt:String(r.startedAt||''),...(r.deleted?{deleted:true}:{})})).sort((a,b)=>a.number-b.number);
+ return value.filter((r):r is RunRecord=>Boolean(r)&&typeof r==='object'&&Number.isInteger(r.number)&&r.number>0&&!seen.has(r.number)&&Boolean(seen.add(r.number))&&typeof r.model==='string'&&typeof r.prompt==='string').map(r=>({provider:String(r.provider||''),model:r.model,effort:String(r.effort||''),prompt:r.prompt,answerFields:Array.isArray(r.answerFields)?r.answerFields.filter((n:unknown)=>typeof n==='string'):[],...(cleanAnswerSettings(r.answerSettings)?{answerSettings:cleanAnswerSettings(r.answerSettings)}:{}),...(cleanRepeats(r.repeats)?{repeats:cleanRepeats(r.repeats)}:{}),...tuning(r),number:r.number,startedAt:String(r.startedAt||''),...(r.deleted?{deleted:true}:{}),...notes(r)})).sort((a,b)=>a.number-b.number);
 }
+// A run's label, scope, and retries as read from storage.
+function notes(r:{label?:unknown;scope?:unknown;retries?:unknown}):Pick<RunRecord,'label'|'scope'|'retries'>{
+ const label=typeof r.label==='string'?r.label.trim().slice(0,LABEL_LENGTH):'',scope=typeof r.scope==='string'?r.scope.trim().slice(0,SCOPE_LENGTH):'';
+ const retries=Array.isArray(r.retries)?r.retries.filter((x):x is Retry=>Boolean(x)&&typeof x==='object'&&typeof x.at==='string'&&Number.isInteger(x.requests)&&x.requests>=0).map(x=>({at:x.at,requests:x.requests})):[];
+ return {...(label?{label}:{}),...(scope?{scope}:{}),...(retries.length?{retries}:{})};
+}
+// Name a run (an empty label takes the name away).
+export function labelRun(runs:RunRecord[],number:number,label:string):RunRecord[]{
+ const text=label.trim().slice(0,LABEL_LENGTH);
+ return runs.map(run=>{if(run.number!==number)return run;const {label:_,...rest}=run;return text?{...rest,label:text}:rest;});
+}
+// Add what a start of the run covered to its scope. Of many starts, the first and the latest three are kept.
+export function addScope(runs:RunRecord[],number:number,scope:string):RunRecord[]{
+ const text=scope.trim();if(!text)return runs;
+ return runs.map(run=>{
+  if(run.number!==number)return run;
+  const parts=(run.scope?run.scope.split('; '):[]).filter(part=>part!=='…');
+  if(parts.at(-1)===text)return run;
+  const next=[...parts,text];
+  return {...run,scope:(next.length>4?[next[0],'…',...next.slice(-3)]:next).join('; ').slice(0,SCOPE_LENGTH)};
+ });
+}
+// Note that a run's failed requests were sent again.
+export const addRetry=(runs:RunRecord[],number:number,retry:Retry):RunRecord[]=>runs.map(run=>run.number===number?{...run,retries:[...(run.retries||[]),retry]}:run);
 
 function withoutResult<T extends Row>(doc:T):T{
  const rest:Row={...doc};
@@ -103,6 +132,50 @@ export function rowForRun<T extends Row>(doc:T,run:number):T{
  return {...withoutResult(doc),...(entry||{status:'absent'}),earlier:doc.earlier} as T;
 }
 
+// The requests of a run without a usable answer: every request of a text whose result in the run failed, and
+// the missing annotations of a text with fewer than the run makes. ids: those texts. A text that is being
+// annotated, or that waits to be sent again from the Workspace, is not among them.
+export function retryable(docs:Row[],run:number):{ids:string[];requests:number}{
+ const ids:string[]=[];let requests=0;
+ for(const doc of docs){
+  const result=rowForRun(doc,run);
+  const n=result.status==='error'?repeatsOf(result):incomplete(result)?missingRepeats(result).length:0;
+  if(n){ids.push(doc.id);requests+=n;}
+ }
+ return {ids,requests};
+}
+// The request settings a run's results recorded (prompt caching, the reasoning summary, and the like), as the
+// first result that has them holds them. "Retry failed" sends the run's requests again with these.
+export function runRequestSettings(docs:Row[],run:number):unknown{
+ for(const doc of docs){const result=rowForRun(doc,run);if((result.status==='done'||result.status==='error')&&result.requestSettings)return result.requestSettings;}
+}
+// Before a run's failed requests are sent again, each text concerned gets its result of that run back as its
+// current one, and the result it had moves to its earlier ones. The new answers are then written where the
+// run's failed ones were. Failed attempts of a text that waited to be sent again stay with it (each names its run).
+export function raiseRun<T extends Row>(docs:T[],run:number,ids:Set<string>):T[]{
+ return docs.map(doc=>{
+  if(!ids.has(doc.id)||(doc.runNo===run&&doc.status!=='pending')||doc.status==='running'||doc.status==='queued')return doc;
+  const earlier=doc.earlier||[],at=earlier.map(entry=>entry.runNo).lastIndexOf(run);
+  if(at<0)return doc;
+  const entry=earlier[at],rest=earlier.filter((_,i)=>i!==at);
+  if(doc.status==='done'||doc.status==='error'){const kept:Earlier={status:doc.status,runNo:doc.runNo??0};for(const key of RESULT_KEYS)if(doc[key]!==undefined)kept[key]=doc[key];rest.push(kept);}
+  const history=[...(doc.status==='pending'?doc.history||[]:[]),...(entry.history||[])];
+  return {...withoutResult(doc),...entry,...(history.length?{history}:{}),earlier:rest.length?rest:undefined} as T;
+ });
+}
+
+// After that, a text whose result in the run is not its latest gets its latest result back as its current one,
+// and the run's result goes back to its place among the earlier ones.
+export function lowerRun<T extends Row>(docs:T[],run:number,ids:Set<string>):T[]{
+ return docs.map(doc=>{
+  const earlier=doc.earlier||[];
+  if(!ids.has(doc.id)||doc.runNo!==run||(doc.status!=='done'&&doc.status!=='error')||!earlier.some(entry=>entry.runNo>run))return doc;
+  const kept:Earlier={status:doc.status,runNo:run};for(const key of RESULT_KEYS)if(doc[key]!==undefined)kept[key]=doc[key];
+  const at=earlier.findIndex(entry=>entry.runNo>run),all=[...earlier.slice(0,at),kept,...earlier.slice(at)],latest=all.at(-1)!,rest=all.slice(0,-1);
+  return {...withoutResult(doc),...latest,earlier:rest.length?rest:undefined} as T;
+ });
+}
+
 // Every completed result of a text: earlier runs first, then the current one.
 export function completedResults(doc:Row):Earlier[]{
  const results=(doc.earlier||[]).filter(e=>e.status==='done');
@@ -130,6 +203,13 @@ export function remainingFor<T extends Row>(docs:T[],setup:Setup,resume?:Set<str
  return docs.filter(doc=>doc.status==='pending'||doc.status==='error'||(doc.status==='done'&&(!completedResults(doc).some(made)||Boolean(resume?.has(doc.id)))));
 }
 
+// What a run is doing or how it ended: being sent, waiting in a batch, failed (no text has a usable answer),
+// or completed (failed requests, if any, are counted beside it).
+export type RunState='running'|'submitted'|'completed'|'failed';
+export function runState(docs:Row[],run:{number:number;done:number;active:number}):RunState{
+ if(run.active)return docs.some(doc=>doc.runNo===run.number&&doc.status==='running')?'running':'submitted';
+ return run.done?'completed':'failed';
+}
 // fewer: completed texts with fewer usable annotations than the run makes per text.
 export type RunSummary=RunRecord&{done:number;failed:number;active:number;fewer:number;promptVersion:number;recorded:boolean};
 // One line per run that has results (or is in progress). Settings come from

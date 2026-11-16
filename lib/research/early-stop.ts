@@ -40,10 +40,13 @@ export function earlyStopNotice(stop:EarlyStop,unit:'text'|'subject'):string{
  return `Stopped: the first ${stop.answered} requests all failed the same way, which points to ${stop.connection?'the connection':'the settings or the account'} rather than the ${unit}s. Requests under way will finish, and completed results are kept. See the error of a failed ${unit} before running again.`;
 }
 // What a run that carried on reports when it ends: how many of the requests that came back failed, and how they
-// are sent again (the workspace's "Remaining"; in Model knowledge, "Queue failed items for retry").
+// are sent again (the workspace's "Remaining"; in Model knowledge, "Queue failed items for retry"; for requests
+// that "Retry failed" sent again within their run, that button once more).
 // paused: the person paused the run, which says so itself.
-export function carriedOnNotice(failed:number,answered:number,kind:'workspace'|'knowledge',paused=false):string{
+export function carriedOnNotice(failed:number,answered:number,kind:'workspace'|'knowledge'|'retry',paused=false):string{
  const n=(value:number)=>value.toLocaleString('en-US'),them=failed===1?'it':'them';
  const what=answered===1?'The request failed.':failed===answered?`All ${n(answered)} requests failed.`:`${n(failed)} of ${n(answered)} requests failed${paused?'':', and the run carried on'}.`;
- return `${what} ${kind==='workspace'?`“Remaining” sends ${them} again.`:`“Queue failed items for retry” makes ${them} ready to run again.`}`;
+ return `${what} ${kind==='workspace'?`“Remaining” sends ${them} again.`:kind==='retry'?`“Retry failed” under Runs & agreement sends ${them} again.`:`“Queue failed items for retry” makes ${them} ready to run again.`}`;
 }
+// "Retry failed" sent a run's failed requests again, and every one came back with a usable answer.
+export const retriedNotice=(run:number,answered:number):string=>`Run #${run}: ${answered===1?'the request was sent again and has':`${answered.toLocaleString('en-US')} requests were sent again and all have`} a usable answer now.`;
