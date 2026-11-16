@@ -42,6 +42,29 @@ export function removeTexts<T extends Removable>(docs:T[],removed:T[],ids:Set<st
  return {...settle(all),kept,deleted};
 }
 
+// Model knowledge keeps a row per subject and run. A row that a run sent a request for (a result, done or failed,
+// a request under way, or failed attempts waiting to be sent again) is kept when its subject is deleted, marked
+// as removed; the subject's other rows (runs queued but not sent) are deleted.
+export const sentForSubject=(item:Row)=>item.status==='done'||item.status==='error'||item.status==='running'||item.status==='queued'||Array.isArray(item.history)&&item.history.some((attempt:any)=>attempt&&typeof attempt==='object');
+const subjectOf=(item:Row)=>String(item.subjectId||item.id);
+// Delete subjects (by subject). kept: the subjects with rows kept for their runs; deleted: those deleted outright.
+export function removeSubjects<T extends Removable>(items:T[],removed:T[],subjects:Set<string>,now:string):{items:T[];removed:T[];kept:number;deleted:number}{
+ const all:T[]=[],seen=new Set<string>(),kept=new Set<string>();
+ for(const item of withRemoved(items,removed)){
+  const key=subjectOf(item);
+  if(item.removedAt||!subjects.has(key)){all.push(item);continue;}
+  seen.add(key);
+  if(sentForSubject(item)){kept.add(key);all.push({...item,removedAt:now});}
+ }
+ const split=settle(all);
+ return {items:split.docs,removed:split.removed,kept:kept.size,deleted:seen.size-kept.size};
+}
+// Removed rows of Model knowledge as stored with the study: only well-formed records that a run used.
+export function cleanRemovedSubjects<T extends Removable>(value:unknown):T[]{
+ if(!Array.isArray(value))return [];
+ return value.filter((item:any)=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.name==='string'&&typeof item.removedAt==='string'&&sentForSubject(item)) as T[];
+}
+
 // After runs were deleted: a removed text that no run uses any more goes for good.
 export function pruneRemoved<T extends Removable>(docs:T[],removed:T[]):{docs:T[];removed:T[]}{
  if(!removed.length||removed.every(usedByRuns))return {docs,removed};
