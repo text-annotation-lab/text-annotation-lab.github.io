@@ -3,8 +3,8 @@
 import {usageSample} from '../cost-estimate/engine';
 import {cacheTokens,recordedCost} from '../cost-estimate/run-cost';
 import type {Provider} from '../providers';
-import {requestFrame,type RequestFrame} from '../request-frame';
-import {showInserts} from '../prompt-inserts';
+import {fillRequest,requestFrame,type RequestFrame} from '../request-frame';
+import {insertMap,showInserts} from '../prompt-inserts';
 import {annotationFormatRecord} from '../answer-fields';
 import {knowledgeDocumentText} from '../model-knowledge';
 import {rowForRun,type Row} from './runs';
@@ -147,6 +147,28 @@ export function documentReader(dataset:Dataset,extract:(file:File)=>Promise<stri
   const read=await text;
   return read===undefined?undefined:{filename:file.name,text:read};
  };
+}
+
+// A request as the logs show it: the request the Lab kept (or built again), with its document put back and the
+// values its placeholders were sent with, as kept with its result. pdf: what stands in place of a PDF's data.
+export function requestRecord(sent:SentRequest|undefined,doc:SentDocument|undefined,result:Row,pdf:string):Record<string,unknown>{
+ const inserts=insertMap(String(result.prompt??''),Array.isArray(result.inserts)?result.inserts:undefined);
+ let request:unknown=null,note='';
+ if(!sent)note='The settings of this request were not recorded, so it cannot be shown.';
+ else if(!doc)note='The document of this request could not be read, so only the request’s address is shown.';
+ else request=fillRequest(sent.frame.body,'pdf' in doc?{filename:doc.filename,file:pdf,inserts}:{filename:doc.filename,text:doc.text,inserts});
+ return {...(sent?{recorded:sent.recorded?'kept when the request was sent':'built again from the result’s settings by the version of the Lab that made this export',...(sent.formatUnchanged===undefined?{}:{answer_format_unchanged:sent.formatUnchanged}),url:sent.frame.url}:{}),...(note?{note}:{}),request};
+}
+// The reply to a request as the provider returned it, where the Lab has it.
+export function replyOf(result:Row):string|undefined{
+ const reply=result.output??result.rawResponse??(result.answerSettings?.plain?result.answers?.f0:undefined);
+ return typeof reply==='string'?reply:undefined;
+}
+// What the Lab keeps of a provider's response, as the logs show it.
+export function responseRecord(result:Row):Record<string,unknown>{
+ const done=result.status==='done';
+ return {status:done?'ok':'error',...(done?{}:{error:String(result.error??'')}),response_text:replyOf(result)??null,...(typeof result.reasoningSummary==='string'?{reasoning_summary:result.reasoningSummary}:{}),model_reported:result.modelReported??null,stop_reason:result.stopReason??null,response_id:result.responseId??null,
+  ...(result.batchId?{batch_id:result.batchId}:{}),usage:result.usage??null,requested_at:result.startedAt??null,completed_at:result.time??null};
 }
 
 // The first 12 hexadecimal digits of a text's SHA-256, to tell whether two prompts are the same.

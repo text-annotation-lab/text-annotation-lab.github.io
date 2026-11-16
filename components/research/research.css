@@ -168,6 +168,22 @@
 .research-reasoning pre{margin:8px 0 0;font:inherit;font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere;max-height:360px;overflow:auto}
 .research-earlier-entry .research-reasoning{margin:0 0 4px}
 .research-earlier-entry .research-reasoning summary{font-weight:400;color:#33415c}
+.research-technical{margin:0 0 12px;font-size:14px}
+.research-technical>summary,.research-technical-part>summary{cursor:pointer;font-weight:600;font-size:14px}
+.research-earlier-entry .research-technical{margin:0 0 4px}
+.research-earlier-entry .research-technical>summary{font-weight:400;color:#33415c}
+.research-technical dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px 18px;margin:10px 0 12px}
+.research-technical dt{font-size:12px;color:#64728b}
+.research-technical dd{margin:2px 0 0;overflow-wrap:anywhere}
+.research-technical-part{margin:0 0 10px}
+.research-technical-part>summary{font-weight:400;color:#33415c}
+.research-technical-part pre,.research-technical-full pre{margin-top:8px;max-height:320px}
+.research-technical-full h4{margin:12px 0 0;font-size:13px;color:#33415c}
+.research-technical-full .hint{margin:8px 0 0;font-size:13px;line-height:1.5}
+.research-technical-full .hint .textbutton{font-size:inherit}
+.research-technical .textbutton{font-size:14px}
+.research-steps{display:inline-flex;align-items:center;gap:12px;margin-left:18px;font-size:14px;color:#64728b}
+.research-steps .textbutton[aria-disabled=true]{color:#9aa6b8;cursor:default;text-decoration:none}
 
 /* Runs & agreement, Export */
 .research-panel{width:calc(100% - 56px);max-width:1384px;margin:0 auto;padding:32px 40px}
