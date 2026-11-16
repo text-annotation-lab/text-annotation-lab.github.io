@@ -264,7 +264,7 @@ assert.equal(tables.runsOverview({...exportStudy,dataset:{...dataset,runs:[{...r
 assert.equal(exporting.samplesTable([record]).length,2);
 assert.deepEqual(exporting.uniqueNames(['document','Year','year','run','year']),['document','Year','year_2','run','year_3']);
 assert.equal(tables.wideTable({...dataset,columns:[{name:'DOC_ID',role:'meta'},{name:'year',role:'meta'}]})[0][1],'DOC_ID_2','An imported column never repeats a column name of the Lab’s own');
-assert.equal(exporting.fileStem('Inaugural tone / 2026',dataset),'Inaugural-tone-2026');assert.equal(exporting.fileStem('',{kind:'knowledge'}),'annotations-model-knowledge');
+assert.equal(exporting.exportStem('Inaugural tone / 2026',dataset),'inaugural-tone-2026');assert.equal(exporting.exportStem('',{kind:'knowledge'}),'study-model-knowledge');assert.equal(exporting.dateStamp(new Date('2026-11-16T23:30:00Z')),'20261116');
 // No API key can be part of an export: the tables are built from texts, runs, columns, and samples alone.
 assert(!JSON.stringify([wideRows,longRows,runRows]).includes('sk-'));
 

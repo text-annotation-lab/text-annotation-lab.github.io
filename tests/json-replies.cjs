@@ -85,7 +85,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const exported={name:'JSON replies',dataset,lab:'test'},long=tables.requestsTable(exported,undefined,new Map()),head=long[0],at=name=>head.indexOf(name),values=name=>['tone_score','tone_label','length','explanation','response'].map(field=>long.find(line=>line[at('doc_id')]===name)[at(field)]);
  assert.deepEqual(values('b'),['2','warm','20','Two.',rows[1].answers.f0]);assert.deepEqual(values('c'),['','','','','The tone is warm; I would say 2.'],'Prose has only the reply itself');
  assert.deepEqual([long.find(line=>line[at('doc_id')]==='f')[at('status')],...values('f')],['error','','','','',rows[5].answers.f0],'A failed request has no values, but the reply that could not be read is kept');
- const byText=tables.resultsTable(exported,1);assert.deepEqual(byText[0],['doc_id','tone_score','tone_label','length','explanation','coder','n_ok','n_error','response'],'As in Desk: the values of a JSON reply, then the labels, and the reply itself last');
+ const byText=tables.resultsTable(exported,1);assert.deepEqual(byText[0],['doc_id','tone_score','tone_label','length','explanation','coder','n_ok','n_error','response'],'The values of a JSON reply, then the labels, and the reply itself last');
  const overview=tables.runsOverview(exported,new Map());
  assert.match(overview[1][overview[0].indexOf('answer_format')],/^plain text: the whole reply is stored as “response” \(a reply that is one JSON object also has a column for each of its values\); no answer format was sent$/);
  assert.equal(types.answersLabel(['response'],plain),'Plain text');

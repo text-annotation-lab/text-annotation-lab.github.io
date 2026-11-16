@@ -173,12 +173,12 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const dataset={kind:'texts',rows,runs:[{...setup,temperature:0.2,maxOutput:4000,number:1,startedAt:'2026-11-16T10:00:00Z'},{...setup,model:'gpt-6-sol',number:2,startedAt:'2026-11-16T11:00:00Z'},{...setup,number:3,startedAt:'2026-11-16T12:00:00Z'}],columns:[],samples:[]};
  const lines=exporting.runLines(dataset);assert.deepEqual(lines.map(line=>line.summary),['on','off','in part']);assert.deepEqual(lines.map(line=>[line.temperature,line.maxOutput]),[[0.2,4000],[undefined,undefined],[undefined,undefined]]);
  const exported={name:'Settings',dataset,lab:'test'},overview=tables.runsOverview(exported,new Map()),col=name=>overview[0].indexOf(name);
- assert.deepEqual(overview[0].slice(col('effort'),col('effort')+5),['effort','thinking','temperature','max_output_tokens','caching'],'Desk’s columns');assert(col('reasoning_summary_requested')>col('notes'),'The Lab’s own column comes after Desk’s');
+ assert.deepEqual(overview[0].slice(col('effort'),col('effort')+5),['effort','thinking','temperature','max_output_tokens','caching'],'The run’s model settings together');assert(col('reasoning_summary_requested')>col('notes'),'The Lab’s own column comes after the shared ones');
  assert.deepEqual(overview.slice(1).map(line=>[line[col('reasoning_summary_requested')],line[col('temperature')],line[col('max_output_tokens')]]),[['yes',0.2,4000],['no','default',12000],['in part','default',12000]]);
  const long=tables.requestsTable(exported,undefined,new Map()),at=long[0].indexOf('reasoning_summary');
  assert.equal(long[0][at-1],'rationale');assert.equal(long[0][at+1],'parse_error');assert.deepEqual(long.slice(1).map(line=>line[at]),['Read the text, chose A.','Stopped early.','','',''],'A failed request keeps its summary');
  assert(!tables.requestsTable(exported,undefined,new Map(),{reasoning:false})[0].includes('reasoning_summary'),'Left out of the supplementary table');
- assert(tables.requestsTable(exported,[2],new Map())[0].includes('reasoning_summary'),'As in Desk, the column is there (empty) for a run without summaries');
+ assert(tables.requestsTable(exported,[2],new Map())[0].includes('reasoning_summary'),'The column is there (empty) for a run without summaries');
  const workbook=load('lib/research/export-workbook.ts');assert(workbook.isProse('reasoning_summary'),'Kept as text in the workbook');
  // The supplementary repository of the run with the settings: record, README, methods text, and logs.
  const packages=load('lib/research/export-packages.ts'),packStudy={name:'Settings',lab:'test',dataset:{...dataset,rows:rows.map(row=>({...row,file:new File(['Text of '+row.id],row.name),startedAt:'2026-11-16T10:00:00.000Z',time:'2026-11-16T10:00:03.000Z',processing:'instant'}))}};
