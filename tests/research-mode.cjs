@@ -53,7 +53,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  assert(h.calls.every(call=>call.options.body.get('record')===null));assert(h.latest().docs.every(doc=>['requestId','modelReported','stopReason','output','lab'].every(key=>!(key in doc))));assert(!('requests' in h.latest())||h.latest().requests===undefined);
  assert.deepEqual(heads(),['Document','Status','Score / category'],'The standard results table has no research columns');
  // Results made in the standard Lab already belong to run 1, so research mode can pick them up.
- assert.deepEqual(h.latest().docs.map(doc=>doc.runNo),[1,1,1]);assert.equal(h.latest().runs.length,1);assert.equal(h.latest().runs[0].prompt,'Classify tone');
+ assert.deepEqual(h.latest().docs.map(doc=>doc.runNo),[1,1,1]);assert.equal(h.latest().runs.length,1);assert.equal(h.latest().runs[0].prompt,'Classify tone');assert(!('scope' in h.latest().runs[0]),'The standard Lab records no scope');
  const before=JSON.stringify(h.latest().docs.map(({file,...doc})=>doc));
 
  // Switching on: other tabs and tools, the same texts and results.
@@ -336,6 +336,61 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   await first.button('Run all').props.onClick();await first.flush();
   assert.equal(first.calls.length,1);assert.deepEqual(statuses(first),['error','pending','pending','pending','pending']);assert(!('shared' in first.latest().docs[0]));
   assert(notices(first).includes('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.'));
+ }
+
+ // The runs table: the run buttons name what each start covered, a run can be named, and "Retry failed" sends the
+ // requests of a run without a usable answer again, with the settings of that run, and the answers join it.
+ {
+  const until=async(h,ready)=>{for(let n=0;n<300&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
+  const five=extra=>({docs:Array.from({length:5},(_,i)=>({id:String(i),name:`text-${i}.txt`,file:new File([`Text ${i}`],`text-${i}.txt`),status:'pending'})),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1,...extra});
+  const research=async h=>{await h.flush();h.find(n=>n.type==='ModeSwitch').props.onChange(true);await h.flush();h.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-runs'},false);await h.flush();};
+  const notices=h=>h.all(n=>n.props?.role==='alert'||n.props?.role==='status').map(n=>h.text(n)),statuses=h=>(h.latest()?.docs||[]).map(doc=>doc.status),ended=h=>()=>Boolean(h.latest())&&!h.latest().docs.some(doc=>doc.status==='running')&&h.all(n=>['Button','button'].includes(n.type)&&h.text(n).trim()==='Pause').length===0;
+  const fine=()=>Response.json({score:'POSITIVE',explanation:'Evidence'}),named=options=>options.body.get('file').name;
+  const tab=(h,value)=>{h.find(n=>n.type==='Tabs').props.onValueChange(value);return h.flush();},panel=h=>h.find(n=>n.type==='ResearchRuns').props;
+  const setPrompt=async(h,value)=>{h.find(n=>n.props?.id==='prompt').props.onChange({target:{value}});await h.flush();};
+  let failing=new Set(['text-1.txt','text-3.txt']);
+  const h=harness(five(),async()=>{},async(url,options)=>failing.has(named(options))?Response.json({error:'The reply was cut off.'},{status:422}):fine());
+  // (Each wait names the state the run ends in: until the page has saved the run's start, the last save shows none running.)
+  const settled=(h,run)=>()=>Boolean(h.latest())&&h.latest().docs.every(doc=>doc.runNo===run&&(doc.status==='done'||doc.status==='error'));
+  await research(h);await h.button('All (').props.onClick();await until(h,settled(h,1));await until(h,ended(h));
+  assert.deepEqual(statuses(h),['done','error','done','error','done']);assert.equal(h.latest().runs[0].scope,'All texts (5)');
+  // A label, trimmed; an empty one takes it away.
+  await tab(h,'runs');panel(h).onRenameRun(1,'  Pilot run ');await h.flush();assert.equal(h.latest().runs[0].label,'Pilot run');
+  panel(h).onRenameRun(1,'');await h.flush();assert(!('label' in h.latest().runs[0]));panel(h).onRenameRun(1,'Pilot');await h.flush();
+  // The prompt in the box has changed since; the retry still sends the run's own.
+  await tab(h,'workspace');await setPrompt(h,'Classify mood');await tab(h,'runs');
+  failing=new Set();const before=h.calls.length;panel(h).onRetryRun(1);
+  await until(h,()=>statuses(h).every(status=>status==='done'));await until(h,ended(h));
+  assert.equal(h.calls.length,before+2);assert(h.calls.slice(before).every(call=>call.options.body.get('prompt')==='Classify tone'),'The run’s own prompt, not the one in the box');
+  assert.deepEqual(h.latest().docs.map(doc=>doc.runNo),[1,1,1,1,1],'The answers join the run');assert.equal(h.latest().runs.length,1,'No new run');
+  assert.deepEqual(h.latest().docs.map(doc=>doc.history?.length||0),[0,1,0,1,0]);assert.equal(h.latest().docs[1].history[0].runNo,1);assert.equal(h.latest().docs[1].history[0].error,'The reply was cut off.');
+  assert.equal(new Set(h.latest().docs.map(doc=>doc.requestId)).size,1,'The retried texts name the request the run kept');assert.equal(h.latest().requests.length,1);
+  assert.deepEqual(h.latest().runs[0].retries.map(retry=>retry.requests),[2]);assert.equal(h.latest().runs[0].label,'Pilot');
+  assert(notices(h).includes('Run #1: 2 requests were sent again and all have a usable answer now.'),notices(h).join(' | '));
+  assert.equal(h.find(n=>n.type==='Tabs').props.value,'workspace','The Workspace opens on the run');assert.equal(h.find(n=>n.type==='ResearchFilters').props.view.run,1);
+  assert.equal(h.find(n=>n.props?.id==='prompt').props.value,'Classify mood','The prompt in the box stays as it was');
+  // A failure in the retry is counted, and the notice points back to Retry failed.
+  failing=new Set(['text-2.txt']);await setPrompt(h,'Classify tone');await h.button('All (').props.onClick();await until(h,settled(h,2));await until(h,ended(h));
+  assert.deepEqual(h.latest().docs.map(doc=>doc.runNo),[2,2,2,2,2]);assert.equal(h.latest().runs[1].scope,'Shown texts (5)','The Workspace shows run 1, so the run buttons cover the texts shown');
+  await tab(h,'runs');const again=h.calls.length;panel(h).onRetryRun(2);await until(h,()=>h.calls.length===again+1&&h.latest().docs[2].history?.length===1&&statuses(h)[2]==='error');await until(h,ended(h));
+  assert(notices(h).includes('The request failed. “Retry failed” under Runs & agreement sends it again.'),notices(h).join(' | '));assert.equal(h.latest().docs[2].history.length,1);
+  // Without a key for the run's provider, nothing is sent and the keys open.
+  const keyless=harness(five(),async()=>{},async()=>Response.json({error:'The reply was cut off.'},{status:422}));
+  await research(keyless);await keyless.button('Annotate next').props.onClick();await until(keyless,()=>statuses(keyless)[0]==='error');await until(keyless,ended(keyless));
+  assert.equal(keyless.latest().runs[0].scope,'One text: text-0.txt');
+  keyless.find(n=>n.type==='ResearchKeys').props.onSave({},false);await keyless.flush();await tab(keyless,'runs');const sent=keyless.calls.length;panel(keyless).onRetryRun(1);await keyless.flush();
+  assert.equal(keyless.calls.length,sent);assert(notices(keyless).includes('Add a working OpenAI (ChatGPT) API key to send the requests of run #1 again.'),notices(keyless).join(' | '));assert.equal(keyless.find(n=>n.type==='ResearchKeys').props.open,true);
+  assert.equal(keyless.latest().docs[0].status,'error','The failed text is left as it was');
+  // An earlier run with a missing annotation: it is made within that run, and the text keeps its latest result.
+  const cut=new Set(['text-0.txt']);
+  const older=harness(five({repeats:3}),async()=>{},async(url,options)=>cut.delete(named(options))?Response.json({error:'The reply was cut off.'},{status:422}):fine());
+  await research(older);await older.button('All (').props.onClick();await until(older,settled(older,1));await until(older,ended(older));
+  assert.deepEqual(older.latest().docs[0].annotations.map(a=>a.status),['error','done','done']);
+  await setPrompt(older,'Classify mood');await older.button('All (').props.onClick();await until(older,()=>older.latest().docs.every(doc=>doc.runNo===2&&doc.status==='done'));await until(older,ended(older));
+  await tab(older,'runs');const was=older.calls.length;panel(older).onRetryRun(1);await until(older,()=>older.calls.length===was+1&&older.latest().docs[0].runNo===2&&older.latest().docs[0].earlier?.[0]?.annotations?.every(a=>a.status==='done'));await until(older,ended(older));
+  const text0=older.latest().docs[0];
+  assert.equal(older.calls.at(-1).options.body.get('prompt'),'Classify tone');assert.deepEqual([text0.runNo,text0.prompt],[2,'Classify mood'],'The text keeps its latest result');
+  assert.deepEqual(text0.earlier.map(entry=>[entry.runNo,entry.annotations.map(a=>a.status).join()]),[[1,'done,done,done']],'The missing annotation is made in run 1');
  }
 
  // A text whose missing annotation fails again is sent once per run, not over and over (a run carries on past a

@@ -1,13 +1,19 @@
 'use client';
 // Runs & agreement: every run with its settings, and how far two sources of
 // labels agree (a run with human labels, or one run with another).
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useState,type ReactNode} from 'react';
 import {Download} from 'lucide-react';
 import {Button} from '@/components/ui/button';
-import {modelName,reasoningOptionLabel} from '@/lib/providers';
+import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
+import {PROVIDERS,modelName,reasoningOptionLabel,type Provider} from '@/lib/providers';
+import {defaultOutputLimit} from '@/lib/request-settings';
 import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSources,runJob,sourceFields,sourceLabel,statLines,type LevelChoice} from '@/lib/research/agreement';
 import {computeIntervals} from '@/lib/research/intervals';
-import {fileStem,runLines,sourceOf,unitOf,type Dataset} from '@/lib/research/export';
+import {fileStem,runLines,sourceOf,unitOf,type Dataset,type RunLine} from '@/lib/research/export';
+import {requestLines,runRequests} from '@/lib/research/export-data';
+import {runFacts,type RunFacts} from '@/lib/research/export-tables';
+import type {RecordedRequest} from '@/lib/research/requests';
+import {LABEL_LENGTH,retryable,runState,type RunState} from '@/lib/research/runs';
 import {toCsv} from '@/lib/research/parse-table';
 import {fieldLabel,parseSource,pickField,sourceKey,type CompareSource} from '@/lib/research/view';
 import type {Agreement} from '@/lib/research/metrics';
@@ -15,18 +21,85 @@ import {answersLabel} from '@/lib/answer-types';
 import {downloadText} from './download';
 
 const when=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(date.getTime())?'—':date.toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});};
+// In the table the date and the time may go on two lines, so the table fits a laptop screen.
+const whenCell=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(date.getTime())?'—':<><span className="research-nowrap">{date.toLocaleDateString('en-US',{dateStyle:'medium'})},</span> <span className="research-nowrap">{date.toLocaleTimeString('en-US',{timeStyle:'short'})}</span></>;};
 const money=(amount:number)=>amount===0?'$0':amount<0.0001?'< $0.0001':'$'+amount.toFixed(amount<0.1?4:2);
 const BOOTSTRAPPED=new Set(['cohenKappa','weightedKappa','weightedKappaLinear','krippendorffAlpha','gwetAC1','gwetAC2Linear','meanDifference','mae']);
 const EMPTY:Dataset={kind:'texts',rows:[],runs:[],columns:[],samples:[]};
 const DATASET_NAMES={texts:'Uploaded texts',knowledge:'Model knowledge'} as const;
+const count=(n:number)=>n.toLocaleString('en-US');
+// How a run's state is shown: the classes are those of a text's status in the results table.
+const STATE_CLASS:Record<RunState,string>={running:'running',submitted:'queued',completed:'done',failed:'error'};
+// The data of the panel: a dataset with the requests its runs kept.
+type PanelData=Dataset&{requests?:RecordedRequest[]};
 
-export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpenText}:{datasets:Dataset[];studyName?:string;locked:boolean;onShowRun:(run:number)=>void;onDeleteRun:(run:number)=>void;onOpenText:(id:string)=>void}){
+// The settings of one run, in a window: what the run was started with, what its results add (how they were
+// sent, retries), the prompt, and the request every text of the run was sent with.
+function RunSettings({dataset,run,facts,state,onClose}:{dataset:PanelData;run:RunLine;facts:RunFacts;state:RunState;onClose:()=>void}){
+ const unit=unitOf(dataset),knowledge=dataset.kind==='knowledge';
+ const sent=useMemo(()=>runRequests({name:'',dataset,requests:dataset.requests,lab:''},run.number),[dataset.rows,dataset.requests,run.number]);
+ const frame=(sent.text||sent.pdf)?.frame;
+ const body=useMemo(()=>{if(!frame)return '';try{return JSON.stringify(JSON.parse(frame.body),null,2);}catch{return frame.body;}},[frame?.body]);
+ const kept=sent.total-sent.rebuilt-sent.unknown;
+ const record=sent.rebuilt===0&&sent.unknown===0?'It was kept when the run was made.':kept===0?'It was not kept when the run was made, so it is built again here from the run’s settings by this version of the Lab.':`It was kept when the run was made for ${count(kept)} of ${count(sent.total)} requests; for the others it is built again from their settings.`;
+ const batches=facts.batchIds.length?` (${facts.batchIds.join(', ')})`:'';
+ const mode=state==='submitted'&&!facts.requests.total?'Batch':facts.processing==='batch'?'Batch'+batches:facts.processing==='instant and batch'?'Instant and batch'+batches:'Instant';
+ const item=(name:string,value:ReactNode)=><div><dt>{name}</dt><dd>{value}</dd></div>;
+ return <Dialog open onOpenChange={open=>{if(!open)onClose();}}>
+  <DialogContent className="research-dialog research-wide research-preview research-run-settings">
+   <DialogTitle>Run #{run.number} settings{run.label?` · ${run.label}`:''}</DialogTitle>
+   <DialogDescription>{run.recorded?'The settings this run was started with; every request of the run used them.':'The settings of this run, read from its results.'}{run.mixed?` Results in this run were made with different settings; the table of requests in an export lists them for every ${unit}.`:''}</DialogDescription>
+   <dl className="research-cells">
+    {item('Provider / model',`${PROVIDERS[run.provider as Provider]?.label||run.provider||'—'} / ${run.model||'—'}`)}
+    {item('Reasoning effort',run.effort?reasoningOptionLabel(run.effort):'—')}
+    {item('Prompt version','v'+run.promptVersion)}
+    {item('Mode',mode)}
+    {item('Prompt caching',run.caching)}
+    {item(`Annotations per ${unit}`,run.repeats||1)}
+    {item('Temperature',run.temperature??'the model’s own')}
+    {item('Max output tokens',count(run.maxOutput??defaultOutputLimit(run.provider,run.model))+(run.maxOutput===undefined?' (the Lab’s own limit)':''))}
+    {item('Reasoning summary',run.summary==='on'?'recorded':run.summary==='off'?'not requested':'recorded in part')}
+    {knowledge&&item('Web search',run.webSearch?'yes':'no')}
+    {item('Answer fields',answersLabel(run.answerFields,run.answerSettings))}
+    {run.scope&&item('Scope',run.scope)}
+    {item('Started',when(run.startedAt))}
+    {facts.finished&&item('Latest result',when(facts.finished))}
+    {run.retries?.length?item('Retries',run.retries.map(retry=>`${count(retry.requests)} request${retry.requests===1?'':'s'} sent again ${when(retry.at)}`).join('; ')):null}
+    {facts.requests.replaced>0&&item('Earlier attempts',`${count(facts.requests.replaced)} failed attempt${facts.requests.replaced===1?' was':'s were'} sent again; the exports keep ${facts.requests.replaced===1?'it':'them'}`)}
+    {item('Version of the Lab',facts.labs.join('; ')||'not recorded')}
+   </dl>
+   <h3>Prompt</h3>
+   <pre className="research-preview-text" tabIndex={0}>{run.prompt||'(no prompt recorded)'}</pre>
+   <h3>Shared request body</h3>
+   {frame?<>
+    <p className="hint">The request sent for each {unit} of this run, to <code>{frame.url}</code>. Marks stand where the {knowledge?'subject goes':'document and its name go'}. {record}{sent.forms>1?` The run sent ${count(sent.forms)} different bodies (a PDF goes as a file, and a batch is worded differently); this is the one most requests used.`:''} No API key is part of it.</p>
+    <pre className="research-preview-text research-preview-code" tabIndex={0}>{body}</pre>
+   </>:<p className="hint">{sent.total?'The settings of this run’s requests were not recorded, so the request cannot be shown.':'No request of this run has come back yet.'}</p>}
+  </DialogContent>
+ </Dialog>;
+}
+
+// onRenameRun, onRetryRun: uploaded texts only (a run of Model knowledge has no record to carry a label, and its
+// failed subjects are queued for retry in its own workspace).
+export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpenText,onRenameRun,onRetryRun}:{datasets:PanelData[];studyName?:string;locked:boolean;onShowRun:(run:number)=>void;onDeleteRun:(run:number)=>void;onOpenText:(id:string)=>void;onRenameRun:(run:number,label:string)=>void;onRetryRun:(run:number)=>void}){
  const [kind,setKind]=useState<Dataset['kind']>('texts');
  const available=datasets.filter(d=>d.rows.length>0);
  const dataset=available.find(d=>d.kind===kind)||available[0]||datasets[0]||EMPTY;
  const unit=unitOf(dataset),lines=useMemo(()=>runLines(dataset),[dataset.rows,dataset.runs]);
  const [aKey,setAKey]=useState(''),[bKey,setBKey]=useState(''),[fieldChoice,setFieldChoice]=useState(''),[level,setLevel]=useState<LevelChoice>('auto'),[tolerance,setTolerance]=useState('1');
  const [intervals,setIntervals]=useState<{key:string;ci:Agreement['ci']}>();
+ // The runs table: each run's requests and tokens, how many requests have no usable answer, and the run whose
+ // settings window is open.
+ const texts=dataset.kind==='texts',[inspect,setInspect]=useState<number>();
+ const facts=useMemo(()=>{const all=requestLines(dataset);return new Map(lines.map(run=>[run.number,runFacts(dataset,run,all)]));},[lines]);
+ const retries=useMemo(()=>new Map(lines.map(run=>[run.number,texts?retryable(dataset.rows,run.number).requests:0])),[lines,texts]);
+ const inspected=lines.find(run=>run.number===inspect);
+ function retry(run:RunLine,requests:number){
+  const what=`${count(requests)} request${requests===1?'':'s'} of run #${run.number}`,batch=facts.get(run.number)?.processing!=='instant';
+  // Sent now, also for a run that was made as a batch; a large number is asked about first.
+  if((batch||requests>50)&&!confirm(`Send ${what} again now? They go out as immediate requests at the full price${batch?' (this run was made as a batch, at half price)':''}, with the settings of the run, and the answers join the run.`))return;
+  onRetryRun(run.number);
+ }
 
  const runSources:CompareSource[]=lines.filter(run=>run.done>0).map(run=>({kind:'run',run:run.number}));
  // Each annotation of a run that makes several per text, to compare one with another (a retest).
@@ -78,17 +151,23 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
 
   <section aria-labelledby="runs-list">
    <h3 id="runs-list">Runs</h3>
-   {lines.length?<div className="research-table-scroll"><table className="research-table research-runs"><thead><tr><th>Run</th><th>Started</th><th>Model</th><th>Prompt</th><th>Answer fields</th><th>Complete</th><th>Failed</th><th>Cost</th>{dataset.kind==='texts'&&<th><span className="sr-only">Actions</span></th>}</tr></thead><tbody>{lines.map(run=><tr key={run.number}>
+   {lines.length?<div className="research-table-scroll"><table className="research-table research-runs"><thead><tr><th>Run</th>{texts&&<th>Label</th>}<th>Started</th>{texts&&<th>Scope</th>}<th>Model</th><th>Prompt</th><th>Status</th><th className="num"><span className="research-nowrap">OK / failed</span></th><th className="num">Tokens <span className="research-nowrap">in / out</span></th><th className="num" title="Tokens read from the provider’s prompt cache / written to it">Cache <span className="research-nowrap">read / write</span></th><th className="num">Cost</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{lines.map(run=>{
+    const fact=facts.get(run.number)!,state=runState(dataset.rows,run),known=fact.tokens.knownFor>0,failedRequests=retries.get(run.number)||0;
+    return <tr key={run.number}>
     <td><strong>#{run.number}</strong></td>
-    <td>{when(run.startedAt)}</td>
-    <td>{modelName(run.model)}{run.effort&&<span className="research-muted"> · {reasoningOptionLabel(run.effort)}</span>}{(run.repeats||1)>1&&<span className="research-tag" title={`${run.repeats} annotations per ${unit}; the answers shown are the combined ones`}>×{run.repeats}</span>}{run.webSearch&&<span className="research-tag">web search</span>}{run.caching!=='off'&&<span className="research-tag">{run.caching==='on'?'prompt caching':'prompt caching in part'}</span>}{run.temperature!==undefined&&<span className="research-tag">temperature {run.temperature}</span>}{run.maxOutput!==undefined&&<span className="research-tag">max {run.maxOutput.toLocaleString('en-US')} output tokens</span>}{run.summary!=='off'&&<span className="research-tag">{run.summary==='on'?'reasoning summary':'reasoning summary in part'}</span>}{run.mixed&&<span className="research-tag warn" title={`Results in this run were made with different settings. The long results table lists the settings of every ${unit}.`}>settings vary</span>}</td>
-    <td><details className="research-prompt"><summary>v{run.promptVersion}</summary><pre>{run.prompt||'(no prompt recorded)'}</pre></details></td>
-    <td>{answersLabel(run.answerFields,run.answerSettings)}</td>
-    <td>{run.done.toLocaleString('en-US')}{run.active>0&&<span className="research-muted"> · {run.active} in progress</span>}{run.fewer>0&&<span className="research-muted"> · {run.fewer.toLocaleString('en-US')} with fewer than {run.repeats} annotations</span>}</td>
-    <td>{run.failed||'—'}</td>
-    <td title={run.costKnown<run.costCount?`Known for ${run.costKnown} of ${run.costCount} annotations`:undefined}>{run.costKnown?money(run.cost)+(run.costKnown<run.costCount?'+':''):'—'}</td>
-    {dataset.kind==='texts'&&<td className="research-row-actions"><button type="button" className="textbutton" onClick={()=>onShowRun(run.number)}>Show in Workspace</button><button type="button" className="textbutton" disabled={locked} onClick={()=>{if(confirm(`Delete run #${run.number} and its ${run.done+run.failed} results? Texts keep the results of their other runs. This cannot be undone.`))onDeleteRun(run.number);}}>Delete</button></td>}
-   </tr>)}</tbody></table></div>:<p className="research-empty">No runs yet. {dataset.kind==='texts'?'Annotate texts in the Workspace. Each setup you run (model, reasoning effort, prompt, and answer fields) is listed here as a numbered run.':'Annotate subjects under Model knowledge. Each repeat of the study is listed here as a numbered run.'}</p>}
+    {texts&&<td><input key={run.label||''} className="research-run-label" aria-label={`Label of run #${run.number}`} placeholder="Add label…" maxLength={LABEL_LENGTH} defaultValue={run.label||''} disabled={locked} onKeyDown={event=>{if(event.key==='Enter')event.currentTarget.blur();}} onBlur={event=>{if(event.target.value.trim()!==(run.label||''))onRenameRun(run.number,event.target.value);}}/></td>}
+    <td className="research-run-started">{whenCell(run.startedAt)}</td>
+    {texts&&<td className="research-run-scope">{run.scope||'—'}</td>}
+    <td className="research-run-model">{modelName(run.model)}{run.effort&&<span className="research-muted"> · {reasoningOptionLabel(run.effort)}</span>}{run.webSearch&&<span className="research-tag">web search</span>}{run.mixed&&<span className="research-tag warn" title={`Results in this run were made with different settings. The long results table lists the settings of every ${unit}.`}>settings vary</span>}</td>
+    <td>v{run.promptVersion}{(run.repeats||1)>1&&<span className="research-tag" title={`${run.repeats} annotations per ${unit}; the answers shown are the combined ones`}>×{run.repeats}</span>}</td>
+    <td><span className={'status '+STATE_CLASS[state]}>{state==='submitted'||fact.processing==='batch'?'batch · ':fact.processing==='instant and batch'?'instant and batch · ':''}{state}</span></td>
+    <td className="num" title={run.fewer>0?`${count(run.fewer)} ${unit}${run.fewer===1?' has':'s have'} fewer than ${run.repeats} usable annotations`:undefined}>{count(fact.requests.ok)} / {count(fact.requests.failed)}{run.active>0&&<span className="research-muted"> · {count(run.active)} in progress</span>}</td>
+    <td className="num">{known?`${count(fact.tokens.input)} / ${count(fact.tokens.output)}`:'—'}</td>
+    <td className="num">{known?`${count(fact.tokens.cacheRead)} / ${count(fact.tokens.cacheWrite)}`:'—'}</td>
+    <td className="num" title={run.costKnown<run.costCount?`Known for ${run.costKnown} of ${run.costCount} annotations`:undefined}>{run.costKnown?money(run.cost)+(run.costKnown<run.costCount?'+':''):'—'}</td>
+    <td className="research-row-actions"><div className="research-run-actions"><button type="button" className="textbutton" onClick={()=>setInspect(run.number)}>Settings</button>{texts&&failedRequests>0&&state!=='running'&&state!=='submitted'&&<button type="button" className="textbutton" disabled={locked} title="Send the requests of this run that have no usable answer again now, with the settings of the run. The new answers join the run." onClick={()=>retry(run,failedRequests)}>Retry failed ({count(failedRequests)})</button>}{texts&&<><button type="button" className="textbutton" onClick={()=>onShowRun(run.number)}>Show in Workspace</button><button type="button" className="textbutton" disabled={locked} onClick={()=>{if(confirm(`Delete run #${run.number} and its ${run.done+run.failed} results? Texts keep the results of their other runs. This cannot be undone.`))onDeleteRun(run.number);}}>Delete</button></>}</div></td>
+   </tr>;})}</tbody></table></div>:<p className="research-empty">No runs yet. {dataset.kind==='texts'?'Annotate texts in the Workspace. Each setup you run (model, reasoning effort, prompt, and answer fields) is listed here as a numbered run.':'Annotate subjects under Model knowledge. Each repeat of the study is listed here as a numbered run.'}</p>}
+   {inspected&&<RunSettings dataset={dataset} run={inspected} facts={facts.get(inspected.number)!} state={runState(dataset.rows,inspected)} onClose={()=>setInspect(undefined)}/>}
   </section>
 
   <section aria-labelledby="agreement-heading">

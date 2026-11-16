@@ -186,7 +186,8 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
   const source=fs.readFileSync(path.join(root,page),'utf8');
   assert(/const sentRequest=research\?sentRequestSettings\(provider,model,[^;]*requestSettings,effort\):undefined;/.test(source),page+': the standard Lab never sends or records the setting');
   assert.equal(source.split("form.set('requestSettings'").length-1,2,page+': texts sent now and in a batch');assert.equal(source.split("if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));").length-1,2,page);
-  assert.equal(source.split('requestSettings:sentRequest').length-1,5,page+': every started result, the batch, the recorded request, and the preview hold what is sent');
+  // (The recorded request of a run takes the settings the run is sent with: those of the run that "Retry failed" sends again.)
+  assert.equal(source.split(/requestSettings:(?:use\.)?sentRequest\b/).length-1,5,page+': every started result, the batch, the recorded request, and the preview hold what is sent');
   assert(source.includes('{research&&<ResearchRequestOptions '),page+': the option is shown in research mode only');
  }
 
