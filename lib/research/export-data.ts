@@ -3,7 +3,7 @@
 import {usageSample} from '../cost-estimate/engine';
 import {cacheTokens,recordedCost} from '../cost-estimate/run-cost';
 import type {Provider} from '../providers';
-import {fillRequest,framePrompt,requestFrame,type RequestFrame} from '../request-frame';
+import {fillRequest,framePrompt,LAYOUT,requestFrame,type RequestFrame} from '../request-frame';
 import {insertMap,showInserts} from '../prompt-inserts';
 import {annotationFormatRecord} from '../answer-fields';
 import {knowledgeDocumentText} from '../model-knowledge';
@@ -142,7 +142,8 @@ export function documentReader(dataset:Dataset,extract:(file:File)=>Promise<stri
  return async(row,result)=>{
   if(dataset.kind==='knowledge'){
    if(!Array.isArray(row.fields))return undefined;
-   return {filename:'subject.txt',text:knowledgeDocumentText(row.fields,result?.research&&typeof result.research.text==='string'?result.research:undefined)};
+   // A result made in the earlier layout carried the subject as a labeled JSON block.
+   return {filename:'subject.txt',text:knowledgeDocumentText(row.fields,result?.research&&typeof result.research.text==='string'?result.research:undefined,Boolean(result)&&result!.layout!==LAYOUT)};
   }
   const file=row.file as File|undefined;if(!file)return undefined;
   if(sentAsFile(dataset,row))return {filename:file.name,pdf:file};

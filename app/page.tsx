@@ -96,7 +96,7 @@ export default function Home(){
  function onResearch(on:boolean){setAsking(false);setResearch(on);if(!on)lock?.release();}
  if(research&&lock&&(asking||waiting))return waiting?<main><header className="research-header">{BRAND}<div className="header-study-actions"><ModeSwitch on onChange={()=>{writeResearchMode(false);onResearch(false);}}/></div></header><OtherTabNotice openHere={lock.ask}/>{FOOTER}</main>:null;
  const modeProps={research,claimResearch,onResearch};
- return NAMED_STUDIES_ENABLED?<StudyManager compact={research}>{(study,controls,onReady,version,draftRef,onRecoveryChange)=><StudyWorkspace key={version} studyId={study.id} studyName={study.name} studyControls={controls} onStudyReady={onReady} draftRef={draftRef} onRecoveryChange={onRecoveryChange} {...modeProps}/>}</StudyManager>:<StudyWorkspace {...modeProps}/>;
+ return NAMED_STUDIES_ENABLED?<StudyManager compact={research} duplicates={research}>{(study,controls,onReady,version,draftRef,onRecoveryChange)=><StudyWorkspace key={version} studyId={study.id} studyName={study.name} studyControls={controls} onStudyReady={onReady} draftRef={draftRef} onRecoveryChange={onRecoveryChange} {...modeProps}/>}</StudyManager>:<StudyWorkspace {...modeProps}/>;
 }
 // research, claimResearch, and onResearch: the mode, kept by Home for the one-tab rule (without them, the workspace keeps it).
 function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,draftRef,onRecoveryChange,research:researchMode,claimResearch,onResearch}:{draftRef?:OpenStudyDraft;onRecoveryChange?:(available:boolean)=>void;studyId?:string;studyName?:string;studyControls?:ReactNode;onStudyReady?:(ready:boolean)=>void;research?:boolean;claimResearch?:()=>boolean|Promise<boolean>;onResearch?:(on:boolean)=>void}){

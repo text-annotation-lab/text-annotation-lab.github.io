@@ -62,7 +62,7 @@ export async function POST(request:Request){
   try{fields=JSON.parse(raw);}catch{return json({error:'Could not read subject fields.'},400);}
   if(!validKnowledgeFields(fields))return json({error:'Provide one subject with unique, nonempty field headings and at least one value.'},400);
   subjectFields=fields;
-  file=new File([knowledgeDocumentText(fields)],'subject.txt',{type:'text/plain'});
+  file=new File([knowledgeDocumentText(fields,undefined,earlier)],'subject.txt',{type:'text/plain'});
   prompt+='\n\n'+knowledgeInstructions(webSearch);
  }
  const provider=f.get('provider')||'openai';
@@ -79,7 +79,7 @@ export async function POST(request:Request){
  // Any model of the provider, by its ID (research mode offers models outside the Lab's lists).
  if(!validModelId(provider,model)||!reasoningOptions(provider,model).includes(String(effort)))return json({error:'Unsupported model or reasoning setting.'},400);
  if(!(file instanceof File)||!file.size||file.size>20*1024*1024||!supported.test(file.name))return json({error:'Choose a PDF, DOCX, TXT, MD, HTML, or RTF file up to 20 MB.'},400);
- if(webSearch&&subjectFields){research=await researchKnowledge(provider,String(model),String(effort),auth.slice(7),subjectFields,writtenPrompt);file=new File([knowledgeDocumentText(subjectFields,research)],'subject.txt',{type:'text/plain'});}
+ if(webSearch&&subjectFields){research=await researchKnowledge(provider,String(model),String(effort),auth.slice(7),subjectFields,writtenPrompt,earlier);file=new File([knowledgeDocumentText(subjectFields,research,earlier)],'subject.txt',{type:'text/plain'});}
  prompt+=answerInstructions(answerFields,answerSettings);
  const sent=sentRequestSettings(provider,String(model),requestSettings,String(effort));
  const finish=async(response:Response)=>{const result=await response.json() as {tokens?:number;[key:string]:any};const error=response.ok?annotationValidationError(result,answerFields,annotationPrompt,knowledge,answerSettings):undefined;if(response.ok&&!error)delete result.rawResponse;

@@ -11,8 +11,8 @@ export function safeSourceUrl(value:unknown):string|undefined{try{if(typeof valu
 
 // Search and structured annotation are separate requests: all providers can retain
 // their native citation format while the final score keeps its existing schema.
-export async function researchKnowledge(provider:Provider,model:string,effort:string,key:string,fields:KnowledgeFields,prompt:string):Promise<KnowledgeResearch>{
- const input=knowledgeItemText(fields)+'\n\nAnnotation rubric (research question):\n'+prompt;
+export async function researchKnowledge(provider:Provider,model:string,effort:string,key:string,fields:KnowledgeFields,prompt:string,earlier=false):Promise<KnowledgeResearch>{
+ const input=knowledgeItemText(fields,earlier)+'\n\nAnnotation rubric (research question):\n'+prompt;
  let url:string,headers:Record<string,string>,body:Record<string,unknown>;
  if(provider==='openai'){
   url='https://api.openai.com/v1/responses';headers={Authorization:'Bearer '+key,'Content-Type':'application/json'};
