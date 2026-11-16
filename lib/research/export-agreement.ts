@@ -4,7 +4,7 @@
 // without anyone choosing them, and each column left out is listed with the reason.
 import {fieldSpec,PLAIN_FIELD} from '../answer-types';
 import {isExplanationKey} from '../json-reply';
-import {agreementJob,pairSources,runJob,type AgreementJob,type Pairing} from './agreement';
+import {agreementJob,oneZero,pairSources,runJob,type AgreementJob,type Pairing} from './agreement';
 import {cellOf,columnIndex,type Column} from './columns';
 import {unitOf,type Dataset} from './export';
 import {requestLines,rowForRun} from './export-data';
@@ -49,6 +49,8 @@ export type Skipped={column:string;reason:string};
 function fits(label:string,p:Pairing):boolean{
  if(p.numeric){
   const x=Number(label);if(label===''||Number.isNaN(x))return false;
+  // A scale read from the answers has no fixed ends: any number may be a label.
+  if(p.scaleSeen)return true;
   const scale=p.allowed.map(Number).filter(Number.isFinite);
   return !scale.length||(x>=Math.min(...scale)-1e-9&&x<=Math.max(...scale)+1e-9);
  }
@@ -82,15 +84,17 @@ export function labelPairs(dataset:Dataset,run:number):{fields:string[];pairs:La
 }
 
 // Two label columns paired on a run's texts, on the scale or categories of the field they belong to (`like`:
-// the field's pairing with the run's answers).
+// the field's pairing with the run's answers). As there, a missing-value marker that is not a value of the field
+// (“NA” for a text nobody coded) is a blank cell: the text has no label, and is neither compared nor left out.
 function columnPairing(rows:Row[],columns:Column[],first:string,second:string,like:Pairing):Pairing{
- const a=columnIndex(columns,first),b=columnIndex(columns,second),yesNo=like.allowed.length===2&&like.allowed[0]==='false'&&like.allowed[1]==='true';
+ const a=columnIndex(columns,first),b=columnIndex(columns,second),yesNo=like.allowed.length===2&&like.allowed[0]==='false'&&like.allowed[1]==='true',read=(value:string)=>yesNo?normalizeLabel(value,true):like.zeroOne?oneZero(value):normalizeLabel(value);
+ const cell=(value:string)=>{const label=value?read(value):'';return label&&isMissingLabel(label)&&!fits(label,like)?'':label;};
  const p:Pairing={...like,ids:[],names:[],a:[],b:[],rawA:[],rawB:[],onlyA:0,onlyB:0};
  for(const row of rows){
-  const va=cellOf(row,a).trim(),vb=cellOf(row,b).trim();
-  if(va&&!vb)p.onlyA++;else if(vb&&!va)p.onlyB++;
-  if(!va||!vb)continue;
-  p.ids.push(row.id);p.names.push(String(row.name??''));p.rawA.push(va);p.rawB.push(vb);p.a.push(normalizeLabel(va,yesNo));p.b.push(normalizeLabel(vb,yesNo));
+  const va=cellOf(row,a).trim(),vb=cellOf(row,b).trim(),x=cell(va),y=cell(vb);
+  if(x&&!y)p.onlyA++;else if(y&&!x)p.onlyB++;
+  if(!x||!y)continue;
+  p.ids.push(row.id);p.names.push(String(row.name??''));p.rawA.push(va);p.rawB.push(vb);p.a.push(x);p.b.push(y);
  }
  return p;
 }

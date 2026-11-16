@@ -670,7 +670,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
 
  // Research mode reads the results with the study's scale for the scores: a text's annotations are combined on it
  // (scale-combine.ts). viewDocs: the texts as the Workspace shows them; studyRows: with the deleted texts runs used.
- const scaled=useMemo(()=>{const all=withRemoved(docs,removed);if(!research||!scoreScale)return {viewDocs:docs,studyRows:all};const rows=onScaleRows(all,scoreScale).rows;return {viewDocs:removed.length?rows.filter(row=>!row.removedAt):rows,studyRows:rows};},[research,scoreScale,docs,removed]);
+ const scaled=useMemo(()=>{const all=withRemoved(docs,removed);if(!research)return {viewDocs:docs,studyRows:all};const rows=onScaleRows(all,scoreScale).rows;return {viewDocs:removed.length?rows.filter(row=>!row.removedAt):rows,studyRows:rows};},[research,scoreScale,docs,removed]);
  const {viewDocs}=scaled;
  // Student mode lists every text. Research mode lists the texts the filters leave, as of the chosen run.
  const shown=useMemo(()=>research?researchRows(viewDocs,columns,view,scoreScale,scaled.studyRows):undefined,[research,viewDocs,columns,view,scoreScale,scaled.studyRows]);
@@ -702,7 +702,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  useEffect(()=>{const index=rows.findIndex(item=>item.id===selected);if(index>=0)setResultPage(Math.floor(index/100));},[selected]);
  const researchData=research&&(activeTab==='runs'||activeTab==='export');
  // Model knowledge's results, read with its own scale for the scores in the same way.
- const knowledgeItems=useMemo(()=>research&&knowledgeData?.scoreScale?onScaleItems(knowledgeData.items,knowledgeData.scoreScale):knowledgeData?.items||[],[research,knowledgeData]);
+ const knowledgeItems=useMemo(()=>research&&knowledgeData?onScaleItems(knowledgeData.items,knowledgeData.scoreScale):knowledgeData?.items||[],[research,knowledgeData]);
  const datasets=researchData?[{kind:'texts' as const,rows:scaled.studyRows,runs,columns,samples,requests,scoreScale},{kind:'knowledge' as const,rows:knowledgeRows(knowledgeItems),runs:[],columns:knowledgeData?.columns||[],samples:knowledgeData?.samples||[],requests:knowledgeData?.requests,scoreScale:knowledgeData?.scoreScale}]:[];
  // The whole study as a backup file (Export tab): both workspaces as they are now, never an API key.
  const studyBackup=draftRef?async()=>{const {texts,knowledge}=draftRef.current;if(!texts||!knowledge)throw new Error('Wait for both workspaces to finish opening');const {encodeStudyBackup}=await import('@/lib/study-backup');return encodeStudyBackup({name:studyName||'Study',texts,knowledge,createdAt:new Date().toISOString()});}:undefined;

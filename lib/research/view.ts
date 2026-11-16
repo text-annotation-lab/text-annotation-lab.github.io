@@ -17,8 +17,9 @@ export const viewNarrowed=(view:View)=>Boolean(view.query.trim())||view.show!=='
 
 // "Compare with": whether a text's two values agree, as the agreement figures of Runs & agreement read and count
 // them. Each run shown is compared over all of its texts (pairSources), so a yes / no field reads 1 and 0 too, and
-// a value the figures leave out (a coder's “NA”, a number off the field's scale or the study's scale for the scores,
-// a value that is not one of the field's categories) is neither a disagreement nor an agreement (comparable.ts).
+// a value the figures leave out (a number off the field's scale or the study's scale for the scores, a value that
+// is not one of the field's categories) or do not pair (a coder's “NA”, read as a blank cell) is neither a
+// disagreement nor an agreement (comparable.ts).
 // scale: the study's scale for the scores of plain-text replies (score-scale.ts).
 // `study`: every text the agreement figures read (with those removed from the study but kept for their runs), so that
 // "Disagree" and "Agree" leave out what the figures leave out.
@@ -29,10 +30,10 @@ export function researchRows<T extends Row>(docs:T[],columns:Column[],view:View,
  const base=view.run==='latest'?docs:docs.map(doc=>rowForRun(doc,view.run as number)).filter(row=>row.status!=='absent');
  const fields=fieldsOf(source?.kind==='run'?[...base,...docs.map(doc=>sourceResult(doc,source))]:base);
  const field=pickField(fieldsOf(base).length?fieldsOf(base):fields,view.field,source?.kind==='column'?source.name:'');
- const judged=new Map<string,boolean|null>();
+ const judged=new Map<string,boolean|null>(),runs=new Set<number>();
  if(source){
   const theirs=source.kind==='run'?pickField(fieldsOf(docs.map(doc=>sourceResult(doc,source))),field):'';
-  const runs=new Set(base.filter(row=>row.status==='done'&&row.runNo!==undefined).map(row=>row.runNo as number));
+  for(const row of base)if(row.status==='done'&&row.runNo!==undefined)runs.add(row.runNo);
   for(const run of runs){
    const p=pairSources(study,columns,{kind:'run',run},field,source,theirs,scale);
    const counts=comparableValues(p.a.map((a,i)=>[a,p.b[i]]),p.level,p.allowed,{scaleSeen:p.scaleSeen,range:p.range,known:p.known});
@@ -49,8 +50,10 @@ export function researchRows<T extends Row>(docs:T[],columns:Column[],view:View,
    let other='',yesNo=isYesNo(row,field);
    if(source.kind==='column')other=cellOf(row,compareIndex);
    else{const earlier=sourceResult(row,source),theirs=pickField(fieldsOf([earlier]),field);other=earlier.status==='done'?valueOf(earlier,theirs):'';yesNo=yesNo||isYesNo(earlier,theirs);}
-   const verdict=judged.get(row.runNo+':'+row.id);
-   shown={...row,compared:{own,other,match:own&&other?verdict!==undefined?verdict:sameLabel(own,other,yesNo):null}};
+   // A text the figures do not pair (its label is a coder's “NA”, read as a blank cell) is neither; a result
+   // without a run is compared as it reads.
+   const paired=row.runNo!==undefined&&runs.has(row.runNo);
+   shown={...row,compared:{own,other,match:own&&other?paired?judged.get(row.runNo+':'+row.id)??null:sameLabel(own,other,yesNo):null}};
   }
   if(view.show==='pending'&&row.status!=='pending')continue;
   if(view.show==='done'&&row.status!=='done')continue;

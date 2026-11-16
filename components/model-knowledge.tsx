@@ -397,7 +397,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // Research mode reads the results with the study's scale for the scores: a subject's annotations are combined on it
  // (scale-combine.ts), deciding per run from all of them, with the subjects removed but kept for their runs (studyItems).
  // viewItems: the records as the table, the chart, the details, and the Excel download show them.
- const studyItems=useMemo(()=>{const all=withRemoved(items,removed);return research&&scoreScale?onScaleItems(all,scoreScale):all;},[research,scoreScale,items,removed]);
+ const studyItems=useMemo(()=>{const all=withRemoved(items,removed);return research?onScaleItems(all,scoreScale):all;},[research,scoreScale,items,removed]);
  const viewItems=useMemo(()=>removed.length?studyItems.filter(item=>!(item as {removedAt?:string}).removedAt):studyItems,[studyItems,removed]);
  const subjects=useMemo(()=>research?knowledgeRows(viewItems as any):[],[research,viewItems]),summaries=research?runSummaries(subjects):[];
  const shown=useMemo(()=>research?researchRows(subjects,columns,view,scoreScale,removed.length?knowledgeRows(studyItems as any):subjects):undefined,[research,subjects,columns,view,scoreScale,removed,studyItems]),rows=shown?.rows||[];

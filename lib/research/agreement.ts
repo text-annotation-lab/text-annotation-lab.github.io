@@ -1,13 +1,14 @@
 // Pair two sources of labels for the same texts (a run's answers, or a column
 // of human labels) and describe how far they agree. The statistics themselves
 // are in metrics.ts.
-import {agreement,fmtPct,fmtStat,type Agreement,type CiStat,type Level} from './metrics';
+import {agreement,fmtPct,fmtStat,isMissingLabel,type Agreement,type CiStat,type Level} from './metrics';
 import {normalizeLabel} from './normalize';
 import {rowForRun,type Row} from './runs';
+import {requestsOf} from './repeats';
 import {cellOf,columnIndex,type Column} from './columns';
 import {fieldLabel,fieldsOf,pickField,sourceResult,valueOf,type CompareSource} from './fields';
 import {fieldSpec,type FieldType} from '../answer-types';
-import {onScale,scalePoints,scaleText,type ScoreScale} from './score-scale';
+import {onScale,scalePoints,scaleText,zeroOne,type ScoreScale} from './score-scale';
 
 export const sourceLabel=(source:CompareSource)=>source.kind==='run'?'Run #'+source.run+(source.rep?' · annotation '+source.rep:''):source.name;
 // The answer fields a run recorded; a column has none.
@@ -36,74 +37,182 @@ function runSpec(rows:Row[],run:number,field:string):Typed|undefined{
 const numbersOf=(values:string[])=>values.map(value=>normalizeLabel(value)).filter(isNumber).map(Number);
 // A run whose replies are plain text (research mode), whose JSON values are read as fields.
 const plainRun=(rows:Row[],run:number)=>rows.some(row=>{const result=rowForRun(row,run);return result.status==='done'&&result.answerSettings?.plain===true;});
-// A plain-text run's value whose numbers are read on the study's scale for scores: mostly numbers, mostly on it.
-function onStudyScale(values:string[],scale:ScoreScale):boolean{
- const given=values.filter(Boolean),numbers=numbersOf(given);
- return numbers.length>0&&numbers.length*2>=given.length&&onScale(numbers,scale);
+// The single answers a run gave for a field: every annotation of a text, not the answer combined from them (a median
+// of 1.5 is no answer of the model's). `given`: how many there are; `numbers`: those that are numbers.
+type Single={given:number;numbers:number[]};
+function singleAnswers(rows:Row[],run:number,field:string):Single{
+ let given=0;const numbers:number[]=[];
+ for(const row of rows){
+  const result=rowForRun(row,run);if(result.status!=='done')continue;
+  for(const {result:one} of requestsOf(result)){
+   if(one.status!=='done')continue;
+   const value=normalizeLabel(valueOf(one,field));if(!value)continue;
+   given++;if(isNumber(value))numbers.push(Number(value));
+  }
+ }
+ return {given,numbers};
 }
+// Scores: a field whose single answers are mostly numbers. The few that are not (an "NA") are left out and reported.
+const scored=(single:Single)=>single.numbers.length>0&&single.numbers.length*2>=single.given;
+const sameSet=(values:string[],set:string[])=>new Set(values).size===set.length&&values.every(value=>set.includes(value));
+// A label next to values of 0 and 1: yes and no (true, false, y, n, ja, nej) are read as 1 and 0.
+export const oneZero=(value:string)=>{const read=normalizeLabel(value,true);return read==='true'?'1':read==='false'?'0':normalizeLabel(value);};
 const byNumber=(values:string[])=>[...new Set(values)].sort((x,y)=>Number(x)-Number(y));
+// A fixed scale of numbers (a field's allowed values, or the study's scale for the scores) next to a run whose scale
+// is read from its answers (`other`: that run's numbers). Where they reach beyond the fixed scale, it is widened so
+// that no answer is left out: by the whole numbers of their range (a scale of whole numbers, at most 100 points),
+// else by the ends of that range. `ends`: the fixed scale's own lowest and highest value.
+function widened(list:string[],other:number[]):{allowed:string[];ends:[number,number];extended:boolean}{
+ const points=list.map(Number),lo=Math.min(...points),hi=Math.max(...points),extra:number[]=[];
+ if(other.length){
+  const whole=points.every(Number.isInteger),least=Math.min(...other),most=Math.max(...other),from=whole?Math.floor(least):least,to=whole?Math.ceil(most):most;
+  if(whole&&Math.max(hi,to)-Math.min(lo,from)<=100){for(let x=from;x<lo;x++)extra.push(x);for(let x=hi+1;x<=to;x++)extra.push(x);}
+  else extra.push(...[from,to].filter(x=>x<lo||x>hi));
+ }
+ return {allowed:byNumber([...list,...extra.map(String)]),ends:[lo,hi],extended:extra.length>0};
+}
 // `allowed`: the field's own values (a scale's points or its categories), when a run declared them. `scaleSeen`:
 // numbers with no declared scale, whose scale is read from the answers (`range`). `known`: categories with none
 // declared. `basis` says in words what the scale or the categories rest on. `scale`: the study's scale for the
 // scores of plain-text runs (never sent to the model), used when every run compared is a plain-text run whose
-// values for the field mostly lie on it.
-export type Pairing={ids:string[];names:string[];a:string[];b:string[];rawA:string[];rawB:string[];onlyA:number;onlyB:number;numeric:boolean;level:Level;allowed:string[];scaleSeen:boolean;range?:[number,number];known?:string[];leftOut:'marker'|'number'|'value';basis:string;studyScale?:ScoreScale};
+// values for the field mostly lie on it. `zeroOne`: the values are 0 and 1 (allowed values of exactly 0 and 1, or
+// scores read from the answers that are a yes / no in numbers), so a label of yes or no is read as 1 or 0.
+export type Pairing={ids:string[];names:string[];a:string[];b:string[];rawA:string[];rawB:string[];onlyA:number;onlyB:number;numeric:boolean;level:Level;allowed:string[];scaleSeen:boolean;range?:[number,number];known?:string[];leftOut:'marker'|'number'|'value';basis:string;studyScale?:ScoreScale;zeroOne?:boolean};
 export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:string,b:CompareSource,fieldB:string,scale?:ScoreScale):Pairing{
  const va=sourceValues(rows,columns,a,fieldA),vb=sourceValues(rows,columns,b,fieldB);
  const specA=a.kind==='run'?runSpec(rows,a.run,fieldA):undefined,specB=b.kind==='run'?runSpec(rows,b.run,fieldB):undefined;
  const typed=[specA,specB].filter((spec):spec is Typed=>Boolean(spec)&&spec!.type!=='text'),twoRuns=a.kind==='run'&&b.kind==='run';
  // One type for the comparison: a single typed run, or two runs that gave the field the same type.
  const type=typed.length&&typed.every(spec=>spec.type===typed[0].type)?typed[0].type:undefined;
- // A yes / no field also reads 1 and 0, y and n, and ja and nej (in a coder's column, or in a run without the type).
- const yesNo=type==='boolean',read=(value:string)=>normalizeLabel(value,yesNo);
- const p:Pairing={ids:[],names:[],a:[],b:[],rawA:[],rawB:[],onlyA:0,onlyB:0,numeric:false,level:'nominal',allowed:[],scaleSeen:false,leftOut:'marker',basis:''};
- rows.forEach((row,i)=>{
-  if(va[i]&&!vb[i])p.onlyA++;else if(vb[i]&&!va[i])p.onlyB++;
-  if(!va[i]||!vb[i])return;
-  p.ids.push(row.id);p.names.push(String(row.name??''));p.rawA.push(va[i]);p.rawB.push(vb[i]);p.a.push(read(va[i]));p.b.push(read(vb[i]));
- });
- const answers=a.kind==='run'||b.kind!=='run'?p.a:p.b,labels=answers===p.a?p.b:p.a,answersAll=answers===p.a?va:vb;
  // The values every typed run allowed; none when a typed run named none, so the scale or the categories are then read from the answers.
  const lists=typed.map(spec=>spec.values.map(value=>normalizeLabel(value)).filter(Boolean)),declared=type&&lists.every(list=>list.length>=2)?[...new Set(lists.flat())]:[];
- if(type==='boolean'){
-  p.allowed=['false','true'];p.leftOut='value';p.basis='A yes / no field: 1 and 0, y and n, and ja and nej are read as yes and no.';
+ // Each run's side of the comparison, with its single answers. `words`: a yes / no in words (a yes / no field, or
+ // categories yes and no). `codes`: allowed values of exactly 0 and 1.
+ const sides=([[a,fieldA,specA],[b,fieldB,specB]] as [CompareSource,string,Typed|undefined][]).flatMap(([source,field,spec])=>{
+  if(source.kind!=='run')return [];
+  const own=spec&&spec.type!=='text'?spec:undefined,values=own?own.values.map(value=>normalizeLabel(value)).filter(Boolean):[];
+  return [{source,own,single:singleAnswers(rows,source.run,field),words:own?.type==='boolean'||(own?.type==='category'&&sameSet(values,['false','true'])),codes:(own?.type==='ordinal'||own?.type==='category')&&sameSet(values,['0','1'])}];
+ });
+ // A plain-text run whose scores are read on the study's scale for them.
+ const onStudy=(side:typeof sides[number])=>Boolean(scale)&&!side.own&&plainRun(rows,side.source.run)&&scored(side.single)&&onScale(side.single.numbers,scale!);
+ // The study's scale for the scores of plain-text runs: when every run compared is one, with its scores on it.
+ const studyScale=scale&&!type&&sides.length>0&&sides.every(onStudy)?scale:undefined;
+ // Values of 0 and 1: allowed values of exactly these, a study's scale of 0 to 1, or scores read from the answers
+ // that are a yes / no in numbers.
+ const flagged=(side:typeof sides[number])=>side.codes||(onStudy(side)?scale!.min===0&&scale!.max===1:!side.own&&scored(side.single)&&zeroOne(side.single.numbers));
+ // Yes / no: a yes / no in words in one run (a yes / no field, or categories yes and no), compared with a column, or
+ // with a run that has one in words or as 0 and 1, or answers in words without a type. It also reads 1 and 0, y and
+ // n, and ja and nej. Scores that are no yes / no in numbers (a 1 to 5 rating) are not read as yes and no.
+ const yesNo=sides.some(side=>side.words)&&sides.every(side=>side.words||flagged(side)||(!side.own&&!scored(side.single)));
+ // One run with values of 0 and 1, compared with a column: the column's yes and no are read as 1 and 0.
+ const flag=!yesNo&&sides.length===1&&flagged(sides[0]);
+ const read=(value:string,source:CompareSource)=>yesNo?normalizeLabel(value,true):flag&&source.kind==='column'?oneZero(value):normalizeLabel(value);
+ const p:Pairing={ids:[],names:[],a:[],b:[],rawA:[],rawB:[],onlyA:0,onlyB:0,numeric:false,level:'nominal',allowed:[],scaleSeen:false,leftOut:'marker',basis:'',...(flag?{zeroOne:true}:{})};
+ // Every value as it is compared, '' where a source has none.
+ const ra=va.map(value=>value?read(value,a):''),rb=vb.map(value=>value?read(value,b):'');
+ const both=ra.map((value,i)=>Boolean(value&&rb[i])),firstAnswers=a.kind==='run'||b.kind!=='run';
+ const answers=(firstAnswers?ra:rb).filter((_,i)=>both[i]),labels=(firstAnswers?rb:ra).filter((_,i)=>both[i]),answersAll=firstAnswers?va:vb;
+ // The run whose answers these are (none when two columns are compared).
+ const answering=sides.find(side=>side.source===(firstAnswers?a:b));
+ // A missing-value marker in a column ("NA" for a text nobody coded) is a blank cell, not a label: the text counts
+ // as having no label, and is neither compared nor reported as left out. Not where the marker is one of the field's
+ // categories, nor among categories no run declared (`known` below tells those apart).
+ const fill=(blank:(label:string)=>boolean)=>{
+  const cell=(value:string,source:CompareSource)=>source.kind==='column'&&value&&blank(value)?'':value;
+  rows.forEach((row,i)=>{
+   const x=cell(ra[i],a),y=cell(rb[i],b);
+   if(x&&!y)p.onlyA++;else if(y&&!x)p.onlyB++;
+   if(!x||!y)return;
+   p.ids.push(row.id);p.names.push(String(row.name??''));p.rawA.push(va[i]);p.rawB.push(vb[i]);p.a.push(x);p.b.push(y);
+  });
   return p;
+ };
+ if(yesNo){
+  p.allowed=['false','true'];p.leftOut='value';p.basis=type==='boolean'?'A yes / no field: 1 and 0, y and n, and ja and nej are read as yes and no.':'Yes and no, in words or as 1 and 0: 1 and 0, y and n, and ja and nej are read as yes and no.';
+  return fill(isMissingLabel);
  }
  if(type==='number'){
   // Numbers with no scale: compared at the interval level; Gwet's coefficients need a fixed scale and are not given.
   p.numeric=true;p.level='interval';p.leftOut='number';p.basis='A number field has no fixed scale, so Gwet’s AC1 and AC2 are not given.';
-  return p;
+  return fill(isMissingLabel);
  }
  if(type==='category'&&declared.length&&(!twoRuns||typed.length===2)){
   p.allowed=declared;p.leftOut='value';p.basis=`Categories: the field’s ${declared.length} allowed values.`;
-  return p;
+  return fill(label=>isMissingLabel(label)&&!declared.includes(label));
  }
- // The study's scale for the scores of plain-text runs: when every run compared is one, with its values on it.
- const runs=[[a,va],[b,vb]].filter(([source])=>(source as CompareSource).kind==='run') as [{kind:'run';run:number},string[]][];
- const studyScale=scale&&!type&&runs.length>0&&runs.every(([source,values])=>plainRun(rows,source.run)&&onStudyScale(values,scale))?scale:undefined;
- // Numbers: a declared scale, or every answer of the run is a number, and so are most of the labels it is compared with.
- p.numeric=type==='ordinal'||Boolean(studyScale)||(type!=='category'&&answers.length>0&&answers.every(isNumber)&&labels.filter(isNumber).length*2>labels.length);
+ // Categories that are numbers (codes 0 and 1) in one run, scores in a run without a type in the other: the codes,
+ // with the study's scale when the scores are read on it, else widened by the scores so that none is left out. They
+ // stay categories (no order), and a value that is no number is left out and reported.
+ const scores=twoRuns&&typed.length===1?sides.find(side=>!side.own):undefined;
+ if(type==='category'&&declared.length&&declared.every(isNumber)&&scores&&scored(scores.single)){
+  const study=onStudy(scores),wide=study?{allowed:byNumber([...declared,...scalePoints(scale!)]),extended:false}:widened(declared,scores.single.numbers);
+  p.allowed=wide.allowed;p.leftOut='value';if(study)p.studyScale=scale;
+  p.basis=`Categories: the field’s ${declared.length} allowed values${study?`, and the scale set for the scores, ${scaleText(scale!)}`:wide.extended?`, extended to ${wide.allowed[0]} to ${wide.allowed.at(-1)} because the run without allowed values answered beyond them`:''}.`;
+  return fill(()=>false);
+ }
+ // Categories in words in one run (a yes / no field, or categories), scores in a run without a type in the other that
+ // are no yes / no in numbers: the categories together with the points of the scores' scale (the study's scale, or
+ // every whole number of their range when it is at most 100 wide). A value that is neither is left out and reported.
+ // Without points (scores between whole numbers, or a range wider than 100), every value counts.
+ if(scores&&scored(scores.single)&&(type==='boolean'||(type==='category'&&declared.length))){
+  const own=type==='boolean'?['false','true']:declared,numbers=scores.single.numbers,least=Math.min(...numbers),most=Math.max(...numbers),study=onStudy(scores);
+  const points=study?scalePoints(scale!):numbers.every(Number.isInteger)&&most-least<=100?Array.from({length:most-least+1},(_,i)=>String(least+i)):[];
+  p.allowed=points.length?[...new Set([...own,...points])]:[];p.leftOut='value';if(study)p.studyScale=scale;
+  p.basis=points.length?`Categories: ${type==='boolean'?'yes and no':`the field’s ${own.length} allowed values`}, and the numbers ${points[0]} to ${points.at(-1)} of the run without allowed values${study?' (the scale set for the scores)':''}.`:'';
+  return fill(()=>false);
+ }
+ // Numbers: a declared scale, or the run's single answers are mostly numbers (every value of a column), and at
+ // least half of the labels they are compared with are (missing-value markers aside).
+ const real=labels.filter(label=>!isMissingLabel(label));
+ p.numeric=type==='ordinal'||Boolean(studyScale)||(type!=='category'&&answers.length>0&&(answering?scored(answering.single):answers.every(isNumber))&&real.filter(isNumber).length*2>=real.length);
+ // Each run's fixed scale, when it has one: the values its ordinal field allows, or the study's scale for the scores.
+ const fixed=sides.map(side=>side.own?(type==='ordinal'&&declared.length?declared:undefined):onStudy(side)?scalePoints(scale!):undefined);
  if(p.numeric&&studyScale){
   // As an ordinal field's allowed values: every point counts, and a number off the scale is left out and reported.
   p.level='ordinal';p.allowed=scalePoints(studyScale);p.studyScale=studyScale;
   p.basis=`Scale: the scale set for the scores, ${scaleText(studyScale)} (not sent to the model).`;
  }else if(p.numeric){
   p.level='ordinal';
-  // The range of the answers is read from every answer of the run, not only the paired ones.
-  const seen=numbersOf(answersAll);
-  if(type==='ordinal'&&declared.length){
-   const points=declared.map(Number),lo=Math.min(...points),hi=Math.max(...points);
-   // A second run without the type may answer beyond the scale: it is widened by those whole numbers so that no
-   // answer is left out, and keeps its own ends as the range (which sets its midpoint).
-   const other=twoRuns&&typed.length===1?numbersOf(specA?vb:va):[],extra:string[]=[];
-   if(other.length){const from=Math.floor(Math.min(...other)),to=Math.ceil(Math.max(...other));if(Math.max(hi,to)-Math.min(lo,from)<=100){for(let x=from;x<lo;x++)extra.push(String(x));for(let x=hi+1;x<=to;x++)extra.push(String(x));}}
-   p.allowed=byNumber([...declared,...extra]);if(extra.length)p.range=[lo,hi];
-   p.basis=`Scale: the field’s allowed values, ${lo} to ${hi}${extra.length?`, extended to ${p.allowed[0]} to ${p.allowed.at(-1)} because the run without allowed values answered beyond them`:''}.`;
+  const lists=fixed.filter((list):list is string[]=>Boolean(list)),ends=(list:string[])=>{const points=list.map(Number);return [Math.min(...points),Math.max(...points)];};
+  // In words: the field's allowed values, the scale set for the scores, or both (an ordinal field in one run and
+  // plain-text scores on the study's scale in the other).
+  const fromField=sides.some((side,i)=>fixed[i]&&side.own),fromStudy=sides.some((side,i)=>fixed[i]&&!side.own),own=fromField?declared:[];
+  const named=[fromField?`the field’s allowed values, ${ends(own)[0]} to ${ends(own)[1]}`:'',fromStudy?`the scale set for the scores, ${scaleText(scale!)}${fromField?'':' (not sent to the model)'}`:''].filter(Boolean).join(', and ');
+  if(fromStudy)p.studyScale=scale;
+  if(lists.length&&lists.length===sides.length){
+   // Every run has a fixed scale: their values together.
+   p.allowed=byNumber(lists.flat());p.basis=`Scale: ${named}.`;
+  }else if(lists.length){
+   // One of two runs has a fixed scale, and the other's is read from its answers: the fixed scale, widened where
+   // those reach beyond it (`widened`). It keeps its own ends as the range (which sets its midpoint). An answer
+   // between whole numbers (a 2.5) in the run without one makes the comparison interval.
+   const other=sides.find((_,i)=>!fixed[i])!.single.numbers,wide=widened(lists[0],other);
+   if(!other.every(Number.isInteger))p.level='interval';
+   p.allowed=wide.allowed;if(wide.extended)p.range=wide.ends;
+   p.basis=`Scale: ${named}${wide.extended?`, extended to ${p.allowed[0]} to ${p.allowed.at(-1)} because the run without ${fromField?'allowed values':'its scores on that scale'} answered beyond ${fromField?'them':'it'}`:''}.`;
   }else{
+   // The range of the answers is read from every single answer of the run, not only the paired or the combined ones.
    // Two runs: the range seen in either, so the figures do not depend on which run comes first.
-   const seenBoth=twoRuns?[...seen,...numbersOf(answersAll===va?vb:va)]:seen,range:[number,number]|undefined=seenBoth.length?[Math.min(...seenBoth),Math.max(...seenBoth)]:undefined;
-   p.scaleSeen=true;p.range=range;
-   p.basis=range?`Scale: read from ${twoRuns?'the two runs’':'the run’s'} answers, ${range[0]} to ${range[1]}; no allowed values are declared for this field.`:'';
+   const each=sides.length?(twoRuns?sides:[answering!]).map(side=>side.single.numbers):[numbersOf(answersAll)],seen=each.flat();
+   // Whole numbers are an ordinal scale; an answer between them (a 2.5) makes the field interval.
+   if(sides.length&&type!=='ordinal'&&!seen.every(Number.isInteger))p.level='interval';
+   p.scaleSeen=true;
+   // Whole-number scores: every whole number of the range is a point of the scale, also one never used.
+   const whole=sides.length>0&&seen.every(Number.isInteger);
+   if(flag){
+    // A yes / no in numbers against a column: the scale grows from 0 and 1, not from the range of the answers, so
+    // a code far from them (a 9 for "can't tell"), the model's or a coder's, is left out and reported.
+    p.range=[0,1];if(whole)p.allowed=['0','1'];
+    p.basis='Scale: 0 and 1, read from the run’s answers as a yes / no in numbers. A number far from them, such as 9, is left out, and yes and no in the column are read as 1 and 0.';
+   }else{
+    const range:[number,number]|undefined=seen.length?[Math.min(...seen),Math.max(...seen)]:undefined;
+    p.range=range;
+    // Each run's points: every whole number of its own range, when that is at most 100 wide. Two runs: the points
+    // of both, and every whole number between them when the range of both is at most 100 wide.
+    const points=each.map(numbers=>{const least=Math.min(...numbers),most=Math.max(...numbers);return numbers.length&&most-least<=100?Array.from({length:most-least+1},(_,i)=>least+i):[];});
+    if(range&&whole&&points.every(list=>list.length))p.allowed=(range[1]-range[0]<=100?Array.from({length:range[1]-range[0]+1},(_,i)=>range[0]+i):[...new Set(points.flat())].sort((x,y)=>x-y)).map(String);
+    p.basis=range?`Scale: read from ${twoRuns?'the two runs’':'the run’s'} answers, ${range[0]} to ${range[1]}; no allowed values are declared for this field.`:'';
+   }
   }
  }else{
   // Categories: the values a run gives anywhere are real categories (a run that answers "none" keeps it); with two
@@ -112,8 +221,9 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
   const values=(list:string[])=>new Set(list.filter(Boolean).map(value=>normalizeLabel(value)));
   const setA=values(va),setB=values(vb);
   p.known=a.kind==='run'||b.kind==='run'?[...(a.kind==='run'?setA:[]),...(b.kind==='run'?setB:[])]:[...setA].filter(value=>setB.has(value)&&!MISSING_CODE.test(value));
+  return fill(()=>false);
  }
- return p;
+ return fill(isMissingLabel);
 }
 export type LevelChoice='auto'|Level;
 export const autoLevel=(p:Pairing):Level=>p.level;
