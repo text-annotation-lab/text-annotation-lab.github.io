@@ -20,6 +20,25 @@
 @media(max-width:600px){header .mode-switch{top:15px;right:16px;font-size:11px;gap:6px}}
 @media(max-width:374px){header .mode-switch-label{width:min-content;white-space:normal;text-align:left;line-height:1.15}}
 @media(max-width:344px){header .mode-switch{flex-direction:column;gap:2px;padding:0;top:11px;font-size:10px}header .mode-switch-label{width:auto}.mode-switch-more{display:none}}
+/* Standard Lab: “What changes?” sits under the switch's label and opens a short list of what research mode adds. Where
+   the switch is placed at the top right, the two go there together; phones leave the link out. */
+.mode-switch-group{display:inline-flex;flex-direction:column;align-items:flex-start;flex-shrink:0}
+.what-changes{margin:-3px 0 0 42px;padding:0 0 2px;border:0;background:none;color:#40566e;font:inherit;font-size:12px;line-height:1.3;white-space:nowrap;text-decoration:underline;text-underline-offset:3px;text-decoration-color:#9aaabb;border-radius:4px}
+.what-changes:hover{color:#003d73;text-decoration-color:currentColor}
+.what-changes:focus-visible{outline:2px solid #003d73;outline-offset:2px}
+@media(max-width:1240px){header .mode-switch-group{position:absolute;top:26px;right:20px}header .mode-switch-group .mode-switch{position:static}}
+/* Where the label goes on two lines, the link starts under the switch itself, so the group is no wider than before. */
+@media(min-width:1241px) and (max-width:1300px){header .what-changes{margin-left:2px}}
+@media(max-width:600px){header .mode-switch-group{top:15px;right:16px}header .what-changes{display:none}}
+@media(max-width:344px){header .mode-switch-group{top:11px}}
+.what-changes-menu{width:420px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);overflow:auto;background:#fff;color:#1b2942;padding:18px 20px;font-family:inherit;font-size:13.5px;line-height:1.55}
+.what-changes-menu .what-changes-title{margin:0;font-size:14px;font-weight:600}
+.research-changes{margin:8px 0 0;padding-left:18px;list-style:disc}
+.research-changes li{margin:4px 0}
+.what-changes-menu .what-changes-note{margin:10px 0 0;font-size:12.5px;color:#526579}
+.reading-panel .about-research{background:#f3f6fb;border-radius:8px;padding:4px 20px 14px;margin:0 0 22px}
+.reading-panel .about-research .research-changes{padding-left:20px}
+.reading-panel .about-research .research-changes li{margin:6px 0}
 
 .research-keys-trigger{display:flex;gap:8px;flex-shrink:0}
 /* A dot on the key: amber while no key is set, green once one is. */

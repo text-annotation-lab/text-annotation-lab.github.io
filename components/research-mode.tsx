@@ -3,10 +3,32 @@
 // the page from the start; the research screens load when they are first shown.
 import {lazy,Suspense,useState,type ComponentProps,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
+import {Popover,PopoverContent,PopoverTrigger} from '@/components/ui/popover';
 import './research/research.css';
 
-export function ModeSwitch({on,onChange,disabled}:{on:boolean;onChange:(on:boolean)=>void;disabled?:boolean}){
- return <button type="button" role="switch" aria-checked={on} aria-label="Research mode" className={'mode-switch'+(on?' on':'')} disabled={disabled} onClick={()=>onChange(!on)} title={on?'Back to the standard Lab. Your texts, prompt, and results stay as they are.':'Adds tools for research: several runs per text, agreement with human labels, sampling, and more exports. Your texts, prompt, and results stay as they are.'}><span className="mode-switch-track" aria-hidden="true"><span className="mode-switch-thumb"/></span><span className="mode-switch-label">Research<span className="mode-switch-more"> mode</span></span></button>;
+// more: shown under the switch's label (the standard Lab's “What changes?”).
+export function ModeSwitch({on,onChange,disabled,more}:{on:boolean;onChange:(on:boolean)=>void;disabled?:boolean;more?:ReactNode}){
+ const button=<button type="button" role="switch" aria-checked={on} aria-label="Research mode" className={'mode-switch'+(on?' on':'')} disabled={disabled} onClick={()=>onChange(!on)} title={on?'Back to the standard Lab. Your texts, prompt, and results stay as they are.':'Adds tools for research: several runs per text, agreement with human labels, sampling, and more exports. Your texts, prompt, and results stay as they are.'}><span className="mode-switch-track" aria-hidden="true"><span className="mode-switch-thumb"/></span><span className="mode-switch-label">Research<span className="mode-switch-more"> mode</span></span></button>;
+ return more?<span className="mode-switch-group">{button}{more}</span>:button;
+}
+
+// What research mode adds to the standard Lab: opened from “What changes?” under the switch, and shown at the top of
+// About in research mode.
+const CHANGES=[
+ 'API keys for each provider, kept in this browser if you choose.',
+ 'Typed answer fields (scales, categories, numbers, yes/no) that the model must answer in that form.',
+ 'Request settings: system prompt, temperature, output limit, prompt caching, reasoning summary, and any model ID.',
+ 'Texts from a table with their metadata, random samples, and filters.',
+ 'Batches of up to 100,000 requests in one run.',
+ 'Runs & agreement: each run kept with its settings, up to 10 annotations per text, and agreement between runs and with human labels.',
+ 'An Export tab: Excel workbook, research and supplementary repositories, and a study backup.',
+ 'One tab at a time, so no request is sent, or paid for, twice.',
+];
+export function ResearchChanges(){
+ return <ul className="research-changes">{CHANGES.map(item=><li key={item}>{item}</li>)}</ul>;
+}
+export function WhatChanges(){
+ return <Popover><PopoverTrigger asChild><button type="button" className="what-changes">What changes?</button></PopoverTrigger><PopoverContent align="end" sideOffset={8} className="what-changes-menu" aria-label="What research mode adds"><p className="what-changes-title">Research mode adds</p><ResearchChanges/><p className="what-changes-note">The teaching tabs are hidden while it is on. Your texts, prompt, and results stay as they are.</p></PopoverContent></Popover>;
 }
 
 // Research mode works in one tab at a time (lib/research/tab-lock.ts). With openHere: shown instead of the Lab in a tab

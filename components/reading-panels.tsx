@@ -5,14 +5,16 @@ import {isStaleBuild} from '@/lib/stale-build';
 
 // Teaching content is fetched only when its section is opened. The two workspaces
 // stay mounted separately so background runs and storage safeguards are unchanged.
-const loaders:Record<string,()=>Promise<ComponentType>>={
+// research: whether research mode is on (About opens with what it adds).
+type Panel=ComponentType<{research?:boolean}>;
+const loaders:Record<string,()=>Promise<Panel>>={
  'get-started':()=>import('./get-started').then(module=>module.GetStarted),
  teaching:()=>import('./teaching-panels').then(module=>module.TeachingPanels),
  'study-example':()=>import('./study-example').then(module=>module.StudyExample),
  about:()=>import('./about').then(module=>module.About),
 };
 const sectionKeys:Record<string,string>={'get-started':'get-started',tips:'teaching',corpus:'teaching',resources:'teaching','study-example':'study-example',about:'about'};
-const panels=new Map<string,ComponentType>(),requests=new Map<string,Promise<void>>(),errors=new Map<string,string>();
+const panels=new Map<string,Panel>(),requests=new Map<string,Promise<void>>(),errors=new Map<string,string>();
 
 // Resolve before changing the active tab, so the previous page stays intact.
 // Keep resolved components, not just import promises: revisits render synchronously.
@@ -27,7 +29,7 @@ export function prepareReadingPanel(section:string):Promise<void>|undefined{
  }
  return request;
 }
-export function ReadingPanels({section}:{section:string}){
+export function ReadingPanels({section,research}:{section:string;research?:boolean}){
  const [attempt,setAttempt]=useState(0);
  const key=sectionKeys[section],Panel=panels.get(key),error=errors.get(key);
  useEffect(()=>{
@@ -38,7 +40,7 @@ export function ReadingPanels({section}:{section:string}){
   return()=>{current=false;};
  },[section,key,Panel,error,attempt]);
  if(!key)return null;
- if(Panel)return <Panel/>;
+ if(Panel)return <Panel research={research}/>;
  return <TabsContent value={section} className="reading-panel panel"><p role="status">{error||'Loading section…'}</p>{error&&<button type="button" className="textbutton" onClick={()=>{if(isStaleBuild()){window.location.reload();return;}errors.delete(key);setAttempt(value=>value+1);}}>{isStaleBuild()?'Reload page':'Try again'}</button>}</TabsContent>;
 }
 // Fetch the reading sections once the workspace is idle, so a page left open
