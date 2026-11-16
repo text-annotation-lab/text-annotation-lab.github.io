@@ -11,7 +11,7 @@ function transpile(file,require,scope={}){
 const providers=localModule('lib/providers.ts');
 function localModule(file){return transpile(file,id=>id.startsWith('.')?localModule(path.posix.join(path.posix.dirname(file),id)+'.ts'):require(id));}
 const chunkText=localModule('lib/chunk-text.ts');
-function harness(initial,save=async()=>{},fetcher=async()=>Response.json({score:'POSITIVE',explanation:'Evidence'}),preparePanel=()=>undefined){
+function harness(initial,save=async()=>{},fetcher=async()=>Response.json({score:'POSITIVE',explanation:'Evidence'}),preparePanel=()=>undefined,props={}){
  const slots=[],effects=[],listeners=new Map(),writes=[],calls=[];let cursor=0,pending=[],dirty=true,tree;
  const react={useState(initial){const i=cursor++;if(!slots[i])slots[i]={value:typeof initial==='function'?initial():initial};return [slots[i].value,value=>{slots[i].value=typeof value==='function'?value(slots[i].value):value;dirty=true;}];},useRef(value){const i=cursor++;return slots[i]||(slots[i]={current:value});},useMemo(fn,deps){const i=cursor++,slot=slots[i];if(slot&&slot.deps.length===deps.length&&slot.deps.every((d,j)=>Object.is(d,deps[j])))return slot.value;const value=fn();slots[i]={value,deps};return value;},useEffect(fn,deps){const i=cursor++,previous=effects[i];if(!previous||deps.some((v,j)=>!Object.is(v,previous.deps[j]))){pending.push(()=>{previous?.cleanup?.();effects[i]={deps,cleanup:fn()};});}}};
  const jsx=(type,props)=>({type,props});
@@ -19,7 +19,7 @@ function harness(initial,save=async()=>{},fetcher=async()=>Response.json({score:
  const imports=id=>id==='@/lib/own-prices'?{useOwnPrices:()=>({}),ownPrice:()=>undefined}:id==='@/components/reading-panels'?{ReadingPanels:'ReadingPanels',prepareReadingPanel:preparePanel}:id==='@/lib/section-navigation'?{focusSectionWhenReady:()=>()=>{}}:id==='react'?react:id==='react/jsx-runtime'?{jsx,jsxs:jsx,Fragment:'Fragment'}:id==='@/lib/annotation-queue'?localModule('lib/annotation-queue.ts'):id==='@/lib/workflow-safety'?localModule('lib/workflow-safety.ts'):id==='@/lib/annotation-feedback'?localModule('lib/annotation-feedback.ts'):id==='@/lib/studies'?localModule('lib/studies.ts'):id==='@/lib/batch-limits'?localModule('lib/batch-limits.ts'):id==='@/lib/providers'?providers:id==='@/lib/workspace-storage'?{createWorkspaceStorage:()=>storage}:id==='@/lib/chunk-text'?chunkText:id==='@/lib/chunk-documents'?localModule('lib/chunk-documents.ts'):id==='@/components/named-answer-detail'?transpile('components/named-answer-detail.tsx',id=>id.startsWith('@/lib/')?localModule(id.slice(2)+'.ts'):require(id)):id==='@/components/provider-key-status'?{useProviderKeyCheck:()=>({check:{status:'unverified'},refresh:()=>{}}),ProviderKeyStatus:'ProviderKeyStatus'}:id.startsWith('@/lib/')&&fs.existsSync(id.slice(2)+'.ts')?localModule(id.slice(2)+'.ts'):new Proxy({},{get:(_,key)=>String(key)});
  const window={scrollTo(){},location:{hash:'',pathname:'/',search:''},history:{replaceState(){},pushState(){}},addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:(name)=>listeners.delete(name)};
  const Home=transpile('app/page.tsx',imports,{window,document:{getElementById:()=>null},requestAnimationFrame:()=>0,cancelAnimationFrame(){},confirm:()=>true,fetch:async(url,options)=>{calls.push({url,options});return fetcher(url,options);}}).StudyWorkspace;
- function render(){cursor=0;dirty=false;tree=Home({});const queue=pending;pending=[];queue.forEach(fn=>fn());}
+ function render(){cursor=0;dirty=false;tree=Home(props);const queue=pending;pending=[];queue.forEach(fn=>fn());}
  async function flush(){for(let n=0;n<8;n++){if(dirty)render();await new Promise(resolve=>setImmediate(resolve));}return tree;}
  function nodes(node,out=[]){if(!node||typeof node!=='object')return out;if(Array.isArray(node)){node.forEach(n=>nodes(n,out));return out;}out.push(node);nodes(node.props?.children,out);return out;}
  function text(node){if(node==null||typeof node==='boolean')return '';if(typeof node!=='object')return String(node);if(Array.isArray(node))return node.map(text).join('');return text(node.props?.children);}
@@ -613,5 +613,36 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  assert.equal(student.find(n=>n.type==='ModeSwitch').props.on,false);assert.equal(student.find(n=>n.props?.id==='key').props.value,'','The standard Lab never loads a remembered key');
  assert.deepEqual(student.all(n=>n.type==='TabsTrigger').map(n=>n.props.value),STUDENT_TABS);
  delete globalThis.window;
+
+ // Research mode asks the browser to keep this site's data, each time it opens; the standard Lab never asks.
+ {let asked=0;const real=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{storage:{persisted:async()=>false,persist:async()=>{asked++;return true;}}}});
+  try{
+   const lab=start();await lab.flush();assert.equal(asked,0,'The standard Lab does not ask');
+   lab.find(n=>n.type==='ModeSwitch').props.onChange(true);await lab.flush();assert.equal(asked,1,'Research mode asks');
+   await lab.add([new File(['Another text'],'another.txt',{type:'text/plain'})]);assert.equal(asked,2,'Adding texts asks again');
+   lab.find(n=>n.type==='ModeSwitch').props.onChange(false);await lab.flush();assert.equal(asked,2);
+   Object.defineProperty(globalThis,'navigator',{configurable:true,value:{storage:{persisted:async()=>true,persist:async()=>{asked++;return true;}}}});
+   lab.find(n=>n.type==='ModeSwitch').props.onChange(true);await lab.flush();assert.equal(asked,2,'Data already kept: nothing more is asked');
+   Object.defineProperty(globalThis,'navigator',{configurable:true,value:{}});
+   lab.find(n=>n.type==='ModeSwitch').props.onChange(false);await lab.flush();lab.find(n=>n.type==='ModeSwitch').props.onChange(true);await lab.flush();
+   assert.equal(lab.find(n=>n.type==='ModeSwitch').props.on,true,'A browser without it opens research mode all the same');
+  }finally{Object.defineProperty(globalThis,'navigator',real);}
+ }
+
+ // One tab at a time (lib/research/tab-lock.ts): switching on is refused while another tab of this browser has research
+ // mode, and the standard Lab stays as it was, with a notice. Switching off is never refused.
+ {const changes=[];let answer=false;const props={research:false,claimResearch:()=>{if(answer==='off')throw new Error('Switching off asks for nothing');return answer==='held'?true:Promise.resolve(answer);},onResearch:on=>{props.research=on;changes.push(on);}};
+  const lab=harness({docs:documents(),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1},undefined,undefined,undefined,props);await lab.flush();
+  const mode=()=>lab.find(n=>n.type==='ModeSwitch').props,notices=()=>lab.all(n=>n.type==='OtherTabNotice');
+  assert.equal(notices().length,0);
+  mode().onChange(true);await lab.flush();
+  assert.equal(mode().on,false,'Refused: the standard Lab stays');assert.deepEqual(changes,[]);assert.equal(notices().length,1);assert.equal(notices()[0].props.openHere,undefined);
+  assert.deepEqual(lab.all(n=>n.type==='TabsTrigger').map(n=>n.props.value),STUDENT_TABS);assert.equal(lab.find(n=>n.type==='header').props.className,undefined);
+  answer=true;mode().onChange(true);await lab.flush();
+  assert.equal(mode().on,true);assert.deepEqual(changes,[true]);assert.equal(notices().length,0);assert.deepEqual(lab.all(n=>n.type==='TabsTrigger').map(n=>n.props.value),RESEARCH_TABS);
+  answer='off';mode().onChange(false);await lab.flush();assert.equal(mode().on,false);assert.deepEqual(changes,[true,false]);
+  answer='held';mode().onChange(true);await lab.flush();assert.equal(mode().on,true,'Already held: switched at once');assert.deepEqual(changes,[true,false,true]);
+ }
  console.log('Research mode workspace checks passed.');
 })().catch(error=>{console.error(error);process.exit(1);});
