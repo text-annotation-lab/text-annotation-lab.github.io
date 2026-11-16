@@ -1,6 +1,6 @@
 import {allowedOrigin,requestBody} from '@/lib/request-guards';
 import {readAnswerFields,readAnswerSettings} from '@/lib/answer-fields';
-import {PROVIDERS,reasoningOptions,GEMINI_ENABLED,type Provider} from '@/lib/providers';
+import {PROVIDERS,validModelId,reasoningOptions,GEMINI_ENABLED,type Provider} from '@/lib/providers';
 import {supportedFile} from '@/lib/extract-text';
 import {BatchError,buildBatchBody,createBatchPayload,createBatch,checkBatch,cancelBatch,validBatchId} from '@/lib/batch-provider';
 import {knowledgeInstructions,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
@@ -25,7 +25,7 @@ export async function POST(request:Request){
   if(action==='submit'){
    let answerFields:string[],answerSettings,requestSettings;try{answerFields=readAnswerFields(f.get('answerFields'));answerSettings=readAnswerSettings(f.get('answerSettings'),answerFields);requestSettings=readRequestSettings(f.get('requestSettings'));}catch(error){throw new BatchError((error as Error).message);}
    const model=String(f.get('model')||''),effort=String(f.get('effort')||''),prompt=formText(String(f.get('prompt')||'')),runId=String(f.get('runId')||'');
-   if(!PROVIDERS[provider].models.includes(model)||!reasoningOptions(provider,model).includes(effort))throw new BatchError('Unsupported model or reasoning setting.');
+   if(!validModelId(provider,model)||!reasoningOptions(provider,model).includes(effort))throw new BatchError('Unsupported model or reasoning setting.');
    if(!prompt.trim()||prompt.length>100000||!/^lab_[a-zA-Z0-9_-]{1,60}$/.test(runId))throw new BatchError('Provide an annotation prompt and a valid batch reference.');
    const mode=f.get('mode'),knowledge=mode==='model-knowledge';
    if(mode!==null&&!knowledge)throw new BatchError('Unsupported annotation mode.');

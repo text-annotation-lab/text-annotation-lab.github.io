@@ -8,6 +8,7 @@ const routes:Record<string,()=>Promise<Handler>>={
  '/api/batch':()=>import('@/app/api/batch/route'),
  '/api/check-key':()=>import('@/app/api/check-key/route'),
  '/api/count-tokens':()=>import('@/app/api/count-tokens/route'),
+ '/api/models':()=>import('@/app/api/models/route'),
  '/api/openrouter-balance':()=>import('@/app/api/openrouter-balance/route'),
 };
 

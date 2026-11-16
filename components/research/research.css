@@ -248,3 +248,7 @@
 .research-preview code{font-size:12.5px;overflow-wrap:anywhere}
 .research-preview-whole summary{cursor:pointer;font-size:14px;color:#003d73}
 .research-preview-whole pre{margin-top:10px}
+/* The model menu: a typed model ID in place of the menu, and one line about the account's models under both boxes. */
+.model-settings .research-model-id{height:36px;padding:0 12px;font-size:13px}
+.model-settings .research-model-account{grid-column:1/-1;grid-row:2;margin:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 12px}
+.research-model-account .textbutton{display:inline;margin:0;padding:0;font-size:inherit}

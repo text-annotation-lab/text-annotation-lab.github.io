@@ -1,4 +1,4 @@
-import type {Provider} from './providers';
+import {isListedModel,type Provider} from './providers';
 import type {RequestSettings} from './request-settings';
 const names={openrouter:'OpenRouter',openai:'OpenAI',anthropic:'Anthropic',gemini:'Gemini'};
 const consoles={openrouter:'OpenRouter',openai:'OpenAI Platform',anthropic:'Claude Console',gemini:'Google AI Studio'};
@@ -35,18 +35,31 @@ function openRouterDiagnostics(error:any){
 }
 // Research mode: a request setting the provider did not accept (lib/request-settings.ts), told from the
 // parameter its error names. The provider's words are read only to find that parameter; none are returned.
-function rejectedSetting(provider:Provider,status:number,e:any,request?:RequestSettings):string|undefined{
- if(!request||status!==400&&status!==404&&status!==422)return undefined;
+// model: the model of the request. For one outside the Lab's lists, whose settings the Lab cannot know, a
+// refused reasoning setting or answer format is named too.
+function rejectedSetting(provider:Provider,status:number,e:any,request?:RequestSettings,model?:string):string|undefined{
+ const other=model!==undefined&&!isListedModel(provider,model);
+ if(!request&&!other||status!==400&&status!==404&&status!==422)return undefined;
  const label=names[provider],said=[e?.param,e?.message,e?.metadata?.raw].filter((x:unknown)=>typeof x==='string').map((x:string)=>x.slice(0,16384)).join(' ');
+ if(!request)return other?rejectedForModel(provider,status,said):undefined;
  if(request.temperature!==undefined&&(/temperature/i.test(said)||provider==='openrouter'&&status===404&&/no endpoints/i.test(said)))return `${label} does not accept a temperature for this model and reasoning setting. Clear Temperature in Processing options, or choose a model that takes one.`;
  if(request.summary&&/summar|thinking\.display|include_?thoughts/i.test(said))return `${label} did not accept the request for a reasoning summary. Some models return none, and OpenAI gives summaries of its latest models only to verified organizations. Switch off “Record the model’s reasoning summary” in Processing options to continue.`;
  if(request.maxOutput!==undefined&&/max_?(?:output_?|completion_?)?tokens/i.test(said))return `${label} does not accept ${request.maxOutput.toLocaleString('en-US')} as the output limit for this model. Change “Max output tokens” in Processing options.`;
+ return other?rejectedForModel(provider,status,said):undefined;
+}
+// A model outside the Lab's lists: what the provider's error says the model does not take.
+function rejectedForModel(provider:Provider,status:number,said:string):string|undefined{
+ const label=names[provider];
+ if(provider==='openrouter'&&status===404&&/no endpoints/i.test(said))return 'OpenRouter has no provider for this model that takes every setting of the request. Set “Reasoning effort” to “model default”. If that is not enough, the model may not take structured answers: choose “Plain text” under Answer fields.';
+ if(/reasoning|thinking|effort|budget_tokens/i.test(said))return `${label} does not accept this reasoning setting for the model. Choose another under “Reasoning effort”.`;
+ if(/response_?format|json_?schema|output_config|structured|response_?schema|text\.format/i.test(said))return `${label} does not accept structured answers from this model. Choose “Plain text” under Answer fields.`;
+ return undefined;
 }
 // Never return raw provider messages: they can echo credentials or document text.
 // Codes guide the explanation only; an HTTP status alone cannot establish billing
 // state, whether a request completed, or the cause of a generic quota error.
 // request: research mode's request settings as sent, so a rejected one can be named.
-export function providerError(provider:Provider,status:number,body:unknown,headers?:Headers,request?:RequestSettings){
+export function providerError(provider:Provider,status:number,body:unknown,headers?:Headers,request?:RequestSettings,model?:string){
  const label=names[provider],consoleName=consoles[provider];
  const e=(body as any)?.error;
  const diagnostics=provider==='openrouter'?openRouterDiagnostics(e):undefined;
@@ -56,7 +69,7 @@ export function providerError(provider:Provider,status:number,body:unknown,heade
  if(provider==='openrouter'&&e?.metadata?.limit_source==='openrouter_key_limit')return 'This OpenRouter key has reached its spending allowance. No new annotations will start. Ask the person who issued your key about additional funds; completed results are kept.';
  if(provider==='openrouter'&&e?.metadata?.limit_source==='openrouter_in_flight_budget')return 'OpenRouter has reserved the available budget for active requests. Wait for them to finish, refresh the allowance, and use fewer parallel annotations before retrying.';
  if(provider==='openrouter'&&status===402)return 'OpenRouter cannot fund this request with the available credits or allowance. Refresh the allowance and contact the key issuer if needed. A smaller request may fit the remaining budget. Completed results are kept.';
- let message:string;const rejected=rejectedSetting(provider,status,e,request);
+ let message:string;const rejected=rejectedSetting(provider,status,e,request,model);
  if(rejected)message=rejected;
  else if(status===429&&diagnostics?.message)message=diagnostics.message;
  else if(status===401||has('api_key_invalid','api_key_expired','invalid_api_key','authentication_error'))message=`${label} rejected the API key. Copy an active key for this provider from ${consoleName}, then retry.`;
@@ -118,9 +131,9 @@ export function retryWait(provider:Provider,status:number,body:unknown,headers?:
  return wait>MAX_AUTOMATIC_WAIT_MS?undefined:Math.ceil(wait);
 }
 // The reply for a failed provider request: the message, and `retryAfterMs` when a paced run may send it again.
-export function providerFailure(provider:Provider,status:number,body:unknown,headers?:Headers,request?:RequestSettings):{error:string;retryAfterMs?:number}{
+export function providerFailure(provider:Provider,status:number,body:unknown,headers?:Headers,request?:RequestSettings,model?:string):{error:string;retryAfterMs?:number}{
  const wait=retryWait(provider,status,body,headers);
- return {error:providerError(provider,status,body,headers,request),...(wait===undefined?{}:{retryAfterMs:wait})};
+ return {error:providerError(provider,status,body,headers,request,model),...(wait===undefined?{}:{retryAfterMs:wait})};
 }
 export function incompleteAnnotation(provider:Provider,reason:unknown){
  const label=names[provider],consoleName=consoles[provider];

@@ -1,7 +1,7 @@
 import {allowedOrigin,requestBody} from '@/lib/request-guards';
 import {readAnswerFields,readAnswerSettings} from '@/lib/answer-fields';
 import {providerError,providerJson} from '@/lib/provider-errors';
-import {PROVIDERS,GEMINI_ENABLED,reasoningOptions,type Provider} from '@/lib/providers';
+import {PROVIDERS,validModelId,GEMINI_ENABLED,reasoningOptions,type Provider} from '@/lib/providers';
 import {buildBatchBody} from '@/lib/batch-provider';
 import {supportedFile} from '@/lib/extract-text';
 import {knowledgeInstructions,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
@@ -20,7 +20,7 @@ export async function POST(request:Request){try{
  if(provider==='openrouter')return reply({error:'This operation is not available through OpenRouter. Use Instant processing and the rough cost estimate.'},400);
  if(key.startsWith('sk-or-'))return reply({error:'This is an OpenRouter key. Select OpenRouter as the provider.'},401);
  if(!Object.hasOwn(PROVIDERS,provider)||provider==='gemini'&&!GEMINI_ENABLED)return reply({error:'Unsupported provider.'},400);
- if(!PROVIDERS[provider].models.includes(model)||!reasoningOptions(provider,model).includes(effort))return reply({error:'Unsupported model or reasoning setting.'},400);
+ if(!validModelId(provider,model)||!reasoningOptions(provider,model).includes(effort))return reply({error:'Unsupported model or reasoning setting.'},400);
  if(provider==='openai'&&(!/^sk-[\w-]+$/.test(key)||key.startsWith('sk-ant-')))return reply({error:'Use an OpenAI key for OpenAI input counting.'},401);
  if(!prompt.trim()||prompt.length>100000)return reply({error:'Provide your annotation prompt first.'},400);
  const mode=f.get('mode'),knowledge=mode==='model-knowledge',web=f.get('webSearch')==='true';

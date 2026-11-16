@@ -28,6 +28,16 @@ export function readRequestSettings(raw:FormDataEntryValue|null):RequestSettings
  return clean;
 }
 
+// Model families, told from a model's ID. Research mode accepts models outside the Lab's lists, and these
+// rules decide what a request to such a model looks like; every listed model falls where it always did.
+// Claude models that reason within a fixed budget, or not at all: Claude 3 and Claude 4 up to 4.5. Later
+// Claude models decide how much to reason by themselves, guided by an effort.
+export const budgetedClaude=(id:string)=>/^claude-(?:\d|instant)/.test(id)||/^claude-(?:opus|sonnet|haiku)-4(?:-[0-5])?(?:-\d{8}|-latest)?$/.test(id);
+// OpenAI models that cache up to a mark (GPT-5.6 and later). Earlier ones cache repeated prompts by themselves.
+export const marksOpenAICache=(id:string)=>/^gpt-(?:5\.(?:[6-9]|\d{2})|[6-9]|\d{2})(?:\b|[-.])/.test(id);
+// OpenAI models without a reasoning setting.
+export const plainOpenAI=(id:string)=>/^(?:gpt-3|gpt-4|chatgpt)/i.test(id);
+
 // How a provider caches a prompt. marked: the Lab marks the end of the prompt, and the provider caches what
 // stands before the mark. automatic: the provider caches repeated prompts by itself; nothing is switched.
 // minTokens: a shorter prompt is not cached (documented per model; absent where the provider names no number).
@@ -36,9 +46,9 @@ export function readRequestSettings(raw:FormDataEntryValue|null):RequestSettings
 export type CacheSupport={kind:'marked'|'automatic';vendor:'anthropic'|'openai'|'gemini';minTokens?:number;write?:number;batchWrite?:number};
 export function cacheSupport(provider:string,model:string):CacheSupport|undefined{
  const routed=provider==='openrouter',vendor=routed?model.split('/')[0]:provider,id=routed?model.split('/').slice(1).join('/'):model;
- if(vendor==='anthropic')return {kind:'marked',vendor:'anthropic',minTokens:/haiku-4|opus-4[-.][56]/.test(id)?4096:/sonnet-4|opus-4/.test(id)?1024:512,write:1.25,batchWrite:2};
+ if(vendor==='anthropic')return {kind:'marked',vendor:'anthropic',minTokens:/haiku-4|opus-4[-.][56]/.test(id)?4096:/sonnet-4|opus-4/.test(id)?1024:/^claude-3/.test(id)?(/haiku/.test(id)?2048:1024):512,write:1.25,batchWrite:2};
  if(vendor==='gemini'||vendor==='google')return {kind:'automatic',vendor:'gemini',...(/gemini-2\.5-(flash|pro)$/.test(id)?{minTokens:2048}:/gemini-(4-argon|3\.[68]-flash|3\.1-pro)/.test(id)?{minTokens:4096}:{})};
- if(vendor==='openai')return {kind:'marked',vendor:'openai',minTokens:1024,write:1.25,batchWrite:1.25};
+ if(vendor==='openai')return marksOpenAICache(id)?{kind:'marked',vendor:'openai',minTokens:1024,write:1.25,batchWrite:1.25}:{kind:'automatic',vendor:'openai',minTokens:1024};
 }
 // Whether the setting changes this request: the option is on, and the model's provider caches at a mark.
 export const marksCache=(provider:string,model:string,request?:RequestSettings)=>Boolean(request?.cache)&&cacheSupport(provider,model)?.kind==='marked';
@@ -46,19 +56,20 @@ export const marksCache=(provider:string,model:string,request?:RequestSettings)=
 // The most output tokens the Lab allows a reply when no other limit is set (reasoning included). Gemini 4
 // models think at length and get more room.
 export const defaultOutputLimit=(provider:string,model:string)=>provider==='gemini'&&model.startsWith('gemini-4-')?32768:12000;
-// A model with a fixed reasoning budget (Claude Haiku 4.5) needs a limit above that budget.
-export const outputFloor=(provider:string,model:string,effort?:string)=>provider==='anthropic'&&model.startsWith('claude-haiku-4-5')&&/^\d+$/.test(effort||'')?Number(effort)+1:MIN_OUTPUT_TOKENS;
+// A model with a fixed reasoning budget (Claude Haiku 4.5 and earlier) needs a limit above that budget.
+export const outputFloor=(provider:string,model:string,effort?:string)=>provider==='anthropic'&&budgetedClaude(model)&&/^\d+$/.test(effort||'')?Number(effort)+1:MIN_OUTPUT_TOKENS;
 // Whether a model takes a temperature. Claude models from Opus 4.7 on reject one, and a Claude model that
-// reasons accepts none, so of the Lab's Claude models only Haiku 4.5 with reasoning off gets it (never through
-// OpenRouter, which offers no "off"). Other providers are sent the temperature, and reject it for a model that
-// takes none. Anthropic's scale ends at 1.
+// reasons accepts none, so of the Lab's Claude models only Haiku 4.5 with reasoning off gets it, like the
+// earlier Claude models (never through OpenRouter, which offers no "off"). Other providers are sent the
+// temperature, and reject it for a model that takes none. Anthropic's scale ends at 1.
 export function takesTemperature(provider:string,model:string,effort?:string){
  const routed=provider==='openrouter',vendor=routed?model.split('/')[0]:provider;
- return vendor!=='anthropic'||!routed&&model.startsWith('claude-haiku-4-5')&&effort==='off';
+ return vendor!=='anthropic'||!routed&&budgetedClaude(model)&&effort==='off';
 }
 export const temperatureCeiling=(provider:string)=>provider==='anthropic'?1:MAX_TEMPERATURE;
-// Whether there is reasoning to summarize: not with reasoning switched off.
-export const summarizesReasoning=(effort?:string)=>effort!=='off'&&effort!=='none';
+// Whether there is reasoning to summarize: not with reasoning switched off, and not from an OpenAI model
+// without a reasoning setting.
+export const summarizesReasoning=(effort?:string,provider?:string,model?:string)=>effort!=='off'&&effort!=='none'&&!(provider==='openai'&&model!==undefined&&plainOpenAI(model));
 // What a request carries and a result records: each setting where it changes the request to this provider and
 // model. effort: the reasoning setting the request is sent with.
 export function sentRequestSettings(provider:string,model:string,request?:RequestSettings,effort?:string):RequestSettings|undefined{
@@ -67,7 +78,7 @@ export function sentRequestSettings(provider:string,model:string,request?:Reques
  if(marksCache(provider,model,request))out.cache=true;
  if(request.temperature!==undefined&&takesTemperature(provider,model,effort))out.temperature=Math.min(request.temperature,temperatureCeiling(provider));
  if(request.maxOutput!==undefined){const limit=Math.max(request.maxOutput,outputFloor(provider,model,effort));if(limit!==defaultOutputLimit(provider,model))out.maxOutput=limit;}
- if(request.summary&&summarizesReasoning(effort))out.summary=true;
+ if(request.summary&&summarizesReasoning(effort,provider,model))out.summary=true;
  if(request.store===false&&provider==='openai')out.store=false;
  return Object.keys(out).length?out:undefined;
 }
