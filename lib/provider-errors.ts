@@ -43,9 +43,9 @@ function rejectedSetting(provider:Provider,status:number,e:any,request?:RequestS
  if(!request&&!other||status!==400&&status!==404&&status!==422)return undefined;
  const label=names[provider],said=[e?.param,e?.message,e?.metadata?.raw].filter((x:unknown)=>typeof x==='string').map((x:string)=>x.slice(0,16384)).join(' ');
  if(!request)return other?rejectedForModel(provider,status,said):undefined;
- if(request.temperature!==undefined&&(/temperature/i.test(said)||provider==='openrouter'&&status===404&&/no endpoints/i.test(said)))return `${label} does not accept a temperature for this model and reasoning setting. Clear Temperature in Processing options, or choose a model that takes one.`;
- if(request.summary&&/summar|thinking\.display|include_?thoughts/i.test(said))return `${label} did not accept the request for a reasoning summary. Some models return none, and OpenAI gives summaries of its latest models only to verified organizations. Switch off “Record the model’s reasoning summary” in Processing options to continue.`;
- if(request.maxOutput!==undefined&&/max_?(?:output_?|completion_?)?tokens/i.test(said))return `${label} does not accept ${request.maxOutput.toLocaleString('en-US')} as the output limit for this model. Change “Max output tokens” in Processing options.`;
+ if(request.temperature!==undefined&&(/temperature/i.test(said)||provider==='openrouter'&&status===404&&/no endpoints/i.test(said)))return `${label} does not accept a temperature for this model and reasoning setting. Clear Temperature under Sampling & limits, or choose a model that takes one.`;
+ if(request.summary&&/summar|thinking\.display|include_?thoughts/i.test(said))return `${label} did not accept the request for a reasoning summary. Some models return none, and OpenAI gives summaries of its latest models only to verified organizations. Switch off “Record the model’s reasoning summary” under Sampling & limits to continue.`;
+ if(request.maxOutput!==undefined&&/max_?(?:output_?|completion_?)?tokens/i.test(said))return `${label} does not accept ${request.maxOutput.toLocaleString('en-US')} as the output limit for this model. Change “Max output tokens” under Sampling & limits.`;
  return other?rejectedForModel(provider,status,said):undefined;
 }
 // A model outside the Lab's lists: what the provider's error says the model does not take.

@@ -39,16 +39,17 @@ function PriceBoxes({provider,model}:{provider:Provider;model:string}){
  </>;
 }
 
-// Prompt caching, temperature, output limit, your own price, reasoning summary, and (OpenAI) the provider's logs. Every box
+// Prompt caching (part "cache", in Processing options), or temperature, output limit, your own price, reasoning
+// summary, and (OpenAI) the provider's logs (part "sampling", under "Sampling & limits" below the model). Every box
 // shows what a request to the selected model carries; a choice that does not apply to this model is kept for
 // other models. `prompt` is the prompt as a request sends it; `fixed` is the length of its part before the
 // first placeholder, where it has placeholders that are filled in for each text.
-export function RequestOptions({provider,model,effort,prompt,fixed,value,disabled,onChange}:{provider:Provider;model:string;effort:string;prompt:string;fixed?:number;value?:RequestSettings;disabled?:boolean;onChange:(value:RequestSettings|undefined)=>void}){
+export function RequestOptions({part,provider,model,effort,prompt,fixed,value,disabled,onChange}:{part:'cache'|'sampling';provider:Provider;model:string;effort:string;prompt:string;fixed?:number;value?:RequestSettings;disabled?:boolean;onChange:(value:RequestSettings|undefined)=>void}){
  const sent=sentRequestSettings(provider,model,value,effort),set=(changes:Partial<RequestSettings>)=>onChange(cleanRequestSettings({...value,...changes}));
  const takes=takesTemperature(provider,model,effort),ceiling=temperatureCeiling(provider),usual=defaultOutputLimit(provider,model),floor=outputFloor(provider,model,effort),reasons=summarizesReasoning(effort,provider,model);
+ if(part==='cache')return <CacheOption provider={provider} model={model} prompt={prompt} fixed={fixed} value={value} disabled={disabled} onChange={next=>set({cache:next?.cache})}/>;
  return <>
-  <CacheOption provider={provider} model={model} prompt={prompt} fixed={fixed} value={value} disabled={disabled} onChange={next=>set({cache:next?.cache})}/>
-  <div className="processing-choice"><label htmlFor="request-temperature">Temperature</label><NumberBox id="request-temperature" value={takes?sent?.temperature:undefined} placeholder={takes?'Model default':'Not sent'} min={0} max={ceiling} step={0.1} disabled={disabled||!takes} describedBy="request-temperature-help" onCommit={temperature=>set({temperature})}/></div>
+  <div className="processing-choice research-first-option"><label htmlFor="request-temperature">Temperature</label><NumberBox id="request-temperature" value={takes?sent?.temperature:undefined} placeholder={takes?'Model default':'Not sent'} min={0} max={ceiling} step={0.1} disabled={disabled||!takes} describedBy="request-temperature-help" onCommit={temperature=>set({temperature})}/></div>
   <p id="request-temperature-help" className="hint batch-explainer">{takes?`Empty: no temperature is sent and the model uses its own. From 0 to ${ceiling}. Many reasoning models accept only their default and reject a request with another value.`:provider==='openrouter'?'Claude models that reason take no temperature, so none is sent.':`Claude models that reason take no temperature, so none is sent. ${budgetedClaude(model)&&!model.startsWith('claude-haiku-4-5')?'This model':'Claude Haiku 4.5'} takes one with reasoning off.`}</p>
   <div className="processing-choice"><label htmlFor="request-max-output">Max output tokens</label><NumberBox id="request-max-output" value={sent?.maxOutput??usual} placeholder={String(usual)} min={floor} max={MAX_OUTPUT_TOKENS} step={1} disabled={disabled} describedBy="request-max-output-help" onCommit={maxOutput=>set({maxOutput})}/></div>
   <p id="request-max-output-help" className="hint batch-explainer">The most tokens a reply may use, reasoning included; a reply that reaches the limit counts as failed. The Lab’s own limit for this model is {count(usual)}.{floor>16?` This reasoning setting needs at least ${count(floor)}.`:''}</p>

@@ -69,7 +69,7 @@ const STORE='text-annotation-lab:own-prices';
  // A model without a listed price: the standard Lab's message, research mode's, and an estimate once a price is typed.
  const other={...c,model:'gpt-5.5',effort:'default'};
  assert.equal((await student.studentEstimate(other)).unknown,'No verified price is available for this model. Choose a model with listed rates.');
- assert.equal((await student.studentEstimate({...other,research:true})).unknown,'The Lab has no price for this model. Type its price under Processing options to have its cost estimated.');
+ assert.equal((await student.studentEstimate({...other,research:true})).unknown,'The Lab has no price for this model. Type its price under Sampling & limits to have its cost estimated.');
  const typed=await student.studentEstimate({...other,research:true,ownPrice:{input:3,output:12}});
  assert(!typed.unknown);assert(typed.total.low>0&&typed.total.high>typed.total.low);assert(typed.batch,'A batch at OpenAI, Anthropic, and Gemini costs half');assert.deepEqual(typed.ownPrice,{input:3,output:12});
  const routed=await student.studentEstimate({...c,provider:'openrouter',model:'mistralai/mistral-small',effort:'default',research:true,ownPrice:{input:3,output:12}});
