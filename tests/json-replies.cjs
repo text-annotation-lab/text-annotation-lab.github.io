@@ -79,15 +79,13 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const pairing=agree.pairSources(rows,[{name:'coder',role:'label'}],{kind:'run',run:1},'tone_score',{kind:'column',name:'coder'},'');
  assert.deepEqual([pairing.a,pairing.b],[['1','2','3'],['1','2','1']]);assert.equal(pairing.numeric,true);assert.equal(pairing.scaleSeen,true,'No scale was declared, so it is read from the answers');
  // The export tables: one column per value, the reply itself last.
- const tables=load('lib/research/export-tables.ts'),dataset={kind:'texts',rows,runs:[run],columns:[{name:'coder',role:'label'}],samples:[]},wide=tables.wideTable(dataset);
- assert.deepEqual(wide[0],['doc_id','coder','run1_tone_score','run1_tone_label','run1_length','run1_explanation','run1_response']);
- assert.deepEqual(wide[1],['a','1','1','calm','10','One.',rows[0].answers.f0]);assert.deepEqual(wide[3],['c','2','','','','','The tone is warm; I would say 2.']);assert.deepEqual(wide[6],['f','3','','','','',''],'A failed result has no values');
+ const tables=load('lib/research/export-tables.ts'),dataset={kind:'texts',rows,runs:[run],columns:[{name:'coder',role:'label'}],samples:[]};
  const exported={name:'JSON replies',dataset,lab:'test'},long=tables.requestsTable(exported,undefined,new Map()),head=long[0],at=name=>head.indexOf(name),values=name=>['tone_score','tone_label','length','explanation','response'].map(field=>long.find(line=>line[at('doc_id')]===name)[at(field)]);
  assert.deepEqual(values('b'),['2','warm','20','Two.',rows[1].answers.f0]);assert.deepEqual(values('c'),['','','','','The tone is warm; I would say 2.'],'Prose has only the reply itself');
  assert.deepEqual([long.find(line=>line[at('doc_id')]==='f')[at('status')],...values('f')],['error','','','','',rows[5].answers.f0],'A failed request has no values, but the reply that could not be read is kept');
  const byText=tables.resultsTable(exported,1);assert.deepEqual(byText[0],['doc_id','tone_score','tone_label','length','explanation','coder','n_ok','n_error','response'],'The values of a JSON reply, then the labels, and the reply itself last');
- const overview=tables.runsOverview(exported,new Map());
- assert.match(overview[1][overview[0].indexOf('answer_format')],/^plain text: the whole reply is stored as “response” \(a reply that is one JSON object also has a column for each of its values\); no answer format was sent$/);
+ assert.deepEqual(byText[3],['c','','','','','2',1,0,'The tone is warm; I would say 2.'],'Prose has only the reply itself');assert.deepEqual(byText[5],['f','','','','','3',0,1,''],'A failed result has no values');
+ assert(!tables.runsOverview(exported,new Map())[0].includes('answer_format'),'runs.csv has no column of its own for the answer format');
  assert.equal(types.answersLabel(['response'],plain),'Plain text');
 
  // --- The Excel workbook ----------------------------------------------------------------

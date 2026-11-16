@@ -145,8 +145,9 @@ assert.deepEqual(cells(results[1],['stance','stance_replicate_agreement','tone',
 assert(!tables.resultsTable({...study,dataset:{...dataset,rows:[{...single,id:'s',name:'s.txt',runNo:1}],runs:[]}},1)[0].some(name=>name.includes('replicate_agreement')),'No share for one annotation per text');
 const byRequest=tables.requestsTable(study,[1],new Map());
 const at=name=>byRequest[0].indexOf(name);assert.deepEqual(byRequest[0].slice(8,11),['doc_id','replicate','status']);
-assert.deepEqual(byRequest.slice(1).map(line=>[line[at('doc_id')],line[at('replicate')],line[at('attempt')],line[at('status')],line[at('sent_again')]]),[['t1',1,1,'ok',''],['t1',2,1,'ok',''],['t1',3,1,'ok',''],['t2',1,1,'ok',''],['t2',2,1,'error',''],['t2',3,1,'error','yes'],['t2',3,2,'ok','']]);
-assert.deepEqual(byRequest.slice(1).map(line=>line[byRequest[0].indexOf('stance')]),['pro','con','Pro','con','','','pro'],'Each annotation’s own answer');
+assert.deepEqual(byRequest.slice(1).map(line=>[line[at('doc_id')],line[at('replicate')],line[at('status')]]),[['t1',1,'ok'],['t1',2,'ok'],['t1',3,'ok'],['t2',1,'ok'],['t2',2,'error'],['t2',3,'ok']],'One row per annotation; a replaced attempt is kept in the logs');
+assert(!byRequest[0].includes('attempt')&&!byRequest[0].includes('sent_again'));
+assert.deepEqual(byRequest.slice(1).map(line=>line[byRequest[0].indexOf('stance')]),['pro','con','Pro','con','','pro'],'Each annotation’s own answer');
 assert.equal(byRequest[5][byRequest[0].indexOf('error')],'The model stopped before finishing.');
 const overview=tables.runsOverview(study,new Map());assert.equal(overview[1][overview[0].indexOf('replicates')],3);assert.equal(overview[0].indexOf('replicates'),overview[0].indexOf('n_texts')+1,'Right after the number of texts');
 
@@ -160,7 +161,7 @@ const overview=tables.runsOverview(study,new Map());assert.equal(overview[1][ove
  const readme=await read('README.md');
  for(const part of ['| Annotations per text | 3 |','| Requests (ok / failed) | 5 / 1 |','Each text was to be annotated 3 times, but 1 text had fewer usable annotations, so its answers combine fewer; categorical labels were aggregated by majority vote, ordinal labels by the median, and numeric labels by the mean.',
   'A tied vote is kept as both values (for example, “a | b”) and counts as a disagreement in the agreement figures (1 text for stance).','`<field>_replicate_agreement` is the share of them that gave the combined value','(text × annotation; `replicate` numbers a text’s annotations)','same doc_id and replicate; attempt 1, 2, …'])assert(readme.includes(part),'README: '+part);
- assert.equal(readCsv(await read('results/results_by_replicate.csv')).length,8);
+ assert.equal(readCsv(await read('results/results_by_replicate.csv')).length,7,'One row per annotation');
  const sent=(await read('logs/requests.jsonl')).trim().split('\n').map(line=>JSON.parse(line)),replies=(await read('logs/responses.jsonl')).trim().split('\n').map(line=>JSON.parse(line));
  assert.deepEqual(sent.map(line=>[line.doc_id,line.replicate,line.attempt,line.sent_again]),[['t1',1,1,undefined],['t1',2,1,undefined],['t1',3,1,undefined],['t2',1,1,undefined],['t2',2,1,undefined],['t2',3,1,true],['t2',3,2,undefined]]);
  assert.deepEqual(replies.map(line=>line.status),['ok','ok','ok','ok','error','error','ok']);assert.deepEqual(Object.keys(sent[0]).slice(0,4),['doc_id','replicate','attempt','request']);

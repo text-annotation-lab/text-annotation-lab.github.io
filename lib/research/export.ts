@@ -4,7 +4,7 @@ import {recordedCost} from '../cost-estimate/run-cost';
 import {rowForRun,runSummaries,setupOf,sameSetup,type Row,type RunRecord,type RunSummary} from './runs';
 import {requestsOf} from './repeats';
 import type {Column} from './columns';
-import {sampleNote,type SampleRecord} from './sample';
+import type {SampleRecord} from './sample';
 import type {ScoreScale} from './score-scale';
 
 // scoreScale: the study's scale for the scores of plain-text replies that are JSON (see score-scale.ts).
@@ -48,9 +48,6 @@ export function uniqueNames(names:string[]):string[]{
 }
 // doc_id, the key that joins the tables, also fills in {{id}}: see lib/research/columns.ts.
 export {docIds,docIdOf} from './columns';
-export function samplesTable(samples:SampleRecord[]):(string|number)[][]{
- return [['column','value','drawn_on','size','eligible','seed','stratified_by','allocation','excluded','method','note'],...samples.map(s=>[s.column,s.value,s.date,s.size,s.eligible,s.seed,s.strata.join(' × '),s.allocation.map(a=>`${a.stratum}: ${a.drawn} of ${a.available}`).join('; '),s.exclude?`${s.exclude.column} = ${s.exclude.value}`:'',s.method,sampleNote(s)])];
-}
 // A study's or run's name for a file or folder: lower case, accents dropped, words joined by hyphens, at most 48
 // characters (“Villains: Pilot 2” → villains-pilot-2).
 export const slugName=(name:string)=>name.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g,'').trim().replace(/[\s_-]+/g,'-').slice(0,48);
