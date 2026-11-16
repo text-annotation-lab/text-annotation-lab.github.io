@@ -1,10 +1,10 @@
-import {priceFor,type Provider,type Price,PRICE_DATE,SOURCES} from './pricing';
+import {priceFor,type OwnPrice,type Provider,type Price,PRICE_DATE,SOURCES} from './pricing';
 import {cacheSupport} from '../request-settings';
 export type Range={low:number;high:number};
 export type Input={tokens:Range;pdf?:boolean;requestTokens?:number};
 export type Sample={input?:number;output:number;reasoning?:number;visible?:number};
 export type EstimateConfig={provider:Provider;model:string;prompt:string;system?:string;schema?:string;effort:string;maxTokens?:number;thinkingBudget?:number;fields?:{name:string;type:string;description?:string}[];defaultExplanation?:boolean;cache?:boolean;batch?:boolean;webSearch?:boolean;rates?:Price;date?:string};
-export type Estimate={count:number;inputBasis?:'provider'|'approximate';total:Range;batch?:Range;input:Range;visible:Range;reasoning:Range;inputCost:Range;visibleCost:Range;reasoningCost:Range;searchCost:Range;notes:string[];samples:number;outputAssumption:string;priceDate:string;source:string;unknown?:string};
+export type Estimate={count:number;inputBasis?:'provider'|'approximate';total:Range;batch?:Range;input:Range;visible:Range;reasoning:Range;inputCost:Range;visibleCost:Range;reasoningCost:Range;searchCost:Range;notes:string[];samples:number;outputAssumption:string;priceDate:string;source:string;unknown?:string;ownPrice?:OwnPrice};
 export const add=(a:Range,b:Range):Range=>({low:a.low+b.low,high:a.high+b.high});
 export const scale=(a:Range,n:number):Range=>({low:a.low*n,high:a.high*n});
 const range=(low:number,high:number):Range=>({low,high});

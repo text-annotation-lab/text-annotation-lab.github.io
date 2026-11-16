@@ -6,18 +6,36 @@ import {PROVIDERS,type Provider} from '@/lib/providers';
 import {MAX_OUTPUT_TOKENS,budgetedClaude,cleanRequestSettings,defaultOutputLimit,outputFloor,plainOpenAI,sentRequestSettings,summarizesReasoning,takesTemperature,temperatureCeiling,type RequestSettings} from '@/lib/request-settings';
 import {PREVIEW_PLACEHOLDER,previewRequest,type RequestView} from '@/lib/research/request-view';
 import type {FrameSettings} from '@/lib/request-frame';
+import {PRICE_DATE,priceFor} from '@/lib/cost-estimate/pricing';
+import {MAX_OWN_PRICE,ownPrice,setOwnPrice,useOwnPrices} from '@/lib/own-prices';
 import {CacheOption} from './cache-option';
 
 const count=(n:number)=>n.toLocaleString('en-US');
 // A number typed into a box takes effect once it is a number the setting allows; an emptied box clears the
 // setting. Leaving the box shows what is in effect.
-function NumberBox({id,value,placeholder,min,max,step,disabled,describedBy,onCommit}:{id:string;value?:number;placeholder:string;min:number;max:number;step:number;disabled?:boolean;describedBy:string;onCommit:(value:number|undefined)=>void}){
+function NumberBox({id,value,placeholder,min,max,step,disabled,describedBy,onCommit}:{id:string;value?:number;placeholder:string;min:number;max:number;step:number|'any';disabled?:boolean;describedBy:string;onCommit:(value:number|undefined)=>void}){
  const [draft,setDraft]=useState<string|null>(null);
  return <input id={id} className="research-number" type="number" inputMode="decimal" min={min} max={max} step={step} placeholder={placeholder} disabled={disabled} aria-describedby={describedBy} value={draft??(value===undefined?'':String(value))}
-  onChange={event=>{const text=event.target.value,n=Number(text);setDraft(text);if(!text.trim())onCommit(undefined);else if(Number.isFinite(n)&&n>=min&&n<=max&&(step<1||Number.isInteger(n)))onCommit(n);}} onBlur={()=>setDraft(null)}/>;
+  onChange={event=>{const text=event.target.value,n=Number(text);setDraft(text);if(!text.trim())onCommit(undefined);else if(Number.isFinite(n)&&n>=min&&n<=max&&(step==='any'||step<1||Number.isInteger(n)))onCommit(n);}} onBlur={()=>setDraft(null)}/>;
 }
 
-// Prompt caching, temperature, output limit, reasoning summary, and (OpenAI) the provider's logs. Every box
+// Your own price for the selected model, for the cost estimate before a run (lib/own-prices.ts). A number typed
+// into a box becomes your own price, and the other box keeps the price it shows (0 where there is none). An
+// emptied box changes nothing, and shows the price again when it is left.
+const PRICES_AS_OF=new Date(PRICE_DATE+'T00:00:00Z').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric',timeZone:'UTC'});
+function PriceBoxes({provider,model}:{provider:Provider;model:string}){
+ const own=ownPrice(provider,model,useOwnPrices()),listed=priceFor(provider,model),shown=own??listed;
+ const typed=(which:'input'|'output')=>(value:number|undefined)=>{if(value!==undefined)setOwnPrice(provider,model,{input:shown?.input??0,output:shown?.output??0,[which]:value});};
+ return <>
+  <div className="research-prices">
+   <div><label htmlFor="price-input">Price per million input tokens ($)</label><NumberBox id="price-input" value={shown?.input} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy="price-help" onCommit={typed('input')}/></div>
+   <div><label htmlFor="price-output">Price per million output tokens ($)</label><NumberBox id="price-output" value={shown?.output} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy="price-help" onCommit={typed('output')}/></div>
+  </div>
+  <p id="price-help" className="hint batch-explainer research-price-help">Used only for the cost estimate before a run. {listed?`The Lab’s prices are list prices as of ${PRICES_AS_OF}, and can go out of date; type your own to replace them.`:own?'':'The Lab has no price for this model; type its price to have its cost estimated.'}{own&&<> Your own price is in use and is kept in this browser. <button type="button" className="textbutton" onClick={()=>setOwnPrice(provider,model,null)}>{listed?'Use the Lab’s price':'Remove your price'}</button></>}</p>
+ </>;
+}
+
+// Prompt caching, temperature, output limit, your own price, reasoning summary, and (OpenAI) the provider's logs. Every box
 // shows what a request to the selected model carries; a choice that does not apply to this model is kept for
 // other models. `prompt` is the prompt as a request sends it; `fixed` is the length of its part before the
 // first placeholder, where it has placeholders that are filled in for each text.
@@ -30,6 +48,7 @@ export function RequestOptions({provider,model,effort,prompt,fixed,value,disable
   <p id="request-temperature-help" className="hint batch-explainer">{takes?`Empty: no temperature is sent and the model uses its own. From 0 to ${ceiling}. Many reasoning models accept only their default and reject a request with another value.`:provider==='openrouter'?'Claude models that reason take no temperature, so none is sent.':`Claude models that reason take no temperature, so none is sent. ${budgetedClaude(model)&&!model.startsWith('claude-haiku-4-5')?'This model':'Claude Haiku 4.5'} takes one with reasoning off.`}</p>
   <div className="processing-choice"><label htmlFor="request-max-output">Max output tokens</label><NumberBox id="request-max-output" value={sent?.maxOutput??usual} placeholder={String(usual)} min={floor} max={MAX_OUTPUT_TOKENS} step={1} disabled={disabled} describedBy="request-max-output-help" onCommit={maxOutput=>set({maxOutput})}/></div>
   <p id="request-max-output-help" className="hint batch-explainer">The most tokens a reply may use, reasoning included; a reply that reaches the limit counts as failed. The Lab’s own limit for this model is {count(usual)}.{floor>16?` This reasoning setting needs at least ${count(floor)}.`:''}</p>
+  <PriceBoxes provider={provider} model={model}/>
   <label className="research-check research-output-check research-request-option"><input type="checkbox" checked={reasons&&Boolean(value?.summary)} disabled={disabled||!reasons} onChange={event=>set({summary:event.target.checked?true:undefined})}/><span>Record the model’s reasoning summary<small>{reasons?'A readable summary of the model’s reasoning, kept with each result and in the exports. Some models return none.':provider==='openai'&&plainOpenAI(model)?'This model has no reasoning to summarize.':'Reasoning is switched off for this model, so there is nothing to summarize.'}</small></span></label>
   {provider==='openai'&&<label className="research-check research-output-check research-request-option"><input type="checkbox" checked={value?.store!==false} disabled={disabled} onChange={event=>set({store:event.target.checked?undefined:false})}/><span>Show requests in OpenAI’s logs<small>Lets you inspect them on platform.openai.com. OpenAI keeps stored requests for a limited time; switch this off for confidential texts.</small></span></label>}
  </>;
