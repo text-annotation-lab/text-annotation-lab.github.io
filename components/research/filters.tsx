@@ -12,7 +12,7 @@ import {Technical,type DetailStudy} from './technical';
 import {modelName} from '@/lib/providers';
 
 export type MenuItem={label:string;onSelect:()=>void;disabled?:boolean;danger?:boolean};
-// A small menu for the actions that are used rarely (clearing results or the workspace).
+// "Clear": a small menu for clearing results, deleting texts, and clearing the workspace.
 function MoreMenu({items}:{items:MenuItem[]}){
  const [open,setOpen]=useState(false),box=useRef<HTMLSpanElement>(null);
  useEffect(()=>{
@@ -21,7 +21,7 @@ function MoreMenu({items}:{items:MenuItem[]}){
   document.addEventListener('mousedown',away);document.addEventListener('keydown',escape);
   return()=>{document.removeEventListener('mousedown',away);document.removeEventListener('keydown',escape);};
  },[open]);
- return <span className="research-menu" ref={box}><Button type="button" variant="outline" className="research-menu-button" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>More<ChevronDown size={15} aria-hidden="true"/></Button>{open&&<span className="research-menu-list" role="menu">{items.map(item=><button key={item.label} type="button" role="menuitem" className={item.danger?'danger':undefined} disabled={item.disabled} onClick={()=>{setOpen(false);item.onSelect();}}>{item.label}</button>)}</span>}</span>;
+ return <span className="research-menu" ref={box}><Button type="button" variant="outline" className="research-menu-button" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>Clear<ChevronDown size={15} aria-hidden="true"/></Button>{open&&<span className="research-menu-list" role="menu">{items.map(item=><button key={item.label} type="button" role="menuitem" className={item.danger?'danger':undefined} disabled={item.disabled} onClick={()=>{setOpen(false);item.onSelect();}}>{item.label}</button>)}</span>}</span>;
 }
 
 // unit: what the rows are, texts (the Workspace) or subjects (Model knowledge).
