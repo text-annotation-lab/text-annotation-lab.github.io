@@ -204,7 +204,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  // --- The pages: research mode only ------------------------------------------------------------------
  for(const page of ['app/page.tsx','components/model-knowledge.tsx']){
   const source=fs.readFileSync(path.join(root,page),'utf8');
-  assert(source.includes('const sentRequest=research?sentRequestSettings(provider,model,requestSettings,effort):undefined;'),page);
+  assert(/const sentRequest=research\?sentRequestSettings\(provider,model,[^;]*requestSettings,effort\):undefined;/.test(source),page);
   assert(source.includes('{research&&<ResearchRequestOptions '),page+': the settings are shown in research mode only');
   assert(source.includes('<ResearchRequestPreview unit="'+(page==='app/page.tsx'?'text':'subject')+'"'),page);
   assert(!/from '@\/components\/research\/(request-options|panels)'/.test(source),page+': research mode’s panels load only when it is switched on');

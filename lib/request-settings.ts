@@ -87,19 +87,30 @@ export function sentRequestSettings(provider:string,model:string,request?:Reques
 export const outputLimit=(provider:string,model:string,sent?:RequestSettings)=>sent?.maxOutput??defaultOutputLimit(provider,model);
 export const requestTimeout=(provider:string,model:string,sent?:RequestSettings)=>provider==='gemini'&&model.startsWith('gemini-4-')||(sent?.maxOutput??0)>defaultOutputLimit(provider,model)?900000:180000;
 
+// fixed (in the three functions below): how much of the prompt is the same for every text, where the prompt
+// has placeholders that are filled in for each text (lib/prompt-inserts.ts). The mark then stands at the end of
+// that part, and the rest of the prompt follows in a part of its own; a prompt that begins with a placeholder
+// has nothing to cache and is sent as without the option.
+const cachedParts=(prompt:string,fixed:number|undefined,part:(text:string)=>object,mark:object):object[]|undefined=>{
+ if(fixed===undefined||fixed>=prompt.length)return [{...part(prompt),...mark}];
+ return prompt.slice(0,fixed).trim()?[{...part(prompt.slice(0,fixed)),...mark},part(prompt.slice(fixed))]:undefined;
+};
 // Anthropic: the lifetime of the cache entry is five minutes, refreshed by every text that reads it; one hour
 // in a batch, whose requests may start further apart.
-export const anthropicSystem=(prompt:string,request?:RequestSettings,batch=false)=>request?.cache?[{type:'text',text:prompt,cache_control:batch?{type:'ephemeral',ttl:'1h'}:{type:'ephemeral'}}]:prompt;
+export const anthropicSystem=(prompt:string,request?:RequestSettings,batch=false,fixed?:number)=>request?.cache&&cachedParts(prompt,fixed,text=>({type:'text',text}),{cache_control:batch?{type:'ephemeral',ttl:'1h'}:{type:'ephemeral'}})||prompt;
 // OpenAI caches only up to a mark placed in a message, so the prompt is then sent as a developer message that
 // carries the mark, in place of `instructions`, which cannot carry one. The entry lives for 30 minutes.
 // Without the option, explicit mode with no mark switches caching off: every text is new input.
 export const OPENAI_CACHE_MODE={prompt_cache_options:{mode:'explicit'}} as const;
 const OPENAI_MARK={prompt_cache_breakpoint:{mode:'explicit'}} as const;
-export const openaiPrompt=(prompt:string,input:unknown[],request?:RequestSettings)=>request?.cache?{input:[{role:'developer',content:[{type:'input_text',text:prompt,...OPENAI_MARK}]},...input]}:{instructions:prompt,input};
+export function openaiPrompt(prompt:string,input:unknown[],request?:RequestSettings,fixed?:number){
+ const content=request?.cache?cachedParts(prompt,fixed,text=>({type:'input_text',text}),OPENAI_MARK):undefined;
+ return content?{input:[{role:'developer',content},...input]}:{instructions:prompt,input};
+}
 // OpenRouter passes the mark on to the model's provider; a model whose provider caches by itself gets none.
-export function openRouterSystem(prompt:string,model:string,request?:RequestSettings){
+export function openRouterSystem(prompt:string,model:string,request?:RequestSettings,fixed?:number){
  if(!marksCache('openrouter',model,request))return prompt;
- return [{type:'text',text:prompt,...(model.startsWith('anthropic/')?{cache_control:{type:'ephemeral'}}:OPENAI_MARK)}];
+ return cachedParts(prompt,fixed,text=>({type:'text',text}),model.startsWith('anthropic/')?{cache_control:{type:'ephemeral'}}:OPENAI_MARK)||prompt;
 }
 // The settings a request carries, in a few words (the summary line of Processing options, and the list of runs).
 export function requestSummary(sent:RequestSettings|undefined):string[]{

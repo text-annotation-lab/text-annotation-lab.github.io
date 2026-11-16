@@ -56,12 +56,13 @@ export function createBatchPayload(provider:Provider,runId:string){
   finish(){return new Blob([prefix,...parts,suffix],{type:provider==='openai'?'application/jsonl':'application/json'});}
  };
 }
-export async function buildBatchBody(provider:Provider,file:File,prompt:string,model:string,effort:string,knowledge=false,webSearch=false,answerFields:string[]=[],settings?:AnswerSettings,request?:RequestSettings){
+export async function buildBatchBody(provider:Provider,file:File,prompt:string,model:string,effort:string,knowledge=false,webSearch=false,answerFields:string[]=[],settings?:AnswerSettings,request?:RequestSettings,written?:string){
  // request: research mode's request settings; the request builder applies each where it changes the request.
- const schemaPrompt=prompt;prompt+=answerInstructions(answerFields,settings);
+ // written: the prompt with its placeholders as written, where they were filled in for this text.
+ const schemaPrompt=written??prompt;prompt+=answerInstructions(answerFields,settings);
  const pdf=/\.pdf$/i.test(file.name);let data='';
  if(pdf){const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));data=btoa(binary);}else{try{data=await extractText(file);}catch(error){throw new BatchError(error instanceof TextEncodingError?`${file.name}: ${error.message}`:`Could not read ${file.name}. Save it as TXT or PDF and try again.`);}if(!data.trim()||data.length>2000000)throw new BatchError(`${file.name} is empty or too large. Split it into smaller texts.`);}
- return providerBody({provider,model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge,batch:true},pdf?{filename:file.name,pdf:data}:{filename:file.name,text:data});
+ return providerBody({provider,model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge,batch:true,inserts:written!==undefined},pdf?{filename:file.name,pdf:data}:{filename:file.name,text:data});
 }
 export function validBatchId(provider:Provider,id:unknown):id is string{return typeof id==='string'&&(provider==='openai'?/^batch_[a-zA-Z0-9_-]+$/:provider==='anthropic'?/^msgbatch_[a-zA-Z0-9_-]+$/:/^batches\/[a-zA-Z0-9_-]+$/).test(id);}
 export async function createBatch(provider:Provider,key:string,model:string,runId:string,payload:Blob){

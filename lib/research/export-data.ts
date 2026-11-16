@@ -4,6 +4,7 @@ import {usageSample} from '../cost-estimate/engine';
 import {cacheTokens,recordedCost} from '../cost-estimate/run-cost';
 import type {Provider} from '../providers';
 import {requestFrame,type RequestFrame} from '../request-frame';
+import {showInserts} from '../prompt-inserts';
 import {annotationFormatRecord} from '../answer-fields';
 import {knowledgeDocumentText} from '../model-knowledge';
 import {rowForRun,type Row} from './runs';
@@ -78,7 +79,7 @@ export function requestOf(study:ExportStudy,row:Row,result:Row):SentRequest|unde
  if(!result.provider||!result.model||result.effort===undefined||result.prompt===undefined)return undefined;
  const knowledge=study.dataset.kind==='knowledge';
  try{
-  const frame=requestFrame({provider:result.provider as Provider,model:result.model,effort:result.effort,prompt:result.prompt,answerFields:result.answerFields||[],answerSettings:result.answerSettings,requestSettings:result.requestSettings,knowledge,webSearch:Boolean(result.webSearch),batch:result.processing==='batch'},sentAsFile(study.dataset,row));
+  const frame=requestFrame({provider:result.provider as Provider,model:result.model,effort:result.effort,prompt:result.prompt,answerFields:result.answerFields||[],answerSettings:result.answerSettings,requestSettings:result.requestSettings,knowledge,webSearch:Boolean(result.webSearch),batch:result.processing==='batch',inserts:Array.isArray(result.inserts)},sentAsFile(study.dataset,row));
   const format=typeof result.responseFormat==='string'?result.responseFormat===annotationFormatRecord(result.answerFields||[],result.prompt,knowledge,result.answerSettings):undefined;
   return {frame,recorded:false,...(format===undefined?{}:{formatUnchanged:format})};
  }catch{return undefined;}
@@ -89,7 +90,7 @@ export function requestFinder(study:ExportStudy):(row:Row,result:Row)=>SentReque
  const built=new Map<string,SentRequest|undefined>();
  return (row,result)=>{
   if(result.requestId)return requestOf(study,row,result);
-  const key=JSON.stringify([result.provider,result.model,result.effort,result.prompt,result.answerFields,result.answerSettings,result.requestSettings,Boolean(result.webSearch),result.processing==='batch',sentAsFile(study.dataset,row),result.responseFormat]);
+  const key=JSON.stringify([result.provider,result.model,result.effort,result.prompt,result.answerFields,result.answerSettings,result.requestSettings,Boolean(result.webSearch),result.processing==='batch',sentAsFile(study.dataset,row),result.responseFormat,Array.isArray(result.inserts)]);
   if(!built.has(key))built.set(key,requestOf(study,row,result));
   return built.get(key);
  };
@@ -113,7 +114,7 @@ export function runRequests(study:ExportStudy,run:number,find=requestFinder(stud
  return {...(text?{text:{...text.sent,count:text.count}}:{}),...(pdf?{pdf:{...pdf.sent,count:pdf.count}}:{}),forms:counts.size,rebuilt,unknown,total};
 }
 // What a request body says, whichever provider it is for. system: the prompt with the Lab's own instructions,
-// as sent. limit: the most output tokens the reply may have. temperature: the sampling temperature (absent:
+// as sent; a placeholder that was filled in for each text stands as written ({{meta.year}}). limit: the most output tokens the reply may have. temperature: the sampling temperature (absent:
 // none was sent, so the model used its own). schema: the answer format (absent for plain text).
 export function requestParts(frame:RequestFrame):{model:string;system:string;limit?:number;temperature?:number;schema?:any}{
  const body=JSON.parse(frame.body);
@@ -125,7 +126,7 @@ export function requestParts(frame:RequestFrame):{model:string;system:string;lim
  const schema=body.text?.format?.schema??body.output_config?.format?.schema??body.generationConfig?.responseSchema??body.response_format?.json_schema?.schema;
  // Gemini names its model in the address, the others in the body.
  const model=typeof body.model==='string'?body.model:(/\/models\/([^/:]+):/.exec(frame.url)?.[1]??'');
- return {model,system,...(limit===undefined?{}:{limit}),...(temperature===undefined?{}:{temperature}),...(schema?{schema}:{})};
+ return {model,system:showInserts(system),...(limit===undefined?{}:{limit}),...(temperature===undefined?{}:{temperature}),...(schema?{schema}:{})};
 }
 
 // The document a request carried: a text, or a whole PDF sent as a file.

@@ -8,9 +8,12 @@
 import type {RequestFrame} from '../request-frame';
 
 export type RecordedRequest={id:string;url:string;body:string};
-// What recording adds to a result. lab: the build of the Lab that sent the request.
-export type Recorded={requestId?:string;modelReported?:string;stopReason?:string;output?:string;reasoningSummary?:string;lab?:string};
-export const RECORDED_KEYS=['requestId','modelReported','stopReason','output','reasoningSummary','lab'] as const;
+// What recording adds to a result. lab: the build of the Lab that sent the request. inserts: where the prompt
+// has placeholders that are filled in for each text (lib/prompt-inserts.ts), the values this request was sent
+// with, one for each placeholder in the order the prompt first names them. They are kept with the result
+// because a study's metadata can change after a run.
+export type Recorded={requestId?:string;modelReported?:string;stopReason?:string;output?:string;reasoningSummary?:string;lab?:string;inserts?:string[]};
+export const RECORDED_KEYS=['requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts'] as const;
 type Referring={requestId?:string;annotations?:unknown;earlier?:{[key:string]:any}[];history?:{[key:string]:any}[]};
 
 const valid=(r:any):r is RecordedRequest=>Boolean(r)&&typeof r==='object'&&typeof r.id==='string'&&/^q[1-9]\d{0,8}$/.test(r.id)&&typeof r.url==='string'&&r.url.length<=1000&&typeof r.body==='string'&&r.body.length<=1000000;
@@ -43,4 +46,4 @@ export function replyNotes(out:unknown):Recorded{
  return notes;
 }
 // A result about to be made: nothing of an earlier attempt's record stays on it.
-export const NOT_RECORDED:Record<(typeof RECORDED_KEYS)[number],undefined>={requestId:undefined,modelReported:undefined,stopReason:undefined,output:undefined,reasoningSummary:undefined,lab:undefined};
+export const NOT_RECORDED:Record<(typeof RECORDED_KEYS)[number],undefined>={requestId:undefined,modelReported:undefined,stopReason:undefined,output:undefined,reasoningSummary:undefined,lab:undefined,inserts:undefined};
