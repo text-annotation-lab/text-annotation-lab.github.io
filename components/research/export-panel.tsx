@@ -5,7 +5,7 @@ import {useEffect,useMemo,useState,useSyncExternalStore} from 'react';
 import {Download} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {extractText} from '@/lib/extract-text';
-import {runLines,unitOf,type Dataset} from '@/lib/research/export';
+import {dateStamp,runLines,slugName,unitOf,type Dataset} from '@/lib/research/export';
 import {labelPairs} from '@/lib/research/export-agreement';
 import {documentReader,reportableRuns} from '@/lib/research/export-data';
 import {intervalsOf} from '@/lib/research/intervals';
@@ -79,7 +79,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
   downloadBytes(pack.name+'.zip',await zipPackage(pack,progress) as BlobPart,'application/zip');
  });
  const studyBackup=()=>backup&&build('backup',dataset.kind,'study backup',choices,async()=>{
-  downloadText(((studyName||'').replace(/[^a-z0-9_-]+/gi,'_')||'study')+'.tal-study.json',await backup(),'application/json');
+  downloadText((slugName(studyName||'')||'study')+'_backup_'+dateStamp(new Date())+'.json',await backup(),'application/json');
  });
  const option=(checked:boolean,change:(checked:boolean)=>void,label:string,hint?:string)=><label className="research-check research-export-option"><input type="checkbox" checked={checked} disabled={busy} onChange={event=>change(event.target.checked)}/><span>{label}{hint&&<small>{hint}</small>}</span></label>;
  const elsewhere=job&&job.kind!=='backup'&&job.data!==dataset.kind;
@@ -93,7 +93,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
    <label htmlFor="export-run">Run to report</label>
    <select id="export-run" value={run?.number??''} disabled={busy||!runs.length} onChange={event=>setPicked(now=>({...now,[dataset.kind]:Number(event.target.value)}))}>
     {!runs.length&&<option value="">No runs with results yet</option>}
-    {runs.map(r=><option key={r.number} value={r.number}>{[`Run ${r.number}`,`prompt v${r.promptVersion}`,r.model,when(r.startedAt),r.active?'still running':''].filter(Boolean).join(' · ')}</option>)}
+    {runs.map(r=>{const record=dataset.runs.find(x=>x.number===r.number);return <option key={r.number} value={r.number}>{[`Run #${r.number}`,record?.label,record?.scope,`prompt v${r.promptVersion}`,r.model,when(r.startedAt),r.active?'still running':''].filter(Boolean).join(' · ')}</option>;})}
    </select>
    {run&&run.active>0&&<p className="research-export-note">This run is not finished yet: {run.done.toLocaleString('en-US')} of {(run.done+run.failed+run.active).toLocaleString('en-US')} {unit}s have a usable answer so far. Excel and the supplementary repository show the results so far, and say that the run was not finished.</p>}
    <p className="hint">Excel and the supplementary repository describe this one run (typically your final, full run). The research repository always includes every run.{run&&(labels.used.length>0?` Agreement is computed automatically for the columns added as human labels: ${labels.used.join(', ')}.`:labels.unused.length>0?'':' No agreement is computed: no column was added as human labels.')}{labels.unused.length>0&&` Not used for agreement: ${labels.unused.join(', ')}.`}</p>

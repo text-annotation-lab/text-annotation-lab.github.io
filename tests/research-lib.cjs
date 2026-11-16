@@ -251,19 +251,19 @@ const exportDocs=[
  {id:'a',name:'a.txt',status:'done',score:'POSITIVE',explanation:'Hopeful.',provider:'openai',model:'gpt-6.1-terra',effort:'medium',prompt:'Classify tone',runNo:2,time:'2026-11-15T11:00:05Z',tokens:1200,cells:['positive','1961'],earlier:[{runNo:1,status:'done',score:'MIXED',explanation:'Both.',provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'Classify tone',time:'2026-11-15T10:00:05Z',tokens:1100}]},
  {id:'b',name:'b.txt',status:'pending',cells:['NEGATIVE','1981'],earlier:[{runNo:1,status:'done',score:'NEGATIVE',explanation:'Grim.',provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'Classify tone',time:'2026-11-15T10:00:06Z',tokens:900}]}];
 const dataset={kind:'texts',rows:exportDocs,runs:runRecords,columns:viewColumns,samples:[record]};
-const wideRows=exporting.wideTable(dataset);
-assert.deepEqual(wideRows[0],['document','tone_human','year','run1_score','run1_explanation','run2_score','run2_explanation']);
-assert.deepEqual(wideRows[1],['a.txt','positive','1961','MIXED','Both.','POSITIVE','Hopeful.']);assert.deepEqual(wideRows[2],['b.txt','NEGATIVE','1981','NEGATIVE','Grim.','','']);
+const wideRows=tables.wideTable(dataset);
+assert.deepEqual(wideRows[0],['doc_id','tone_human','year','run1_score','run1_rationale','run2_score','run2_rationale']);
+assert.deepEqual(wideRows[1],['a','positive','1961','MIXED','Both.','POSITIVE','Hopeful.']);assert.deepEqual(wideRows[2],['b','NEGATIVE','1981','NEGATIVE','Grim.','','']);
 const exportStudy={name:'Tone',dataset,lab:'test'},longRows=tables.requestsTable(exportStudy,undefined,new Map()),longAt=name=>longRows[0].indexOf(name);
-assert.deepEqual(longRows[0].slice(0,4),['study','data','run','prompt_version']);assert.equal(longRows.length,4,'One row per request with an outcome');
-assert.deepEqual(longRows.slice(1).map(row=>[row[longAt('document')],row[longAt('run')],row[longAt('score')],row[longAt('model_requested')],row[longAt('status')]]),[['a.txt',1,'MIXED','gpt-6-luna','ok'],['b.txt',1,'NEGATIVE','gpt-6-luna','ok'],['a.txt',2,'POSITIVE','gpt-6.1-terra','ok']],'In the order of the runs');
+assert.deepEqual(longRows[0].slice(0,4),['study','run','run_label','prompt_version']);assert.equal(longRows.length,4,'One row per request with an outcome');
+assert.deepEqual(longRows.slice(1).map(row=>[row[longAt('doc_id')],row[longAt('run')],row[longAt('score')],row[longAt('model_requested')],row[longAt('status')]]),[['a',1,'MIXED','gpt-6-luna','ok'],['b',1,'NEGATIVE','gpt-6-luna','ok'],['a',2,'POSITIVE','gpt-6.1-terra','ok']],'In the order of the runs');
 const runRows=tables.runsOverview(exportStudy,new Map()),runAt=name=>runRows[0].indexOf(name);
 assert.deepEqual(runRows.slice(1).map(row=>[row[0],row[runAt('data')],row[runAt('model_requested')],row[runAt('n_texts_with_usable_answer')],row[runAt('prompt')]]),[[1,'uploaded texts','gpt-6-luna',2,'Classify tone'],[2,'uploaded texts','gpt-6.1-terra',1,'Classify tone']]);
 assert.equal(runRows[0][runAt('answer_format')-1],'answer_fields');assert.equal(runRows[1][runAt('answer_format')],'Score / category');
 assert.equal(tables.runsOverview({...exportStudy,dataset:{...dataset,runs:[{...runRecords[0],answerFields:['Tone'],answerSettings:{rationale:false,fields:[{name:'Tone',type:'category',values:['positive','mixed'],description:'Overall tone.'}]}},runRecords[1]]}},new Map())[1][runAt('answer_format')],'Tone (category: positive, mixed; description: Overall tone.) | no explanation requested','The record of runs names each field’s type, values, and description');
 assert.equal(exporting.samplesTable([record]).length,2);
 assert.deepEqual(exporting.uniqueNames(['document','Year','year','run','year']),['document','Year','year_2','run','year_3']);
-assert.equal(exporting.wideTable({...dataset,columns:[{name:'Document',role:'meta'},{name:'year',role:'meta'}]})[0][1],'Document_2','An imported column never repeats a column name of the Lab’s own');
+assert.equal(tables.wideTable({...dataset,columns:[{name:'DOC_ID',role:'meta'},{name:'year',role:'meta'}]})[0][1],'DOC_ID_2','An imported column never repeats a column name of the Lab’s own');
 assert.equal(exporting.fileStem('Inaugural tone / 2026',dataset),'Inaugural-tone-2026');assert.equal(exporting.fileStem('',{kind:'knowledge'}),'annotations-model-knowledge');
 // No API key can be part of an export: the tables are built from texts, runs, columns, and samples alone.
 assert(!JSON.stringify([wideRows,longRows,runRows]).includes('sk-'));
@@ -282,10 +282,10 @@ const bySubject=knowledge.subjectRows(items);bySubject[1]={...bySubject[1],cells
 const labeled=knowledge.applySubjectCells(items,bySubject);
 assert.deepEqual(labeled.map(item=>item.cells),[['4'],['1'],['4'],['1']],'Labels reach every run of a subject');assert.equal(labeled[0],items[0],'Unchanged items are left as they are');
 const knowledgeSet={kind:'knowledge',rows:subjects,runs:[],columns:[{name:'villainy_human',role:'label'}],samples:[]};
-const knowledgeWide=exporting.wideTable(knowledgeSet);
-assert.deepEqual(knowledgeWide[0],['subject','villainy_human','run1_score','run2_score'],'A simple list’s only field is the subject itself');assert.deepEqual(knowledgeWide[1],['The Lion King (1994)','4','5','4']);
+const knowledgeWide=tables.wideTable(knowledgeSet);
+assert.deepEqual(knowledgeWide[0],['doc_id','villainy_human','run1_score','run2_score'],'A simple list’s only field is the subject itself');assert.deepEqual(knowledgeWide[1],['The Lion King (1994)','4','5','4']);
 const knowledgeRuns=tables.runsOverview({name:'Villains',dataset:knowledgeSet,lab:'test'},new Map());
-assert.deepEqual(knowledgeRuns.slice(1).map(row=>[row[0],row[knowledgeRuns[0].indexOf('data')],row[knowledgeRuns[0].indexOf('web_search')],row[knowledgeRuns[0].indexOf('n_subjects_with_usable_answer')]]),[[1,'model knowledge (no texts supplied)','no',2],[2,'model knowledge (no texts supplied)','yes',1]],'Exports say that no texts were supplied');
+assert.deepEqual(knowledgeRuns.slice(1).map(row=>[row[0],row[knowledgeRuns[0].indexOf('data')],row[knowledgeRuns[0].indexOf('web_search')],row[knowledgeRuns[0].indexOf('n_texts_with_usable_answer')]]),[[1,'model knowledge (no texts supplied)','no',2],[2,'model knowledge (no texts supplied)','yes',1]],'Exports say that no texts were supplied');
 assert.equal(exporting.sourceOf(knowledgeSet),'model knowledge (no texts supplied)');assert.equal(exporting.unitOf(knowledgeSet),'subject');
 
 // --- A study backup keeps everything research mode adds, and never a key --------------------
@@ -301,7 +301,7 @@ assert.equal(exporting.sourceOf(knowledgeSet),'model knowledge (no texts supplie
  assert.deepEqual(restored.texts.runs,runRecords);assert.deepEqual(restored.texts.columns,study.texts.columns,'A column may be named “key”: names are values, not property names');assert.deepEqual(restored.texts.samples,[record]);
  assert.deepEqual(restored.texts.docs.map(doc=>[doc.runNo,doc.cells,doc.earlier]),study.texts.docs.map(doc=>[doc.runNo,doc.cells,doc.earlier]));
  assert.deepEqual(restored.knowledge.columns,study.knowledge.columns);assert.deepEqual(restored.knowledge.items.map(item=>item.cells),study.knowledge.items.map(item=>item.cells));
- assert.deepEqual(exporting.wideTable({kind:'texts',rows:restored.texts.docs,runs:runs.cleanRuns(restored.texts.runs),columns:columns.cleanColumns(restored.texts.columns),samples:[]}).slice(1).map(row=>row.slice(3)),[['MIXED','Both.','POSITIVE','Hopeful.'],['NEGATIVE','Grim.','','']],'The restored study exports the same results');
+ assert.deepEqual(tables.wideTable({kind:'texts',rows:restored.texts.docs,runs:runs.cleanRuns(restored.texts.runs),columns:columns.cleanColumns(restored.texts.columns),samples:[]}).slice(1).map(row=>row.slice(3)),[['MIXED','Both.','POSITIVE','Hopeful.'],['NEGATIVE','Grim.','','']],'The restored study exports the same results');
  // --- Texts from a table or pasted text -----------------------------------------
  const texts=load('lib/research/import-texts.ts');
  const corpus={header:['id','text','year','tone_human','note'],rows:[['a','First speech.','1961','POSITIVE',''],['b','Second speech.','1965','NEGATIVE',''],['b','Another second speech.','1969','',''],['c','','1973','',''],['a','First speech.','1961','POSITIVE',''],['','No ID here.','1977','','']]};

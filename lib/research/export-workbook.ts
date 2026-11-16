@@ -10,7 +10,7 @@ const CELL_LIMIT=32000;
 const numeric=(value:string)=>/^-?(0|[1-9]\d*)(\.\d+)?$/.test(value)&&value.replace(/\D/g,'').length<=15;
 // Carriage returns would show as _x000D_ in Excel, and a cell holds at most 32,767 characters.
 const clean=(value:string)=>{const text=value.replace(/\r\n?/g,'\n');return text.length>CELL_LIMIT?text.slice(0,CELL_LIMIT)+' …[truncated]':text;};
-export const isProse=(column:string)=>/(^|_)(explanation|reasoning)$/i.test(column)||column==='prompt'||column==='reasoning_summary';
+export const isProse=(column:string)=>/(^|_)(explanation|reasoning)$/i.test(column)||column==='rationale'||column==='prompt'||column==='reasoning_summary';
 // A name Excel accepts: none of [ ] : * ? / \, at most 31 characters, and not the name of another sheet.
 function sheetName(taken:Set<string>,wanted:string):string{
  const tidy=(name:string)=>name.replace(/[[\]:*?/\\]/g,'_').slice(0,31).replace(/^'+|'+$/g,'')||'Sheet';

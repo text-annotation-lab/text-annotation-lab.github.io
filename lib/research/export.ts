@@ -3,8 +3,7 @@
 import {recordedCost} from '../cost-estimate/run-cost';
 import {rowForRun,runSummaries,setupOf,sameSetup,type Row,type RunRecord,type RunSummary} from './runs';
 import {requestsOf} from './repeats';
-import type {Column} from './columns';
-import {fieldsOf,valueOf} from './view';
+import {stem,type Column} from './columns';
 import {sampleNote,type SampleRecord} from './sample';
 import type {ScoreScale} from './score-scale';
 
@@ -47,26 +46,28 @@ export function uniqueNames(names:string[]):string[]{
  const seen=new Set<string>();
  return names.map(name=>{let next=name,n=1;while(seen.has(next.toLowerCase()))next=`${name}_${++n}`;seen.add(next.toLowerCase());return next;});
 }
-function leading(dataset:Dataset){
- const chunked=dataset.kind==='texts'&&dataset.rows.some(row=>row.sourceId),fields=dataset.kind==='knowledge'?subjectHeadings(dataset.rows).filter(heading=>dataset.rows.some(row=>subjectField(row,heading)!==String(row.name??''))):[];
- const header=[dataset.kind==='knowledge'?'subject':'document',...(chunked?['source_document','chunk']:[]),...fields,...dataset.columns.map(column=>column.name)];
- const cells=(row:Row)=>[String(row.name??''),...(chunked?[String(row.sourceName??''),row.sourceId?`${row.chunkIndex} of ${row.chunkCount}`:'']:[]),...fields.map(heading=>subjectField(row,heading)),...dataset.columns.map((_,i)=>row.cells?.[i]??'')];
- return {header,cells};
+// doc_id: the name of each text in the tables, the key that joins them. A text's name without the extension of
+// its file (article.md → article; a text from a table, named after its ID, keeps the ID), a subject's name as
+// it is; a name another text of the study already has gets _2, _3, … in the study's order.
+const idCache=new WeakMap<Row[],Map<string,string>>();
+export function docIds(dataset:Dataset):Map<string,string>{
+ let ids=idCache.get(dataset.rows);if(ids)return ids;
+ ids=new Map();const taken=new Set<string>();
+ for(const row of dataset.rows){
+  const name=String(row.name??''),base=(dataset.kind==='knowledge'?name:stem(name))||String(row.id);
+  let id=base;for(let n=2;taken.has(id.toLowerCase());n++)id=`${base}_${n}`;
+  taken.add(id.toLowerCase());ids.set(String(row.id),id);
+ }
+ idCache.set(dataset.rows,ids);return ids;
 }
-// One row per text: its labels and metadata, then every run's answers side by side.
-export function wideTable(dataset:Dataset):(string|number)[][]{
- const lead=leading(dataset),runs=runSummaries(dataset.rows,dataset.runs);
- const plan=runs.map(run=>{
-  const results=dataset.rows.map(row=>rowForRun(row,run.number));
-  return {run:run.number,results,fields:fieldsOf(results),explanation:results.some(result=>result.status==='done'&&explanationOf(result))};
- });
- const header=uniqueNames([...lead.header,...plan.flatMap(p=>[...p.fields.map(field=>`run${p.run}_${field||'score'}`),...(p.explanation?[`run${p.run}_explanation`]:[])])]);
- return [header,...dataset.rows.map((row,i)=>[...lead.cells(row),...plan.flatMap(p=>{
-  const result=p.results[i],done=result.status==='done';
-  return [...p.fields.map(field=>done?valueOf(result,field):''),...(p.explanation?[done?explanationOf(result):'']:[])];
- })])];
-}
+export const docIdOf=(dataset:Dataset,row:Row)=>docIds(dataset).get(String(row.id))??String(row.name??row.id);
 export function samplesTable(samples:SampleRecord[]):(string|number)[][]{
  return [['column','value','drawn_on','size','eligible','seed','stratified_by','allocation','excluded','method','note'],...samples.map(s=>[s.column,s.value,s.date,s.size,s.eligible,s.seed,s.strata.join(' × '),s.allocation.map(a=>`${a.stratum}: ${a.drawn} of ${a.available}`).join('; '),s.exclude?`${s.exclude.column} = ${s.exclude.value}`:'',s.method,sampleNote(s)])];
 }
 export const fileStem=(studyName:string|undefined,dataset:{kind:string})=>((studyName||'annotations').trim().replace(/[^\p{L}\p{N}]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,60)||'annotations')+(dataset.kind==='knowledge'?'-model-knowledge':'');
+// A study's or run's name for a file or folder: lower case, accents dropped, words joined by hyphens, at most 48
+// characters (“Villains: Pilot 2” → villains-pilot-2).
+export const slugName=(name:string)=>name.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g,'').trim().replace(/[\s_-]+/g,'-').slice(0,48);
+// The start of the Export tab's file names (Model knowledge's add -model-knowledge), and the date in them (20261116).
+export const exportStem=(studyName:string|undefined,dataset:{kind:string})=>(slugName(studyName||'')||'study')+(dataset.kind==='knowledge'?'-model-knowledge':'');
+export const dateStamp=(date:Date)=>date.toISOString().slice(0,10).replace(/-/g,'');

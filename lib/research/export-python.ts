@@ -55,7 +55,7 @@ Usage
 
 corpus.csv has one document per row, with these columns: doc_id; text (the
 document's text) or file (the path of a PDF, from the folder of corpus.csv);
-and filename (the name each request gives for the document; without it, the
+and source (the name each request gives for the document; without it, the
 PDF's own name or the doc_id). Where the prompt has placeholders that were
 filled in for each document, the corpus also needs the columns named under
 INSERTS below.
@@ -353,7 +353,7 @@ def main():
     ap.add_argument("--id-column", default="doc_id")
     ap.add_argument("--text-column", default="text")
     ap.add_argument("--file-column", default="file", help="column with the path of a PDF to send as a file")
-    ap.add_argument("--name-column", default="filename", help="column with the name each request gives for the document")
+    ap.add_argument("--name-column", default="source", help="column with the name each request gives for the document")
     ap.add_argument("--out", default="results.csv")
     ap.add_argument("--log", default="log.jsonl")
     ap.add_argument("--limit", type=int, default=None, help="only annotate the first N documents")

@@ -9,7 +9,7 @@ import {annotationFormatRecord} from '../answer-fields';
 import {knowledgeDocumentText} from '../model-knowledge';
 import {rowForRun,type Row} from './runs';
 import {requestsOf} from './repeats';
-import {runLines,type Dataset,type RunLine} from './export';
+import {runLines,slugName,type Dataset,type RunLine} from './export';
 import type {RecordedRequest} from './requests';
 
 // lab: the build of the Lab that makes the export.
@@ -48,7 +48,8 @@ export const reportableRuns=(dataset:Dataset):RunLine[]=>runLines(dataset).filte
 export function fullestRun(dataset:Dataset):RunLine|undefined{
  return runLines(dataset).reduce<RunLine|undefined>((best,run)=>run.done>0&&(!best||run.done>=best.done)?run:best,undefined);
 }
-export const runFolder=(run:number)=>'run-'+String(run).padStart(2,'0');
+// A run's folder in the research repository: run-03, or run-03-pilot for a run labeled Pilot.
+export const runFolder=(run:number,label?:string)=>'run-'+String(run).padStart(2,'0')+(label&&slugName(label)?'-'+slugName(label):'');
 
 const count=(value:unknown):number|''=>typeof value==='number'&&Number.isFinite(value)?value:'';
 // Tokens of one request as the provider reported them. Input includes tokens read from or written to the

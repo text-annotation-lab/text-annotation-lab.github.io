@@ -132,8 +132,8 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
 
  // --- Exports ------------------------------------------------------------------------------
  const codebook=tables.codebook(names,sent.settings,false);
- assert(codebook.includes('each under its own key and type'));assert(codebook.includes('| Word count | Word count | word_count | number |'));assert(codebook.includes('| Explanation | explanation | rationale | free text |'));assert(!codebook.includes('answers.f'));
- assert(tables.codebook(names,standard.settings,false).includes('| Tone | Tone | answers.f0 |'),'The earlier format keeps its description');
+ assert(codebook.includes('Each field was sent under its key in the schema and its type'));assert(codebook.includes('| Word count | word_count | number |  |  | word_count |'));assert(codebook.includes('| Rationale | rationale | free text | | Brief justification, generated before the labels | rationale |'));assert(codebook.includes('| Tone | tone | category | positive, neutral, negative | Overall tone of the text. | Tone |'),'Desk’s columns, then the key the schema used');assert(!codebook.includes('answers.f'));
+ assert(tables.codebook(names,standard.settings,false).includes('| Tone | tone | category | positive, neutral, negative | Overall tone of the text. | answers.f0 |'),'The earlier format names its short keys');
  const values=python.scriptValues({lab:'test',studyName:'S',runDescription:'#1',provider:'anthropic',text:frame,fields:names,plain:false,settings:sent.settings});
  assert.equal(values.KEYS,python.pyLiteral(['Tone','Intensity','Sarcasm','word_count','Notes']));assert.equal(values.RATIONALE,'"rationale"');
  assert.equal(values.ALLOWED,python.pyLiteral({Tone:['positive','neutral','negative'],Intensity:['-1','0','1','2']}),'A scale’s whole numbers are allowed as the Lab keeps them');
