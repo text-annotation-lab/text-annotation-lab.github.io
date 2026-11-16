@@ -104,7 +104,7 @@ assert.equal(runs.runRequestSettings([{id:'a',status:'done',...setup,runNo:1}],1
 {
  const dataset={kind:'texts',rows:[{id:'a',name:'a.txt',status:'done',...setup,runNo:1,score:'POSITIVE',usage:{input_tokens:100,output_tokens:20}}],runs:[{...setup,number:1,startedAt:'2026-11-16T10:00:00Z',label:'Pilot',scope:'All texts (1)'}],columns:[],samples:[]};
  const overview=tables.runsOverview({name:'S',dataset,lab:'test'},new Map()),at=name=>overview[0].indexOf(name);
- assert.deepEqual([at('run'),at('label')],[0,1]);assert.equal(at('scope'),at('batch_id')+1,'Desk’s place');assert(at('data')>at('notes'),'The Lab’s own columns after Desk’s');
+ assert.deepEqual([at('run'),at('label')],[0,1]);assert.equal(at('scope'),at('batch_id')+1,'Right after batch_id');assert(at('data')>at('notes'),'The Lab’s own columns after the shared ones');
  assert.deepEqual([overview[1][at('label')],overview[1][at('scope')]],['Pilot','All texts (1)']);
  const source=fs.readFileSync(path.join(root,'lib/research/export-packages.ts'),'utf8');
  assert(source.includes("run:{number:run.number,...(run.label?{label:run.label}:{}),...(run.scope?{scope:run.scope}:{}),"),'The run record names the label and the scope');

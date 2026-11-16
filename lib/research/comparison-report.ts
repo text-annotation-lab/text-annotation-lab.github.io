@@ -8,7 +8,8 @@ import {cellOf,columnIndex} from './columns';
 import {explanationOf,runLines,unitOf,type Dataset,type RunLine} from './export';
 import {requestLines} from './export-data';
 import {comparableFields,intervalsHere,textsOfRun,type Intervals} from './export-agreement';
-import {runFacts,type Table} from './export-tables';
+import {hashOf,promptHashes,runFacts,type Table} from './export-tables';
+import {defaultOutputLimit} from '../request-settings';
 import {buildWorkbook,type Sheet} from './export-workbook';
 import {BOOTSTRAP_RESAMPLES,type Agreement,type CiStat} from './metrics';
 import {rowForRun,runState,type Row} from './runs';
@@ -113,7 +114,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
  const tolName=`within_${tolerance}_point${tolerance===1?'':'s'}`;
  const withCi=(label:string,s:Stats,key:CiStat,value:number|null):Cells=>value===null?{}:{[label]:r4(value),[`${label}_ci_low`]:r4(s.ci[key]?.[0]),[`${label}_ci_high`]:r4(s.ci[key]?.[1])};
  const summaryRow=(label:string,texts:string,s:Stats,inBoth:number):Cells=>({
-  field:label,[many]:texts,level:s.level,n_compared:s.n,[`n_${many}_in_both_runs`]:inBoth,
+  field:label,texts,level:s.level,n_compared:s.n,n_texts_in_both_runs:inBoth,
   ...(s.leftOut.n?{n_left_out_not_on_scale:s.leftOut.n}:{}),
   ...withCi('exact_agreement',s,'percentAgreement',s.percentAgreement),
   ...(tolerance>0?withCi(tolName,s,'withinTolerance',s.withinTolerance):{}),
@@ -155,7 +156,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
     :size===null?'differ'
     :size>=2-1e-9?'2+ points':size>1+1e-9?'between 1 and 2 points':size>=1-1e-9?'1 point':'less than 1 point';
    return {group:groupOf(row),cells:{
-    [unit==='text'?'document':'subject']:String(row.name??''),field:fieldLabel(field),
+    file:String(row.name??''),field:fieldLabel(field),
     ...(groupBy?{['\u0000group']:groupOf(row)}:{}),
     // A value that is not a number (left out): as the run wrote it.
     first:numeric?(isNum(x)?Number(x):p.rawA[i]):x,second:numeric?(isNum(y)?Number(y):p.rawB[i]):y,
@@ -176,7 +177,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
   for(const g of groups){
    const sub=subset(p,k=>groupOf(byId.get(p.ids[k])!)===g),job=agreementJob(sub,'auto',tolerance),s=await ciOf(job,runJob(job,false));
    const {field:label,...rest}=summaryRow(fieldLabel(field),'',s,both.filter(row=>groupOf(row)===g).length);
-   delete rest[many];
+   delete rest.texts;
    byGroup.push({field:label,['\u0000group']:g||'(none)',...rest});
   }
  }
@@ -187,16 +188,19 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
  sheets.push({name:'Review',table:tableOf(review.map(r=>named(r.cells))),frozen:2,numbers:column=>column==='first'||column==='second',prose:column=>column.endsWith('_explanation')});
  if(groupBy)sheets.push({name:`By ${groupBy}`,table:tableOf(byGroup.map(named)),frozen:2});
 
- // The two runs' settings, side by side.
+ // The two runs' settings, side by side; the Lab's own rows (temperature, texts with a usable answer) last.
+ const hashes=await promptHashes(dataset),removedIn=(run:number)=>textsOfRun(dataset,run).filter(row=>row.removedAt).length,removed=removedIn(first)+removedIn(second)>0;
  const settings=(run:RunLine,facts:ReturnType<typeof runFacts>):Record<string,string>=>{
   const state=runState(dataset.rows,run),unfinished=state==='running'?'not finished: it was still running':state==='submitted'?'not finished: its batch was still being processed':'';
   return {
    run:`#${run.number}${run.label?` (${run.label})`:''}`,provider:run.provider||'',model:run.model||'',model_reported_by_api:facts.models.join(', '),
-   effort:run.effort||'model default',max_output_tokens:run.maxOutput!==undefined?String(run.maxOutput):'the Lab’s own limit',
-   temperature:run.temperature!==undefined?String(run.temperature):'the model’s own',prompt_version:'v'+run.promptVersion,
-   mode:facts.processing==='batch'?'batch':facts.processing==='instant and batch'?'immediate requests and batch':'immediate requests',
-   started:run.startedAt||'',status:unfinished||state,[`${many}_sent`]:String(facts.texts),[`${many}_with_a_usable_answer`]:String(facts.usable),
-   [`annotations_per_${unit}`]:String(run.repeats||1),lab_version:facts.labs.join('; ')||'not recorded',
+   effort:run.effort||'model default',max_output_tokens:String(run.maxOutput??defaultOutputLimit(run.provider,run.model)),
+   prompt_version:`v${run.promptVersion} (${hashOf(hashes,run.prompt,run.system)})`,
+   mode:facts.processing==='batch'?'batch API':facts.processing==='instant and batch'?'immediate requests and batch API':'immediate requests',
+   started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(facts.texts-facts.active),
+   ...(removed?{texts_removed_from_study_since:String(removedIn(run.number))}:{}),
+   annotations_per_text:String(run.repeats||1),app_version:facts.labs.join('; ')||'not recorded',
+   temperature:run.temperature!==undefined?String(run.temperature):'model default',texts_with_a_usable_answer:String(facts.usable),
   };
  };
  const sa=settings(runA,factsA),sb=settings(runB,factsB);
@@ -214,7 +218,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
  const plain=compared.some(({p})=>p.scaleSeen),scaled=compared.find(({p})=>p.studyScale)?.p.studyScale;
  const notes:Cells[]=[
   {note:`Exported from the Text Annotation Lab ${LAB_VERSION} on ${date}${labsA&&labsA===labsB?`; both runs were made with ${labsA}`:labsA&&labsB?`; the runs were made with ${labsA} and ${labsB}`:''}.`},
-  {note:`First: ${name(runA)}. Second: ${name(runB)}. ${Many} compared: those with a usable value for the field in both runs. n_${many}_in_both_runs: ${many} sent in both runs, including those whose request failed in one (no usable answer).`},
+  {note:`First: ${name(runA)}. Second: ${name(runB)}. ${Many} compared: those with a usable value for the field in both runs. n_texts_in_both_runs: ${many} sent in both runs, including those whose request failed in one (no usable answer).`},
   ...unfinished(runA),...unfinished(runB),
   {note:`Exact agreement: share of ${many} with the same value.${tolerance>0?` Within ${tolerance} point${tolerance===1?'':'s'}: share whose scores differ by at most that much.`:''} Differ by 2 or more points and opposite direction (one below the middle of the scale, the other above): serious disagreements.`},
   {note:`“At least one non-zero” rows repeat the statistics on ${many} where at least one run gave a score other than 0, because many shared zeros raise exact agreement and Gwet’s AC1 and AC2. The subset is chosen by the scores themselves, so read these rows as descriptive.`},

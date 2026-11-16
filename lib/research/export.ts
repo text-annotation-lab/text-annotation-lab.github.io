@@ -64,7 +64,6 @@ export const docIdOf=(dataset:Dataset,row:Row)=>docIds(dataset).get(String(row.i
 export function samplesTable(samples:SampleRecord[]):(string|number)[][]{
  return [['column','value','drawn_on','size','eligible','seed','stratified_by','allocation','excluded','method','note'],...samples.map(s=>[s.column,s.value,s.date,s.size,s.eligible,s.seed,s.strata.join(' × '),s.allocation.map(a=>`${a.stratum}: ${a.drawn} of ${a.available}`).join('; '),s.exclude?`${s.exclude.column} = ${s.exclude.value}`:'',s.method,sampleNote(s)])];
 }
-export const fileStem=(studyName:string|undefined,dataset:{kind:string})=>((studyName||'annotations').trim().replace(/[^\p{L}\p{N}]+/gu,'-').replace(/^-+|-+$/g,'').slice(0,60)||'annotations')+(dataset.kind==='knowledge'?'-model-knowledge':'');
 // A study's or run's name for a file or folder: lower case, accents dropped, words joined by hyphens, at most 48
 // characters (“Villains: Pilot 2” → villains-pilot-2).
 export const slugName=(name:string)=>name.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g,'').trim().replace(/[\s_-]+/g,'-').slice(0,48);

@@ -10,7 +10,7 @@ import {defaultOutputLimit} from '@/lib/request-settings';
 import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSources,runJob,sourceFields,sourceLabel,statLines,type LevelChoice} from '@/lib/research/agreement';
 import {computeIntervals,intervalsOf} from '@/lib/research/intervals';
 import {comparisonReport,groupColumns} from '@/lib/research/comparison-report';
-import {fileStem,runLines,sourceOf,unitOf,type Dataset,type RunLine} from '@/lib/research/export';
+import {dateStamp,exportStem,runLines,sourceOf,unitOf,type Dataset,type RunLine} from '@/lib/research/export';
 import {scaleText} from '@/lib/research/score-scale';
 import {requestLines,requestParts,runRequests} from '@/lib/research/export-data';
 import {formText} from '@/lib/request-frame';
@@ -181,14 +181,14 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
   setReport('');setReportError('');
   try{
    const bytes=await comparisonReport(dataset,a.run,b.run,{tolerance:tol,groupBy:groups.includes(groupBy)?groupBy:'',intervals:intervalsOf,onProgress:setReport});
-   downloadBytes(`${fileStem(studyName,dataset)}-run-${a.run}-vs-run-${b.run}.xlsx`,bytes,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+   downloadBytes(`${exportStem(studyName,dataset)}_run${a.run}_vs_run${b.run}_${dateStamp(new Date())}.xlsx`,bytes,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   }catch(error){setReportError(`The comparison report could not be made: ${error instanceof Error?error.message:String(error)}`);}
   finally{setReport(null);}
  }
 
  function downloadComparison(){
   if(!stats||!a||!b)return;
-  downloadText(`${fileStem(studyName,dataset)}-agreement.csv`,toCsv(agreementTable({a:sourceLabel(a)+(fieldA?` (${fieldLabel(fieldA)})`:''),b:sourceLabel(b)+(fieldB?` (${fieldLabel(fieldB)})`:''),field,dataset:sourceOf(dataset),basis:pairing?.basis},stats,ci,unit)),'text/csv');
+  downloadText(`${exportStem(studyName,dataset)}_agreement_${dateStamp(new Date())}.csv`,toCsv(agreementTable({a:sourceLabel(a)+(fieldA?` (${fieldLabel(fieldA)})`:''),b:sourceLabel(b)+(fieldB?` (${fieldLabel(fieldB)})`:''),field,dataset:sourceOf(dataset),basis:pairing?.basis},stats,ci,unit)),'text/csv');
  }
  const option=(source:CompareSource)=><option key={sourceKey(source)} value={sourceKey(source)}>{source.kind!=='run'?source.name:source.rep?sourceLabel(source):`Run #${source.run} · ${modelName(lines.find(run=>run.number===source.run)?.model||'')}`}</option>;
  const whole=(s:CompareSource)=>s.kind==='run'&&!s.rep,single=(s:CompareSource)=>s.kind==='run'&&Boolean(s.rep);

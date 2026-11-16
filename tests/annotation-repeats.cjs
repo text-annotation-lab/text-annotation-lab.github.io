@@ -139,7 +139,7 @@ assert.deepEqual(requestLines.map(line=>[line.row.id,line.run,line.replicate,lin
 const facts=tables.runFacts(dataset,lines.runLines(dataset)[0]);
 assert.deepEqual([facts.texts,facts.usable,facts.requests.total,facts.requests.ok,facts.requests.failed,facts.requests.replaced],[2,2,6,5,1,1]);
 const results=tables.resultsTable(study,1);
-assert.deepEqual(results[0],['doc_id','stance','stance_replicate_agreement','stance_explanation','tone','tone_replicate_agreement','count','count_replicate_agreement','ironic','ironic_replicate_agreement','note','rationale','stance_human','n_ok','n_error'],'As in Desk: each field with its share, its explanation right after it');
+assert.deepEqual(results[0],['doc_id','stance','stance_replicate_agreement','stance_explanation','tone','tone_replicate_agreement','count','count_replicate_agreement','ironic','ironic_replicate_agreement','note','rationale','stance_human','n_ok','n_error'],'Each field with its share, its explanation right after it');
 const cells=(row,names)=>names.map(name=>row[results[0].indexOf(name)]);
 assert.deepEqual(cells(results[1],['stance','stance_replicate_agreement','tone','tone_replicate_agreement','count','count_replicate_agreement','ironic','ironic_replicate_agreement']),['pro',0.667,'3',0.333,'11',0.333,'true',1]);assert.deepEqual(cells(results[2],['stance','stance_replicate_agreement','tone','tone_replicate_agreement']),['con | pro',0,'3',0]);assert.deepEqual(results[2].slice(-2),[2,2],'Usable and failed requests of the text, a replaced attempt included');
 assert(!tables.resultsTable({...study,dataset:{...dataset,rows:[{...single,id:'s',name:'s.txt',runNo:1}],runs:[]}},1)[0].some(name=>name.includes('replicate_agreement')),'No share for one annotation per text');
@@ -148,7 +148,7 @@ const at=name=>byRequest[0].indexOf(name);assert.deepEqual(byRequest[0].slice(8,
 assert.deepEqual(byRequest.slice(1).map(line=>[line[at('doc_id')],line[at('replicate')],line[at('attempt')],line[at('status')],line[at('sent_again')]]),[['t1',1,1,'ok',''],['t1',2,1,'ok',''],['t1',3,1,'ok',''],['t2',1,1,'ok',''],['t2',2,1,'error',''],['t2',3,1,'error','yes'],['t2',3,2,'ok','']]);
 assert.deepEqual(byRequest.slice(1).map(line=>line[byRequest[0].indexOf('stance')]),['pro','con','Pro','con','','','pro'],'Each annotation’s own answer');
 assert.equal(byRequest[5][byRequest[0].indexOf('error')],'The model stopped before finishing.');
-const overview=tables.runsOverview(study,new Map());assert.equal(overview[1][overview[0].indexOf('replicates')],3);assert.equal(overview[0].indexOf('replicates'),overview[0].indexOf('n_texts')+1,'Desk’s place');
+const overview=tables.runsOverview(study,new Map());assert.equal(overview[1][overview[0].indexOf('replicates')],3);assert.equal(overview[0].indexOf('replicates'),overview[0].indexOf('n_texts')+1,'Right after the number of texts');
 
 (async()=>{
  const pack=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:new Date('2026-11-16T12:00:00.000Z')},1,{texts:true,explanations:true,logs:true});
