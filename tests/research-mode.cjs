@@ -113,7 +113,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  // Research mode keeps one row of run buttons: the clearing actions are in the menu of the row above the table.
  assert.equal(h.all(n=>n.type==='div'&&n.props.className==='clear-actions').length,0);
  assert.deepEqual(filters().menu.map(item=>[item.label,Boolean(item.danger),Boolean(item.disabled)]),[['Clear results…',false,false],['Delete selected texts…',true,true],['Delete all texts…',true,false],['Clear workspace…',true,false]]);
- assert(filters().actions,'the chart and Excel buttons belong to the row above the table');
+ assert.equal(filters().actions,undefined,'research mode has no chart or Excel button above the table: the Results panel and the Export tab have them');
 
  // Deleting run 2 brings back the results of run 1.
  runsPanel().onDeleteRun(2);await h.flush();

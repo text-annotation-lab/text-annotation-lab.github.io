@@ -43,12 +43,12 @@ export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,sh
   <select aria-label="Results shown" value={String(view.run)} onChange={event=>{const run=event.target.value==='latest'?'latest':Number(event.target.value);set({run,compare:view.compare==='run:'+run?'':view.compare});}}>
    <option value="latest">{`Latest result per ${unit}`}</option>{runs.map(run=><option key={run.number} value={run.number}>Run #{run.number} · {modelName(run.model)}</option>)}
   </select>
-  {(labels.length>0||runs.length>1)&&<label className="research-pick"><span>Compare with</span><select aria-label="Compare with" value={view.compare} onChange={event=>set({compare:event.target.value,show:event.target.value?view.show:['disagree','agree'].includes(view.show)?'all':view.show})}>
-   <option value="">Nothing</option>
+  {(labels.length>0||runs.length>1)&&<select className="research-pick" aria-label="Compare with" value={view.compare} onChange={event=>set({compare:event.target.value,show:event.target.value?view.show:['disagree','agree'].includes(view.show)?'all':view.show})}>
+   <option value="">Compare with…</option>
    {labels.length>0&&<optgroup label="Human labels">{labels.map(c=><option key={c.name} value={'col:'+c.name}>{c.name}</option>)}</optgroup>}
    {runs.length>1&&<optgroup label="Another run">{otherRuns.map(run=><option key={run.number} value={'run:'+run.number}>Run #{run.number} · {modelName(run.model)}</option>)}</optgroup>}
    {others.length>0&&<optgroup label="Metadata">{others.map(c=><option key={c.name} value={'col:'+c.name}>{c.name}</option>)}</optgroup>}
-  </select></label>}
+  </select>}
   {comparing&&fields.length>1&&<select aria-label="Answer field to compare" value={field} onChange={event=>set({field:event.target.value})}>{fields.map(f=><option key={f} value={f}>{fieldLabel(f)}</option>)}</select>}
   <span className="research-filter-count" role="status">{viewNarrowed(view)?`${shown.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} shown`:''}{viewNarrowed(view)&&<button type="button" className="textbutton" onClick={()=>onChange({...DEFAULT_VIEW,compare:view.compare,field:view.field})}>Clear filters</button>}{checked>0&&<>{checked.toLocaleString('en-US')} selected<button type="button" className="textbutton" onClick={onClearChecked}>Clear selection</button></>}</span>
   {(actions||menu?.length)&&<span className="research-result-actions">{actions}{menu&&menu.length>0&&<MoreMenu items={menu}/>}</span>}
