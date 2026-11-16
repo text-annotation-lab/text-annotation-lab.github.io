@@ -98,13 +98,15 @@ export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sh
 // Texts added from a table or from pasted text. `values` holds what the table's
 // other columns say about each text, in the order of `names`; those columns
 // join the study's columns (a column with the same name is reused).
-export type NewText={name:string;text:string;values:string[]};
+// back: the id of a deleted text that this one brings back (the same name and the same text; research mode).
+export type NewText={name:string;text:string;values:string[];back?:string};
 export function appendTexts<T extends CellRow>(docs:T[],columns:Column[],texts:NewText[],names:string[],make:(text:NewText)=>T):{docs:T[];columns:Column[]}{
  const next=columns.map(c=>({...c}));
  const to=names.map(name=>{let index=columnIndex(next,name);if(index<0){next.push({name:tidy(name),role:guessRole(name)==='label'?'label':'meta'});index=next.length-1;}return index;});
  const added=texts.map(text=>{
   const doc=make(text);if(!to.length)return doc;
-  const cells=Array.from({length:next.length},()=>'');
+  // A text brought back keeps its values; the table's values are written over them.
+  const cells=Array.from({length:next.length},(_,i)=>doc.cells?.[i]??'');
   to.forEach((index,from)=>{const value=tidy(text.values[from]);if(value)cells[index]=value;});
   return cells.some(Boolean)?{...doc,cells}:doc;
  });

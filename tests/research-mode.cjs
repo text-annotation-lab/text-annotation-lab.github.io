@@ -110,7 +110,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  filters().onChange({...filters().view,show:'all',compare:''});await h.flush();
  // Research mode keeps one row of run buttons: the clearing actions are in the menu of the row above the table.
  assert.equal(h.all(n=>n.type==='div'&&n.props.className==='clear-actions').length,0);
- assert.deepEqual(filters().menu.map(item=>[item.label,Boolean(item.danger),Boolean(item.disabled)]),[['Clear results…',false,false],['Clear workspace…',true,false]]);
+ assert.deepEqual(filters().menu.map(item=>[item.label,Boolean(item.danger),Boolean(item.disabled)]),[['Clear results…',false,false],['Delete selected texts…',true,true],['Delete all texts…',true,false],['Clear workspace…',true,false]]);
  assert(filters().actions,'the chart and Excel buttons belong to the row above the table');
 
  // Deleting run 2 brings back the results of run 1.
@@ -494,6 +494,51 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   const refused=harness({...stored(),processing:'batch',docs:[{...docs[0],annotations:docs[0].annotations.slice(0,2),file:new File(['Text 0'],'text-0.txt')},documents()[1]],runs:b.latest().runs},async()=>{},async()=>Response.json({error:'The provider did not accept the batch.',uncertain:false},{status:400}));
   await research(refused);await refused.button('Remaining').props.onClick();await refused.flush();
   assert.equal(refused.latest().batchJob,null);assert.deepEqual(refused.latest().docs.map(doc=>[doc.status,doc.annotations?.length]),[['done',2],['pending',undefined]]);
+ }
+
+ // Deleting texts (research mode, the More menu above the table). A text a run used leaves the Workspace but stays
+ // with its runs, their comparisons, and the exports; one no run used is deleted outright. Added again, a deleted
+ // text gets its results back. It goes for good once no run uses it.
+ {
+  const until=async(h,ready)=>{for(let n=0;n<300&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
+  const four=()=>({docs:Array.from({length:4},(_,i)=>({id:String(i),name:`text-${i}.txt`,file:new File([`Text ${i}`],`text-${i}.txt`),status:'pending'})),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1,columns:[{name:'year',role:'meta'},{name:'tone_human',role:'label'}]});
+  const h=harness(four());await h.flush();h.find(n=>n.type==='ModeSwitch').props.onChange(true);await h.flush();h.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-delete'},false);await h.flush();
+  const filters=()=>h.find(n=>n.type==='ResearchFilters').props,item=label=>filters().menu.find(entry=>entry.label.startsWith(label)),notices=()=>h.all(n=>n.props?.role==='alert'||n.props?.role==='status').map(n=>h.text(n)).join(' | ');
+  const tab=value=>{h.find(n=>n.type==='Tabs').props.onValueChange(value);return h.flush();},panel=()=>h.find(n=>n.type==='ResearchRuns').props,tick=name=>h.find(n=>n.type==='input'&&n.props['aria-label']==='Select '+name).props.onChange({target:{checked:true}});
+  // Two texts get a result in run 1, with values in both columns; the other two are never sent.
+  h.find(n=>n.type==='ResearchTools').props.onApply(h.latest()?.docs||four().docs,[{name:'year',role:'meta'},{name:'tone_human',role:'label'}],[],'');await h.flush();
+  tick('text-0.txt');tick('text-1.txt');await h.flush();await h.button('All (').props.onClick();await until(h,()=>h.latest()?.docs.filter(doc=>doc.status==='done').length===2&&!h.latest().docs.some(doc=>doc.status==='running'));
+  h.find(n=>n.type==='ResearchTools').props.onApply(h.latest().docs.map((doc,i)=>({...doc,cells:[String(1960+i),i%2?'NEGATIVE':'POSITIVE']})),[{name:'year',role:'meta'},{name:'tone_human',role:'label'}],[],'');await h.flush();
+  assert.equal(filters().checked,2);filters().onClearChecked();await h.flush();assert.equal(filters().checked,0);
+  assert.equal(item('Delete selected').disabled,true);
+  tick('text-1.txt');tick('text-2.txt');await h.flush();
+  assert.equal(item('Delete 2').label,'Delete 2 selected texts…');
+  item('Delete 2').onSelect();await h.flush();
+  assert.deepEqual(h.latest().docs.map(doc=>doc.name),['text-0.txt','text-3.txt']);
+  assert.deepEqual(h.latest().removed.map(doc=>[doc.name,doc.removedPlace,doc.status,doc.runNo,typeof doc.removedAt,doc.cells]),[['text-1.txt',1,'done',1,'string',['1961','NEGATIVE']]],'The text a run used is kept in its place; the unsent one is gone');
+  assert(notices().includes('2 texts deleted. The results of 1 of them stay with the runs that made them.'),notices());
+  assert.equal(filters().checked,0);assert.equal(filters().total,2);
+  // Runs & agreement reads it with its run, in its place; it is not a link to the Workspace, and it is never sent again.
+  await tab('runs');
+  assert.deepEqual(panel().datasets[0].rows.map(row=>row.name),['text-0.txt','text-1.txt','text-2.txt','text-3.txt'].filter(name=>name!=='text-2.txt'));
+  await tab('workspace');
+  assert(h.text(h.button('All (')).includes('All (2)'),'The run buttons cover the texts in the Workspace only');
+  // Removing a column also takes it from the deleted text, so its values stay in line.
+  const tools=()=>h.find(n=>n.type==='ResearchTools').props;
+  tools().onApply(h.latest().docs.map(doc=>({...doc,cells:doc.cells?[doc.cells[1]]:undefined})),[{name:'tone_human',role:'label'}],[],'Column “year” removed.');await h.flush();
+  assert.deepEqual(h.latest().removed[0].cells,['NEGATIVE']);
+  // The same file added again brings the text back with its result; a changed file of that name is a new text.
+  await h.add([new File(['Text 1'],'text-1.txt')]);await h.flush();
+  assert.deepEqual(h.latest().docs.map(doc=>[doc.name,doc.status,doc.runNo,doc.removedAt,doc.cells]),[['text-0.txt','done',1,undefined,['POSITIVE']],['text-3.txt','pending',undefined,undefined,['NEGATIVE']],['text-1.txt','done',1,undefined,['NEGATIVE']]]);
+  assert(!('removed' in h.latest()),'Nothing is kept as removed any more');
+  assert(notices().includes('1 document added. It had been deleted before: the results earlier runs made for it are its again.'),notices());
+  // Delete all texts: the two with results stay with run 1, the unsent one goes. Deleting run 1 then lets them go too.
+  item('Delete all texts').onSelect();await h.flush();
+  assert.deepEqual(h.latest().docs,[]);assert.deepEqual(h.latest().removed.map(doc=>[doc.name,doc.removedPlace]),[['text-0.txt',0],['text-1.txt',1]]);
+  assert(h.latest().requests===undefined||h.latest().requests.length>=0);
+  await tab('runs');assert.deepEqual(panel().datasets[0].rows.map(row=>row.name),['text-0.txt','text-1.txt']);
+  panel().onDeleteRun(1);await h.flush();
+  assert(!('removed' in h.latest()),'A deleted text no run uses goes for good');assert.deepEqual(h.latest().docs,[]);
  }
 
  // The mode is remembered in this browser. Keys are remembered only when asked, and only for research mode.

@@ -11,20 +11,20 @@ export type AddTexts=(texts:NewText[],names:string[],message:string)=>boolean;
 type Existing=CellRow&{file?:Blob};
 const plural=(n:number,unit:string)=>`${n.toLocaleString('en-US')} ${unit}${n===1?'':'s'}`;
 const BUSY='The texts could not be added while the workspace is busy. Try again in a moment.';
-function leftOut(already:number,renamed:number){
- return (already?` ${plural(already,'text')} already in this study ${already===1?'was':'were'} left out.`:'')+(renamed?` ${plural(renamed,'text')} got a new name because ${renamed===1?'its name was':'their names were'} taken by a different text.`:'');
+function leftOut(already:number,renamed:number,back=0,added=0){
+ return (back?` ${back===added?(back===1?'It had':'They had'):`${back.toLocaleString('en-US')} of them had`} been deleted before: the results earlier runs made for ${back===1?'it are its':'them are theirs'} again.`:'')+(already?` ${plural(already,'text')} already in this study ${already===1?'was':'were'} left out.`:'')+(renamed?` ${plural(renamed,'text')} got a new name because ${renamed===1?'its name was':'their names were'} taken by a different text.`:'');
 }
 
-export function PasteTextDialog({rows,onAdd,onClose}:{rows:Existing[];onAdd:AddTexts;onClose:()=>void}){
+export function PasteTextDialog({rows,removed,onAdd,onClose}:{rows:Existing[];removed?:Existing[];onAdd:AddTexts;onClose:()=>void}){
  const [text,setText]=useState(''),[mode,setMode]=useState<'none'|'blank'|'line'>('none'),[prefix,setPrefix]=useState('pasted'),[adding,setAdding]=useState(false),[problem,setProblem]=useState('');
  const parts=useMemo(()=>splitPasted(text,mode),[text,mode]);
  async function add(){
   if(!parts.length||adding)return;
   setAdding(true);setProblem('');
   try{
-   const fitted=await fitIntoStudy(pastedTexts(parts,prefix),rows);
+   const fitted=await fitIntoStudy(pastedTexts(parts,prefix),rows,removed);
    if(!fitted.texts.length){setProblem(parts.length===1?'This text is already in the study under the same name.':'These texts are already in the study under the same names.');return;}
-   if(onAdd(fitted.texts,[],`${plural(fitted.texts.length,'text')} added from pasted text.${leftOut(fitted.already,fitted.renamed)}`))onClose();else setProblem(BUSY);
+   if(onAdd(fitted.texts,[],`${plural(fitted.texts.length,'text')} added from pasted text.${leftOut(fitted.already,fitted.renamed,fitted.back,fitted.texts.length)}`))onClose();else setProblem(BUSY);
   }catch{setProblem('The pasted text could not be added. Try again.');}
   finally{setAdding(false);}
  }
@@ -45,7 +45,7 @@ export function PasteTextDialog({rows,onAdd,onClose}:{rows:Existing[];onAdd:AddT
  </Dialog>;
 }
 
-export function TableImportDialog({file,rows,onAdd,onClose,onUseAsLabels}:{file:File;rows:Existing[];onAdd:AddTexts;onClose:()=>void;onUseAsLabels:(sheet:Sheet,fileName:string)=>void}){
+export function TableImportDialog({file,rows,removed,onAdd,onClose,onUseAsLabels}:{file:File;rows:Existing[];removed?:Existing[];onAdd:AddTexts;onClose:()=>void;onUseAsLabels:(sheet:Sheet,fileName:string)=>void}){
  const [sheet,setSheet]=useState<Sheet>(),[error,setError]=useState(''),[textIndex,setTextIndex]=useState(0),[idIndex,setIdIndex]=useState(-1),[adding,setAdding]=useState(false),[problem,setProblem]=useState('');
  useEffect(()=>{
   let current=true;
@@ -64,10 +64,10 @@ export function TableImportDialog({file,rows,onAdd,onClose,onUseAsLabels}:{file:
   if(!plan?.texts.length||adding)return;
   setAdding(true);setProblem('');
   try{
-   const fitted=await fitIntoStudy(plan.texts,rows);
+   const fitted=await fitIntoStudy(plan.texts,rows,removed);
    if(!fitted.texts.length){setProblem('Every text in this table is already in the study.');return;}
    const columns=plan.names.length?` ${plural(plan.names.length,'column')} kept as labels or metadata.`:'';
-   if(onAdd(fitted.texts,plan.names,`${plural(fitted.texts.length,'text')} added from ${file.name}.${columns}${leftOut(fitted.already,fitted.renamed)}`))onClose();else setProblem(BUSY);
+   if(onAdd(fitted.texts,plan.names,`${plural(fitted.texts.length,'text')} added from ${file.name}.${columns}${leftOut(fitted.already,fitted.renamed,fitted.back,fitted.texts.length)}`))onClose();else setProblem(BUSY);
   }catch{setProblem('The table could not be imported. Try again.');}
   finally{setAdding(false);}
  }

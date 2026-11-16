@@ -14,11 +14,12 @@ import {PasteTextDialog,TableImportDialog,type AddTexts} from './import-texts';
 type Apply=(rows:Row[],columns:Column[],samples:SampleRecord[],notice:string,filter?:{column:string;value:string})=>void;
 // `lead` is shown first in the row of tools (the cost calculator). With `onAddTexts` (the Workspace), texts can be
 // pasted, and `tableFile` is a table chosen in the drop zone whose rows are to become texts.
-type Props={rows:Row[];columns:Column[];samples:SampleRecord[];unit:'text'|'subject';disabled?:boolean;onApply:Apply;lead?:ReactNode;onAddTexts?:AddTexts;tableFile?:File;onTableDone?:()=>void};
+// removed: texts deleted from the study but kept for the runs that used them (adding one again brings it back).
+type Props={rows:Row[];removed?:Row[];columns:Column[];samples:SampleRecord[];unit:'text'|'subject';disabled?:boolean;onApply:Apply;lead?:ReactNode;onAddTexts?:AddTexts;tableFile?:File;onTableDone?:()=>void};
 const plural=(n:number,unit:string)=>`${n.toLocaleString('en-US')} ${unit}${n===1?'':'s'}`;
 const list=(names:string[],limit=5)=>names.slice(0,limit).join(', ')+(names.length>limit?`, and ${names.length-limit} more`:'');
 
-export function ResearchTools({rows,columns,samples,unit,disabled,onApply,lead,onAddTexts,tableFile,onTableDone}:Props){
+export function ResearchTools({rows,removed,columns,samples,unit,disabled,onApply,lead,onAddTexts,tableFile,onTableDone}:Props){
  const [dialog,setDialog]=useState<''|'labels'|'sample'|'paste'>(''),[labelSheet,setLabelSheet]=useState<{sheet:Sheet;fileName:string}>();
  const labels=columns.filter(c=>c.role==='label'),meta=columns.filter(c=>c.role==='meta');
  return <div className="research-tools">
@@ -37,8 +38,8 @@ export function ResearchTools({rows,columns,samples,unit,disabled,onApply,lead,o
    </li>)}</ul>
   </details>}
   {dialog==='labels'&&<LabelsDialog rows={rows} columns={columns} samples={samples} unit={unit} onApply={onApply} initial={labelSheet} onClose={()=>{setDialog('');setLabelSheet(undefined);}}/>}
-  {dialog==='paste'&&onAddTexts&&<PasteTextDialog rows={rows} onAdd={onAddTexts} onClose={()=>setDialog('')}/>}
-  {tableFile&&onAddTexts&&!dialog&&<TableImportDialog key={tableFile.name+'/'+tableFile.size+'/'+tableFile.lastModified} file={tableFile} rows={rows} onAdd={onAddTexts} onClose={()=>onTableDone?.()} onUseAsLabels={(sheet,fileName)=>{setLabelSheet({sheet,fileName});setDialog('labels');onTableDone?.();}}/>}
+  {dialog==='paste'&&onAddTexts&&<PasteTextDialog rows={rows} removed={removed} onAdd={onAddTexts} onClose={()=>setDialog('')}/>}
+  {tableFile&&onAddTexts&&!dialog&&<TableImportDialog key={tableFile.name+'/'+tableFile.size+'/'+tableFile.lastModified} file={tableFile} rows={rows} removed={removed} onAdd={onAddTexts} onClose={()=>onTableDone?.()} onUseAsLabels={(sheet,fileName)=>{setLabelSheet({sheet,fileName});setDialog('labels');onTableDone?.();}}/>}
   {dialog==='sample'&&<SampleDialog rows={rows} columns={columns} samples={samples} unit={unit} onApply={onApply} onClose={()=>setDialog('')}/>}
  </div>;
 }
