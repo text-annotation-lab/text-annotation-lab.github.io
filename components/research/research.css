@@ -303,3 +303,5 @@
 .research-glance ul{margin:10px 0 0;padding-left:18px;font-size:13.5px;color:#19334f}
 .research-glance li{margin:3px 0}
 .research-glance p.research-glance-title{margin:10px 0 0;font-size:13px;color:#53657a}
+.batch-parts{margin:10px 0;padding-left:22px;line-height:1.6;list-style:decimal}
+.batch-parts code{font-family:monospace;overflow-wrap:anywhere}

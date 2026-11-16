@@ -476,8 +476,10 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   // As a batch: one file per text, sent as many times as it has annotations to make; results come back per request.
   const jobs=[];let returned=()=>[];
   const b=harness({...stored(),processing:'batch'},async()=>{},async(url,options)=>{
-   assert.equal(url,'/api/batch');const action=options.body.get('action');
-   if(action==='submit'){jobs.push({ids:JSON.parse(options.body.get('ids')),copies:options.body.get('copies'),files:options.body.getAll('files').map(file=>file.name)});return Response.json({id:'batch_'+jobs.length});}
+   const action=options.body.get('action');assert.equal(url,action==='prepare'?'/api/batch?split=1':'/api/batch');
+   // Research mode prepares the run first, then sends it batch by batch (here one).
+   if(action==='prepare'){jobs.push({ids:JSON.parse(options.body.get('ids')),copies:options.body.get('copies'),files:options.body.getAll('files').map(file=>file.name)});const n=jobs.at(-1).ids.length;return Response.json({parts:[{items:[0,jobs.at(-1).files.length],requests:[0,n],bytes:1}],bytes:1,requests:n,bySize:false});}
+   if(action==='send'){assert.equal(options.body.get('part'),'0');return Response.json({id:'batch_'+jobs.length});}
    if(action==='check')return Response.json({terminal:true,state:'completed',completed:1,total:1});
    return Response.json({terminal:true,state:'completed',results:returned(jobs.at(-1).ids)});
   });
@@ -506,6 +508,37 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   const refused=harness({...stored(),processing:'batch',docs:[{...docs[0],annotations:docs[0].annotations.slice(0,2),file:new File(['Text 0'],'text-0.txt')},documents()[1]],runs:b.latest().runs},async()=>{},async()=>Response.json({error:'The provider did not accept the batch.',uncertain:false},{status:400}));
   await research(refused);await refused.button('Remaining').props.onClick();await refused.flush();
   assert.equal(refused.latest().batchJob,null);assert.deepEqual(refused.latest().docs.map(doc=>[doc.status,doc.annotations?.length]),[['done',2],['pending',undefined]]);
+  // A run larger than one provider batch: sent as two batches in the same run, each recorded as it goes up, and
+  // collected batch by batch as each ends, into one set of results.
+  const parts=[{items:[0,2],requests:[0,6],bytes:1},{items:[2,3],requests:[6,9],bytes:1}],ended=new Set(),putUp=[];let refuse=false;
+  const twoBatches=async(url,options)=>{
+   const action=options.body.get('action'),id=options.body.get('id');
+   if(action==='prepare'){assert.equal(url,'/api/batch?split=1');return Response.json({parts,bytes:2,requests:9,bySize:false});}
+   if(action==='send'){putUp.push(options.body.get('part'));if(refuse&&options.body.get('part')==='1')return Response.json({error:'This model is not available for batches.',uncertain:false},{status:400});return Response.json({id:'batch_p'+(Number(options.body.get('part'))+1)});}
+   if(!ended.has(id))return Response.json({terminal:false,state:'in_progress',completed:0,total:3});
+   if(action==='check')return Response.json({terminal:true,state:'completed',completed:3,total:3});
+   const runId=s.latest().batchJob.runId,[from,to]=id==='batch_p1'?[0,6]:[6,9];
+   return Response.json({terminal:true,state:'completed',completed:to-from,total:to-from,results:Array.from({length:to-from},(_,i)=>({id:runId+'_'+(from+i),score:'POSITIVE',explanation:'Part '+id,tokens:2}))});
+  };
+  const s=harness({...stored(),processing:'batch'},async()=>{},twoBatches);
+  await research(s);await s.button('Remaining').props.onClick();await s.flush();
+  let job=s.latest().batchJob;
+  assert.deepEqual(putUp,['0','1']);assert.deepEqual(job.parts.map(part=>[part.id,part.state,part.items.join('-')]),[['batch_p1','processing','0-2'],['batch_p2','processing','2-3']]);assert.equal(job.id,undefined);
+  assert.deepEqual(s.writes.filter(w=>w.batchJob?.parts).map(w=>w.batchJob.parts.map(part=>part.state).join()).slice(0,5),['waiting,waiting','submitting,waiting','processing,waiting','processing,submitting','processing,processing'],'Each batch is recorded before and after it goes up');
+  assert(s.latest().docs.every(doc=>doc.status==='queued'&&doc.runSize===9));
+  ended.add('batch_p1');await s.button('Check status').props.onClick();await s.flush();
+  assert.deepEqual(s.latest().batchJob.parts.map(part=>part.state),['ready','processing']);
+  await s.button('Collect results').props.onClick();await s.flush();
+  assert.deepEqual(s.latest().docs.map(doc=>[doc.status,doc.batchId]),[['done','batch_p1'],['done','batch_p1'],['queued',undefined]]);assert.deepEqual(s.latest().batchJob.parts.map(part=>part.state),['collected','processing']);
+  ended.add('batch_p2');await s.button('Check status').props.onClick();await s.flush();await s.button('Collect results').props.onClick();await s.flush();
+  assert.equal(s.latest().batchJob,null);assert.deepEqual(s.latest().docs.map(doc=>[doc.status,doc.batchId,doc.annotations.length,doc.runNo]),[['done','batch_p1',3,1],['done','batch_p1',3,1],['done','batch_p2',3,1]]);assert.equal(s.latest().runs.length,1);
+  assert(s.all(n=>n.props?.role==='status').some(n=>s.text(n).includes('Batch results collected from all 2 batches of this run.')));
+  // A batch the provider refuses: the one sent continues, and the texts of the other are back where they were.
+  putUp.length=0;refuse=true;ended.clear();
+  const r2=harness({...stored(),processing:'batch'},async()=>{},(url,options)=>twoBatches(url,options));
+  await research(r2);await r2.button('Remaining').props.onClick();await r2.flush();
+  assert.deepEqual(r2.latest().batchJob.parts.map(part=>part.state),['processing','unsent']);assert.deepEqual(r2.latest().docs.map(doc=>doc.status),['queued','queued','pending']);
+  assert(r2.all(n=>n.props?.role==='status').some(n=>r2.text(n).startsWith('Batch 2 of 2 was not submitted: This model is not available for batches. Batch 1 was submitted and continues in this run. The 1 texts')));
  }
 
  // Deleting texts (research mode, the More menu above the table). A text a run used leaves the Workspace but stays

@@ -3,7 +3,8 @@ import {providerError,incompleteAnnotation} from './provider-errors';
 import {extractText,TextEncodingError} from './extract-text';
 import type {Provider} from './providers';
 import type {BatchResult,BatchUpdate} from './batch-types';
-import {MAX_BATCH_ITEMS,MAX_BATCH_PREPARED_BYTES,MAX_GEMINI_PREPARED_BYTES} from './batch-limits';
+import {MAX_BATCH_ITEMS,MAX_BATCH_PREPARED_BYTES,MAX_GEMINI_PREPARED_BYTES,MAX_SPLIT_PREPARED_BYTES,MAX_RECORDED_RESULT_BYTES,SPLIT_LIMITS} from './batch-limits';
+import {groupParts} from './research/batch-split';
 import type {RequestSettings} from './request-settings';
 import {providerBody,replyCode,replyText,reasoningSummary} from './request-frame';
 
@@ -39,14 +40,17 @@ async function* resultRows(provider:Provider,key:string,url:string){
  }catch(error){if(error instanceof BatchError)throw error;throw new BatchError('The batch result download was interrupted. Your saved job is unchanged; collect again.',502);}
  finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
 }
+const payloadHead=(provider:Provider,name:string)=>provider==='openai'?'':provider==='anthropic'?'{"requests":[':'{"batch":{"display_name":'+JSON.stringify(name)+',"input_config":{"requests":{"requests":[';
+const payloadTail=(provider:Provider)=>provider==='openai'?'':provider==='anthropic'?']}':']}}}}';
+const payloadRow=(provider:Provider,id:string,body:unknown)=>provider==='openai'?{custom_id:id,method:'POST',url:'/v1/responses',body}:provider==='anthropic'?{custom_id:id,params:body}:{request:body,metadata:{key:id}};
 export function createBatchPayload(provider:Provider,runId:string){
  const parts:Blob[]=[];
- const prefix=provider==='openai'?'':provider==='anthropic'?'{"requests":[':'{"batch":{"display_name":'+JSON.stringify('Text Annotation Lab '+runId)+',"input_config":{"requests":{"requests":[';
- const suffix=provider==='openai'?'':provider==='anthropic'?']}':']}}}}';
+ const prefix=payloadHead(provider,'Text Annotation Lab '+runId);
+ const suffix=payloadTail(provider);
  let bytes=new Blob([prefix,suffix]).size;
  return {
   append(id:string,body:unknown){
-   const row=provider==='openai'?{custom_id:id,method:'POST',url:'/v1/responses',body}:provider==='anthropic'?{custom_id:id,params:body}:{request:body,metadata:{key:id}};
+   const row=payloadRow(provider,id,body);
    const part=new Blob([(parts.length?(provider==='openai'?'\n':','):''),JSON.stringify(row)]);
    bytes+=part.size;
    const limit=provider==='gemini'?MAX_GEMINI_PREPARED_BYTES:MAX_BATCH_PREPARED_BYTES;
@@ -54,6 +58,32 @@ export function createBatchPayload(provider:Provider,runId:string){
    parts.push(part);
   },
   finish(){return new Blob([prefix,...parts,suffix],{type:provider==='openai'?'application/jsonl':'application/json'});}
+ };
+}
+// Research mode: the requests of a run, kept text by text, then grouped into batches within the provider's limits
+// (several batches in one run when it is larger than one batch). item: the text a request belongs to, in order.
+export function createSplitPayload(provider:Provider,runId:string){
+ const rows:Blob[]=[],sizes:number[]=[],counts:number[]=[];let total=0;
+ const separator=provider==='openai'?'\n':',',name=(k:number,n:number)=>'Text Annotation Lab '+runId+(n>1?` (batch ${k+1} of ${n})`:'');
+ return {
+  append(item:number,id:string,body:unknown){
+   const row=new Blob([JSON.stringify(payloadRow(provider,id,body))]);rows.push(row);
+   while(sizes.length<=item){sizes.push(0);counts.push(0);}
+   sizes[item]+=row.size;counts[item]++;total+=row.size;
+   if(total>MAX_SPLIT_PREPARED_BYTES)throw new BatchError('This run comes to more than 2 GB of requests, more than the Lab prepares at once. Send it in several runs. No batch was submitted.',413);
+  },
+  plan(){
+   const limit=SPLIT_LIMITS[provider as keyof typeof SPLIT_LIMITS],overhead=new Blob([payloadHead(provider,name(998,999)),payloadTail(provider)]).size;
+   const parts=groupParts(sizes,counts,limit,overhead,separator.length);
+   if(!Array.isArray(parts))throw new BatchError(`Text ${parts.tooLarge+1} of this run is larger, with its annotations, than one ${limit.label} batch can hold. Use fewer annotations per text, or Instant processing for it. No batch was submitted.`,413);
+   const bytes=parts.reduce((n,part)=>n+part.bytes,0);
+   return {parts,bytes,requests:rows.length,bySize:bytes>limit.bytes};
+  },
+  assemble(part:{requests:[number,number]},k:number,n:number){
+   // (Taken out of the list, so the page can let go of them once the batch has gone up.)
+   const list=rows.slice(part.requests[0],part.requests[1]);rows.fill(new Blob(),part.requests[0],part.requests[1]);
+   return new Blob([payloadHead(provider,name(k,n)),...list.flatMap((row,i)=>i?[separator,row]:[row]),payloadTail(provider)],{type:provider==='openai'?'application/jsonl':'application/json'});
+  }
  };
 }
 export async function buildBatchBody(provider:Provider,file:File,prompt:string,model:string,effort:string,knowledge=false,webSearch=false,answerFields:string[]=[],settings?:AnswerSettings,request?:RequestSettings,written?:string){
@@ -65,12 +95,12 @@ export async function buildBatchBody(provider:Provider,file:File,prompt:string,m
  return providerBody({provider,model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge,batch:true,inserts:written!==undefined},pdf?{filename:file.name,pdf:data}:{filename:file.name,text:data});
 }
 export function validBatchId(provider:Provider,id:unknown):id is string{return typeof id==='string'&&(provider==='openai'?/^batch_[a-zA-Z0-9_-]+$/:provider==='anthropic'?/^msgbatch_[a-zA-Z0-9_-]+$/:/^batches\/[a-zA-Z0-9_-]+$/).test(id);}
-export async function createBatch(provider:Provider,key:string,model:string,runId:string,payload:Blob){
+export async function createBatch(provider:Provider,key:string,model:string,runId:string,payload:Blob,part?:{index:number;of:number}){
  if(provider==='openai'){
   const form=new FormData();form.set('purpose','batch');form.set('file',new File([payload],'annotation-batch.jsonl',{type:'application/jsonl'}));
   const upload=await call(provider,key,'https://api.openai.com/v1/files',{method:'POST',body:form});
   if(typeof upload.id!=='string'||!/^file-[\w-]+$/.test(upload.id))throw new BatchError('The batch input upload could not be confirmed. No batch was submitted.',502);
-  const out=await call(provider,key,'https://api.openai.com/v1/batches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input_file_id:upload.id,endpoint:'/v1/responses',completion_window:'24h',metadata:{lab_run_id:runId}})},true);
+  const out=await call(provider,key,'https://api.openai.com/v1/batches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input_file_id:upload.id,endpoint:'/v1/responses',completion_window:'24h',metadata:{lab_run_id:runId,...(part?{lab_batch:`${part.index+1} of ${part.of}`}:{})}})},true);
   if(!validBatchId(provider,out.id))throw new BatchError('Batch creation was not confirmed. Check OpenAI before retrying.',502,true);return out.id as string;
  }
  const url=provider==='anthropic'?'https://api.anthropic.com/v1/messages/batches':`https://generativelanguage.googleapis.com/v1beta/models/${model}:batchGenerateContent`;
@@ -118,7 +148,7 @@ export async function checkBatch(provider:Provider,key:string,id:string,collect:
  const total=Number(provider==='anthropic'?completed+(counts.processing||0):counts.total||counts.requestCount||0);
  const update:BatchUpdate={id,terminal,state,completed,total};if(!terminal||!collect)return update;
  const results:BatchResult[]=[],seen=new Set<string>();let resultBytes=0;
- const append=(result:BatchResult)=>{if(typeof result.id!=='string'||seen.has(result.id))throw new BatchError('The results could not be matched reliably to documents. Check the provider’s batch output.',502);seen.add(result.id);resultBytes+=new TextEncoder().encode(JSON.stringify(result)).length;if(results.length>=MAX_BATCH_ITEMS||resultBytes>MAX_RESULT_BYTES)throw new BatchError('The annotations exceed the collection limit. Download them from your provider’s console. Your saved job is unchanged.',413);results.push(result);};
+ const append=(result:BatchResult)=>{if(typeof result.id!=='string'||seen.has(result.id))throw new BatchError('The results could not be matched reliably to documents. Check the provider’s batch output.',502);seen.add(result.id);resultBytes+=new TextEncoder().encode(JSON.stringify(result)).length;if(results.length>=MAX_BATCH_ITEMS||resultBytes>(record?MAX_RECORDED_RESULT_BYTES:MAX_RESULT_BYTES))throw new BatchError('The annotations exceed the collection limit. Download them from your provider’s console. Your saved job is unchanged.',413);results.push(result);};
  if(provider==='openai'){
   for(const fileId of [out.output_file_id,out.error_file_id]){if(!fileId)continue;if(!/^file-[\w-]+$/.test(fileId))throw new BatchError('The provider returned an invalid results reference.',502);for await(const row of resultRows(provider,key,'https://api.openai.com/v1/files/'+fileId+'/content')){append({id:row.custom_id,...(row.error||row.response?.status_code!==200?{error:'This request failed in the batch. Check the provider’s batch results before retrying.'}:parseBatchAnnotation(provider,row.response.body,plain,record,summary))});}}
  }else if(provider==='anthropic'){
