@@ -126,11 +126,16 @@ export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
 
 // The corpus: one row per text, with the text as it was sent. A PDF is sent as a file, so it has no text here;
 // `file` then names the PDF in the package. filename is the name each request gave for the document.
-export function corpusTable(dataset:Dataset,rows:Row[],texts:Map<string,string>,files:Map<string,string>):Table{
+function corpusHeader(dataset:Dataset,withFiles:boolean){
  const lead=identity(dataset),uploaded=dataset.kind==='texts';
  const taken=new Set([...lead.header,'filename','text','n_characters','file'].map(lower));
- const header=[...lead.header,...(uploaded?['filename']:[]),'text','n_characters',...(files.size?['file']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_')];
- return [uniqueNames(header),...rows.map(row=>{
+ return {lead,uploaded,header:uniqueNames([...lead.header,...(uploaded?['filename']:[]),'text','n_characters',...(withFiles?['file']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_')])};
+}
+// The names the corpus table gives the study's label and metadata columns, in the columns' order.
+export const corpusColumnNames=(dataset:Dataset):string[]=>dataset.columns.length?corpusHeader(dataset,false).header.slice(-dataset.columns.length):[];
+export function corpusTable(dataset:Dataset,rows:Row[],texts:Map<string,string>,files:Map<string,string>):Table{
+ const {lead,uploaded,header}=corpusHeader(dataset,files.size>0);
+ return [header,...rows.map(row=>{
   const text=texts.get(row.id);
   return [...lead.cells(row),...(uploaded?[String(row.file?.name??row.name??'')]:[]),text??'',text===undefined?'':text.length,...(files.size?[files.get(row.id)??'']:[]),...dataset.columns.map((_,c)=>row.cells?.[c]??'')];
  })];

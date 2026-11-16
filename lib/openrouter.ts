@@ -10,7 +10,8 @@ export const openRouterKey=(key:string)=>/^sk-or-[\w-]+$/.test(key);
 // record (research mode): the reply also carries the model and upstream provider named in the response, its
 // finish reason, the text it returned, and, where the request asked for it, the model's reasoning as passed on.
 // request: research mode's request settings, as they apply to this model (lib/request-settings.ts).
-export async function annotateOpenRouter(file:File,prompt:string,model:string,effort:string,key:string,knowledge=false,answerFields:string[]=[],schemaPrompt=prompt,settings?:AnswerSettings,request?:RequestSettings,record=false){
+// inserts (research mode): the prompt's placeholders were filled in for this text; schemaPrompt has them as written.
+export async function annotateOpenRouter(file:File,prompt:string,model:string,effort:string,key:string,knowledge=false,answerFields:string[]=[],schemaPrompt=prompt,settings?:AnswerSettings,request?:RequestSettings,record=false,inserts=false){
  try{
   const pdfInput=/\.pdf$/i.test(file.name);
   let doc:RequestDocument;
@@ -26,7 +27,7 @@ export async function annotateOpenRouter(file:File,prompt:string,model:string,ef
   }
   const response=await fetch(requestUrl('openrouter',model),{
    method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('openrouter',model,request)),
-   body:JSON.stringify(providerBody({provider:'openrouter',model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge},doc))
+   body:JSON.stringify(providerBody({provider:'openrouter',model,effort,prompt,schemaPrompt,answerFields,settings,request,knowledge,inserts},doc))
   });
   const out:any=await providerJson(response);
   const served=[out?.model,out?.provider].map(replyCode).filter(Boolean).join(' via ');

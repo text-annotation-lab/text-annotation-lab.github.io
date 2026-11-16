@@ -7,6 +7,7 @@ import {knowledgeInstructions,knowledgeItemText,validKnowledgeFields} from '@/li
 import {MAX_BATCH_ITEMS,MAX_BATCH_SOURCE_BYTES,MAX_BATCH_REQUEST_BYTES} from '@/lib/batch-limits';
 import {readRequestSettings} from '@/lib/request-settings';
 import {formText} from '@/lib/request-frame';
+import {readInserts,fillInserts} from '@/lib/prompt-inserts';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export async function POST(request:Request){
  try{
@@ -47,6 +48,11 @@ export async function POST(request:Request){
     try{copies=JSON.parse(String(f.get('copies')));}catch{throw new BatchError('Could not read the number of annotations per item.');}
     if(!Array.isArray(copies)||copies.length!==files.length||copies.some(n=>!Number.isInteger(n)||n<1||n>10))throw new BatchError('Provide 1 to 10 annotations for each item.');
    }
+   // Research mode: each item's values for the placeholders of the prompt ({{id}}, {{meta.<column>}}).
+   let inserts:string[][]|undefined;
+   if(f.get('inserts')!==null){
+    try{const raw:unknown=JSON.parse(String(f.get('inserts')));if(!Array.isArray(raw)||raw.length!==files.length)throw Error();inserts=raw.map(values=>{const read=readInserts(values,prompt);if(!read)throw Error();return read;});}catch{throw new BatchError('Could not read the values for the placeholders of the prompt.');}
+   }
    const total=copies?copies.reduce((sum,n)=>sum+n,0):files.length;
    if(!files.length||total>MAX_BATCH_ITEMS||!Array.isArray(ids)||ids.length!==total||new Set(ids).size!==ids.length||ids.some((id,i)=>typeof id!=='string'||id!==runId+'_'+i))throw new BatchError(copies?'Submit between 1 and 10,000 requests (items × annotations per item) with unique references.':'Submit between 1 and 10,000 items with unique references.');
    if(files.some(file=>!(file instanceof File)||!file.size||file.size>20*1024*1024||!supportedFile.test(file.name)))throw new BatchError('Use nonempty PDF, DOCX, TXT, MD, HTML, or RTF documents.');
@@ -54,7 +60,11 @@ export async function POST(request:Request){
    // Validate and prepare everything before submitting any paid provider job.
    const payload=createBatchPayload(provider,runId);
    f.delete('files');f.delete('subjects');
-   for(let i=0,at=0;i<files.length;i++){const body=await buildBatchBody(provider,files[i] as File,knowledge?prompt+'\n\n'+knowledgeInstructions(false):prompt,model,effort,knowledge,false,answerFields,answerSettings,requestSettings);for(let copy=0;copy<(copies?copies[i]:1);copy++)payload.append(ids[at++],body);files[i]='';}
+   const added=knowledge?'\n\n'+knowledgeInstructions(false):'';
+   for(let i=0,at=0;i<files.length;i++){
+    const written=inserts?fillInserts(prompt,inserts[i]):prompt;
+    if(written.length>100000)throw new BatchError(`${(files[i] as File).name}: with the values of its placeholders filled in, the prompt is longer than 100,000 characters.`);
+    const body=await buildBatchBody(provider,files[i] as File,written+added,model,effort,knowledge,false,answerFields,answerSettings,requestSettings,inserts?prompt+added:undefined);for(let copy=0;copy<(copies?copies[i]:1);copy++)payload.append(ids[at++],body);files[i]='';}
    return reply({id:await createBatch(provider,key,model,runId,payload.finish())});
   }
   const id=f.get('id');if(!validBatchId(provider,id))throw new BatchError('Enter a valid batch ID for the selected provider.');

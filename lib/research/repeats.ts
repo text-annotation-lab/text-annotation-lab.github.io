@@ -25,7 +25,7 @@ type Result={status?:string;repeats?:unknown;annotations?:Annotation[];consisten
 // The first three name the click it was sent with: an annotation made later than its text's others (a missing
 // one that was filled in) has its own, so the cost of a click counts only the requests of that click.
 const SENT_KEYS=['runId','runStartedAt','runSize'] as const;
-const OWN_KEYS=['inputMode','rawResponse','answers','score','explanation','error','tokens','usage','responseId','time','startedAt','processing','batchId','concurrency','requestId','modelReported','stopReason','output','reasoningSummary','lab'] as const;
+const OWN_KEYS=['inputMode','rawResponse','answers','score','explanation','error','tokens','usage','responseId','time','startedAt','processing','batchId','concurrency','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts'] as const;
 export const ANNOTATION_KEYS=[...SENT_KEYS,...OWN_KEYS] as const;
 // What a failed annotation that was sent again keeps of its text's result, as a failed attempt in `history`.
 const SETTING_KEYS=['runId','runStartedAt','runSize','responseFormat','answerFields','answerSettings','requestSettings','provider','model','effort','prompt','runNo','repeats'] as const;

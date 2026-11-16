@@ -6,10 +6,12 @@
 import {fieldSpec,PLAIN_FIELD} from '../answer-types';
 import {reasoningOptionLabel,type Provider} from '../providers';
 import {fillRequest} from '../request-frame';
+import {insertMap,markedInserts} from '../prompt-inserts';
+import {columnIndex} from './columns';
 import {agreementTable,runAgreement,type AgreementLine,type Intervals,type LabelPair,type Skipped} from './export-agreement';
 import {fileHash,fullestRun,requestFinder,requestLines,requestParts,runFolder,runRequests,type DocumentReader,type ExportStudy,type RunRequests,type SentRequest} from './export-data';
 import {fillScript,keyVariable,REQUIREMENTS,SCRIPT_TEMPLATE,scriptValues} from './export-python';
-import {codebook,corpusRecords,corpusTable,promptHashes,requestsTable,resultsTable,runFacts,runsOverview,type RunFacts,type Table} from './export-tables';
+import {codebook,corpusColumnNames,corpusRecords,corpusTable,promptHashes,requestsTable,resultsTable,runFacts,runsOverview,type RunFacts,type Table} from './export-tables';
 import {buildWorkbook,isProse,type Sheet} from './export-workbook';
 import {fileStem,runLines,samplesTable,sourceOf,unitOf,wideTable} from './export';
 import {BOOTSTRAP_RESAMPLES,fixed,fmtStat} from './metrics';
@@ -63,14 +65,16 @@ async function runLogs(ctx:ExportContext,run:number,find:(row:Row,result:Row)=>S
  for(const [i,{row,replicate,attempt,result,replaced}] of lines.entries()){
   if(i%100===0)await ctx.onProgress?.(`Writing the requests and replies of run ${run} (${count(i)} of ${count(lines.length)})`);
   const head={doc_id:String(row.id),[name]:String(row.name??''),run,replicate,attempt,...(replaced?{sent_again:true}:{})},sent=find(row,result),doc=await ctx.read(row,result);
+  // The values the request was sent with in place of the prompt's placeholders, as kept with its result.
+  const inserts=insertMap(String(result.prompt??''),Array.isArray(result.inserts)?result.inserts:undefined);
   let request:unknown=null,note='';
   if(!sent)note='The settings of this request were not recorded, so it cannot be shown.';
   else if(!doc)note='The document of this request could not be read, so only the request’s address is shown.';
   else if('pdf' in doc){
    if(!hashes.has(row.id))hashes.set(row.id,await fileHash(doc.pdf));
    const path=filePath(row);
-   request=fillRequest(sent.frame.body,{filename:doc.filename,file:`[PDF file: ${doc.filename}, ${doc.pdf.size} bytes, SHA-256 ${hashes.get(row.id)}; ${path?'in this package at '+path:'not included in this package'}]`});
-  }else request=fillRequest(sent.frame.body,{filename:doc.filename,text:doc.text});
+   request=fillRequest(sent.frame.body,{filename:doc.filename,file:`[PDF file: ${doc.filename}, ${doc.pdf.size} bytes, SHA-256 ${hashes.get(row.id)}; ${path?'in this package at '+path:'not included in this package'}]`,inserts});
+  }else request=fillRequest(sent.frame.body,{filename:doc.filename,text:doc.text,inserts});
   requests.push({...head,...(sent?{recorded:sent.recorded?'kept when the request was sent':'built again from the result’s settings by the version of the Lab that made this export',...(sent.formatUnchanged===undefined?{}:{answer_format_unchanged:sent.formatUnchanged}),url:sent.frame.url}:{}),...(note?{note}:{}),request});
   const done=result.status==='done',reply=result.output??result.rawResponse??(result.answerSettings?.plain?result.answers?.f0:undefined);
   responses.push({...head,status:done?'ok':'error',...(done?{}:{error:String(result.error??'')}),response_text:typeof reply==='string'?reply:null,...(typeof result.reasoningSummary==='string'?{reasoning_summary:result.reasoningSummary}:{}),model_reported:result.modelReported??null,stop_reason:result.stopReason??null,response_id:result.responseId??null,
@@ -158,6 +162,27 @@ function promptFiles(study:ExportStudy,report:RunReport,parts:{prompt:boolean}):
  const {run}=report.facts,frame=(report.sent.text||report.sent.pdf)?.frame,sent=frame?requestParts(frame):undefined;
  return [...(parts.prompt?[{path:'prompt.txt',data:run.prompt}]:[]),...(sent?.system?[{path:'prompt_as_sent.txt',data:sent.system}]:[]),{path:'codebook.md',data:codebook(run.answerFields,run.answerSettings,study.dataset.kind==='knowledge')},...(sent?.schema?[{path:'output_schema.json',data:pretty(sent.schema)}]:[])];
 }
+// The placeholders of a run's prompt that were filled in for each text, read from the marks of its request.
+const runInserts=(sent:RunRequests):string[]=>markedInserts((sent.text||sent.pdf)?.frame.body||'');
+// Where the corpus table holds the values of each: {{id}} is the text's name, {{meta.<column>}} a metadata
+// column (null: the study no longer has it).
+function insertColumns(dataset:ExportStudy['dataset'],names:string[]):[string,string|null][]{
+ const columns=corpusColumnNames(dataset);
+ return names.map(name=>{
+  if(name==='id')return [name,dataset.kind==='knowledge'?'subject':'document'];
+  const index=columnIndex(dataset.columns,name.slice(5));
+  return [name,index>=0&&dataset.columns[index].role==='meta'?columns[index]:null];
+ });
+}
+const listed=(items:string[])=>items.length>2?items.slice(0,-1).join(', ')+', and '+items[items.length-1]:items.join(' and ');
+const written=(names:string[])=>listed(names.map(name=>`\`{{${name}}}\``));
+// The placeholders that held a value in at least one request of a run, read from the values kept with its
+// results. One that names a column of human labels, no column at all, or an empty column held none.
+function valuedInserts(dataset:ExportStudy['dataset'],run:number):Set<string>{
+ const valued=new Set<string>();
+ for(const line of requestLines(dataset))if(line.run===run&&Array.isArray(line.result.inserts))for(const [name,value] of insertMap(String(line.result.prompt??''),line.result.inserts))if(value!=='')valued.add(name);
+ return valued;
+}
 // The script that sends a run's requests again, with its template. No script: a run whose requests carried web
 // search results collected for each subject (the search is a step of its own), or a run without a known request.
 function scriptFiles(study:ExportStudy,report:RunReport,exportedAt:string):{files:PackageFile[];why:string}{
@@ -170,7 +195,7 @@ function scriptFiles(study:ExportStudy,report:RunReport,exportedAt:string):{file
   facts.processing!=='instant'?'The run used the provider’s batch interface; this script sends the same request bodies one by one.':''].filter(Boolean);
  // Lines of at most about 78 characters, as in the rest of the script's opening text.
  const wrap=(text:string)=>text.split(' ').reduce<string[]>((lines,word)=>{const last=lines[lines.length-1];if(last!==undefined&&(last+' '+word).length<=78)lines[lines.length-1]=last+' '+word;else lines.push(word);return lines;},[]).join('\n');
- const values=scriptValues({lab:study.lab,studyName:study.name,runDescription:`#${run.number}, started ${run.startedAt}${facts.labs.length?` with the Lab’s version ${facts.labs.join('; ')}`:''}; exported ${exportedAt}`,provider:run.provider as Provider,text:sent.text?.frame,pdf:sent.pdf?.frame,fields:run.answerFields,plain:Boolean(run.answerSettings?.plain),repeats:run.repeats||1,note:notes.map(wrap).join('\n')});
+ const values=scriptValues({lab:study.lab,studyName:study.name,runDescription:`#${run.number}, started ${run.startedAt}${facts.labs.length?` with the Lab’s version ${facts.labs.join('; ')}`:''}; exported ${exportedAt}`,provider:run.provider as Provider,text:sent.text?.frame,pdf:sent.pdf?.frame,fields:run.answerFields,plain:Boolean(run.answerSettings?.plain),repeats:run.repeats||1,note:notes.map(wrap).join('\n'),inserts:insertColumns(study.dataset,runInserts(sent))});
  return {files:[{path:'annotate_template.py',data:SCRIPT_TEMPLATE},{path:'annotate.py',data:fillScript(SCRIPT_TEMPLATE,values)},{path:'requirements.txt',data:REQUIREMENTS}],why:''};
 }
 
@@ -191,11 +216,15 @@ export function methodsParagraph(study:ExportStudy,report:RunReport,record:RunRe
  const ties=voted.map(name=>[name,results.filter(result=>tiedVote(result,name)).length] as const).filter(tie=>tie[1]>0);
  const tieText=!voted.length?'':` A tied vote is kept as both values (for example, “a | b”) and counts as a disagreement in the agreement figures${ties.length?` (${ties.map(([name,n],i)=>`${i?count(n):units(n)} for ${fieldLabel(name)}`).join(', ')})`:'; no vote was tied'}.`;
  const combined=reps<2?'':plain?`${annotated}; numbers in the answers were combined by the median, other values by majority vote.`:`${annotated}; ${!run.answerFields.some(name=>typeOf(name))?'the answers were combined by majority vote':kinds.length>2?kinds.slice(0,-1).join(', ')+', and '+kinds[kinds.length-1]:kinds.join(' and ')}.${tieText}`;
+ // Placeholders of the prompt that held a text's own value.
+ const valued=valuedInserts(study.dataset,run.number),inserted=runInserts(report.sent).filter(name=>valued.has(name)),metaNames=inserted.filter(name=>name!=='id').map(name=>name.slice(5)),insertedParts=[...(inserted.includes('id')?['its name']:[]),...(metaNames.length?[`its value${metaNames.length===1?'':'s'} of the metadata column${metaNames.length===1?'':'s'} ${listed(metaNames)}`]:[])];
+ const insertedText=insertedParts.length?`For each ${unit}, the prompt was completed with ${insertedParts.join(' and ')}.`:'';
  // What the package holds: no request without recorded settings, and no script for a run that carried web search results.
  const known=Boolean(report.sent.text||report.sent.pdf),provided=['The full prompt',...(known?['the requests as sent']:[]),...(known&&!facts.webSearch?['an executable script']:[])];
  return [
   `${unit==='text'?'Texts':'Subjects'} (N = ${count(facts.usable)}) were annotated with ${run.model} (${run.provider==='openrouter'?'through the OpenRouter API':(PROVIDER_NAMES[run.provider]||run.provider)+' API'}${reported})${period}, using ${[effort,...(typeof record.model.temperature==='number'?[`temperature ${record.model.temperature}`]:[])].join(', ')}${limit?`${typeof record.model.temperature==='number'?',':''} and a maximum of ${count(limit)} output tokens`:''}.`,
   knowledge?`No source texts were supplied: the model answered from what it has learned, given a few identifying details for each subject (see the prompt and the list of subjects).${facts.webSearch?' Web search results collected beforehand for each subject were supplied with the request.':''}`:'',
+  insertedText,
   run.answerSettings?.plain?'The model returned free-text responses.':`The model was required to return the answer fields listed in the codebook as JSON conforming to a schema (structured outputs)${explanationRequested(facts)?', with an explanation written before the answers':''}.`,
   combined,
   retried?`${retried}${failedText?`; after this, ${failedText}`:''}.`:failedText?failedText+'.':'',
@@ -225,6 +254,9 @@ function agreementSection(study:ExportStudy,report:RunReport):string[]{
 
 function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord,options:SupplementaryOptions,has:{agreement:boolean;script:boolean;scriptWhy:string;schema:boolean;asSent:boolean;files:number;unread:number}):string{
  const {dataset}=study,{facts}=report,{run}=facts,unit=unitOf(dataset),knowledge=dataset.kind==='knowledge',plain=Boolean(run.answerSettings?.plain);
+ // Placeholders of the prompt that were filled in for each text, and where the corpus holds their values.
+ const inserted=runInserts(report.sent),valued=valuedInserts(dataset,run.number),metaFilled=inserted.filter(name=>name!=='id'&&valued.has(name)),unfilled=inserted.filter(name=>!valued.has(name));
+ const insertedNote=inserted.length?`. Its placeholders were filled in for each ${unit}: ${[inserted.includes('id')&&valued.has('id')?`\`{{id}}\` with the ${unit}’s name`:'',metaFilled.length?`${written(metaFilled)} with its value${metaFilled.length===1?' in that metadata column':'s in those metadata columns'}`:'',unfilled.length?`${written(unfilled)} ${unfilled.length===1?'was':'were'} filled in empty for every ${unit} (${unfilled.length===1?'it names':'they name'} no metadata column, or an empty one)`:''].filter(Boolean).join('; ')}`:'';
  const lines=[`# ${study.name}: LLM annotation materials`,'',
   `Supplementary materials for the LLM-based annotation (run #${run.number}), exported from the Text Annotation Lab (version ${study.lab}) on ${record.exported_at.slice(0,10)}.${facts.labs.length&&facts.labs.some(lab=>lab!==study.lab)?` The run was made with version ${facts.labs.join('; ')}.`:''}`,'',
   ...(run.active?['**This run was not finished when these materials were exported**: they describe the results so far.','']:[]),
@@ -237,9 +269,9 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   ...agreementSection(study,report),
   '## Methods text (draft)','','> '+methodsParagraph(study,report,record),'','Edit as needed; check every detail against `metadata.json`.','',
   '## Files','','| File | Contents |','|---|---|',
-  tableRow(['`metadata.json`','Machine-readable record of the model, settings, dates, counts, and token use, with the bodies of the requests as sent (marks stand for the document)']),
-  tableRow(['`prompt/prompt.txt`','The annotation prompt as written']),
-  ...(has.asSent?[tableRow(['`prompt/prompt_as_sent.txt`','The prompt as each request carried it: with the instructions the Lab adds'+(plain?'':' on the answer format')+(knowledge?' and on judging from learned knowledge':'')+', and with its line breaks as they were sent (CR LF)'])]:[]),
+  tableRow(['`metadata.json`','Machine-readable record of the model, settings, dates, counts, and token use, with the bodies of the requests as sent (marks stand for the document'+(inserted.length?' and for the values of the prompt’s placeholders':'')+')']),
+  tableRow(['`prompt/prompt.txt`','The annotation prompt as written'+insertedNote]),
+  ...(has.asSent?[tableRow(['`prompt/prompt_as_sent.txt`','The prompt as each request carried it: with the instructions the Lab adds'+(plain?'':' on the answer format')+(knowledge?' and on judging from learned knowledge':'')+', and with its line breaks as they were sent (CR LF)'+(inserted.length?'; the placeholders stand where each request had the values':'')])]:[]),
   ...(plain?[tableRow(['`prompt/codebook.md`','Says that the model returned free text: there were no answer fields and no answer format'])]:[tableRow(['`prompt/codebook.md`','The answer fields: types, allowed values, and descriptions']),...(has.schema?[tableRow(['`prompt/output_schema.json`','The JSON schema the replies had to follow'])]:[])]),
   tableRow(['`results/results.csv`',`One row per ${unit}${options.texts?` (with ${knowledge?'the details the model was given':'its text'})`:''}: answers${(run.repeats||1)>1?` (combined across the ${unit}’s annotations; \`<field>_replicate_agreement\` is the share of them that gave the combined value)`:''}, labels, and metadata`]),
   tableRow(['`results/results_by_replicate.csv`',`One row per request${(run.repeats||1)>1?` (${unit} × annotation; \`replicate\` numbers a ${unit}’s annotations)`:''}, with status, tokens, cost, and timing; a failed attempt that was sent again has a row of its own (\`sent_again\`)`]),
@@ -249,7 +281,7 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   ...(has.script?[tableRow(['`scripts/annotate.py`','Python script that sends the requests again (values inserted)']),tableRow(['`scripts/annotate_template.py`','The same script with `{{PLACEHOLDERS}}` marking every value that comes from the study']),tableRow(['`scripts/requirements.txt`','Says that the script needs no packages besides Python itself'])]:[]),
   '',CSV_NOTE,'',TOKEN_NOTE,'',...(options.logs?[LOG_NOTE+' A failed attempt’s request may never have reached the provider (a connection that broke, say).','']:[])];
  if(has.script)lines.push('## Reproducing','','```bash','cd scripts',`export ${keyVariable(run.provider as Provider)}=...`,`python annotate.py ${options.texts?'../data/corpus.csv':'your_corpus.csv'}`,'```','',
-  `The script needs Python 3.9 or later and nothing else. ${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files?' (or file, with the path of a PDF)':''}${knowledge?'':'; a column filename gives the name each request states for the document'}. `}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
+  `The script needs Python 3.9 or later and nothing else. ${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files?' (or file, with the path of a PDF)':''}${knowledge?'':'; a column filename gives the name each request states for the document'}${inserted.length?`; and the columns the prompt’s placeholders take their values from (${insertColumns(dataset,inserted).filter(pair=>pair[1]).map(pair=>pair[1]).join(', ')})`:''}. `}${inserted.length?`The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent${options.logs?' (the logs hold the requests as they were sent)':''}. `:''}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
  else if(has.scriptWhy)lines.push('## Reproducing','',has.scriptWhy+(options.logs?' The logs hold every request as it was sent.':' The requests as sent are in the logs when the package includes them.'),'');
  if(!options.texts)lines.push(`The annotated ${unit}s are not included in this package (for example, for copyright or privacy reasons).`,'');
  if(has.unread)lines.push(`${count(has.unread)} ${unit}${has.unread===1?'':'s'} could not be read when this package was made and ${has.unread===1?'has':'have'} no text here.`,'');
@@ -329,12 +361,14 @@ export async function buildResearchRepository(ctx:ExportContext,options:Research
   script=scriptFiles(study,report,exportedAt);
   for(const file of script.files)await add('scripts/'+file.path,file.data);
  }
+ // A prompt of the study has placeholders that were filled in for each text.
+ const filled=Boolean(study.requests?.some(request=>markedInserts(request.body).length));
  const rows:[string,string][]=[['`study.json`',`The study at a glance: its name, the number of ${unit}s, its runs, its label and metadata columns, and the samples drawn`],
   ...(ctx.backup?[['`study-backup.tal-study.json`',backupNote?`Not included: ${backupNote}`:`A backup of the whole study (both data sets, with the ${knowledge?'subjects':'uploaded files'}, every run, labels, and samples), which Studies → Import backup reads again`] as [string,string]]:[]),
   ['`corpus/corpus.csv`, `corpus.jsonl`',`Every ${unit} as it was sent, with labels and metadata`+(corpus.pdfs.length?'; a PDF was sent as a file and is in `corpus/files/`':'')],
   ['`prompts/vN/prompt.txt`','Each version of the annotation prompt, as written'],
-  ['`runs/run-NN/run.json`','The record of the run: model, settings, dates, counts, token use, and the bodies of its requests as sent (marks stand for the document)'],
-  ['`runs/run-NN/prompt_as_sent.txt`, `codebook.md`, `output_schema.json`','The prompt as each request carried it (with the instructions the Lab adds), the answer fields, and the JSON schema the replies had to follow (no schema for plain text)'],
+  ['`runs/run-NN/run.json`','The record of the run: model, settings, dates, counts, token use, and the bodies of its requests as sent (marks stand for the document'+(filled?' and for the values of a prompt’s placeholders':'')+')'],
+  ['`runs/run-NN/prompt_as_sent.txt`, `codebook.md`, `output_schema.json`','The prompt as each request carried it (with the instructions the Lab adds'+(filled?'; placeholders that were filled in for each '+unit+' stand as written':'')+'), the answer fields, and the JSON schema the replies had to follow (no schema for plain text)'],
   ['`runs/run-NN/results_long.csv`',`One row per request: answers, explanation, status, tokens, cost, and timing; \`replicate\` numbers a ${unit}’s annotations in a run that makes several per ${unit}; a failed attempt that was sent again has a row of its own (\`sent_again\`)`],
   ['`runs/run-NN/results_wide.csv`',`One row per ${unit}: answers, labels, and metadata; in a run that makes several annotations per ${unit}, the answers are the combined ones, and \`<field>_replicate_agreement\` is the share of the ${unit}’s annotations that gave the combined value`],
   ...(options.logs?[['`runs/run-NN/requests.jsonl`, `responses.jsonl`','Every request and what was kept of every reply; a request that was sent again has a line for each attempt (same doc_id and replicate; attempt 1, 2, …)'] as [string,string]]:[]),

@@ -55,7 +55,9 @@ Usage
 corpus.csv has one document per row, with these columns: doc_id; text (the
 document's text) or file (the path of a PDF, from the folder of corpus.csv);
 and filename (the name each request gives for the document; without it, the
-PDF's own name or the doc_id).
+PDF's own name or the doc_id). Where the prompt has placeholders that were
+filled in for each document, the corpus also needs the columns named under
+INSERTS below.
 
 Outputs: results.csv (one row per request: a document's annotations are
 numbered in the column replicate, and are not combined here) and log.jsonl
@@ -101,6 +103,13 @@ REQUEST = {{REQUEST}}
 # The body of the requests that carried a whole PDF (None: the run sent none).
 REQUEST_PDF = {{REQUEST_PDF}}
 
+# The placeholders of the prompt that were filled in for each document, and the
+# column of the corpus that holds a document's value for each ({{id}} is the
+# document's name). In the bodies above a mark stands for each placeholder, such
+# as <<INSERT:meta.year>>. An empty dictionary: the prompt has none. None for a
+# column: the study no longer has that column, and nothing is filled in.
+INSERTS = {{INSERTS}}
+
 # The answer fields, in the order of their keys in the answer format (f0, f1, ...).
 # An empty list: the answer is one score or category.
 FIELDS = {{FIELDS}}
@@ -119,7 +128,7 @@ TIMEOUT = {{TIMEOUT}}
 
 # ==================== END OF STUDY CONFIGURATION ==========================
 
-MARK = re.compile("<<DOCUMENT_FILENAME>>|<<DOCUMENT_TEXT>>|<<FILE_BASE64>>")
+MARK = re.compile("<<DOCUMENT_FILENAME>>|<<DOCUMENT_TEXT>>|<<FILE_BASE64>>|<<INSERT:(?:id|meta[.][^<>]{1,60})>>")
 SHORT_CODE = re.compile(r"^[\w .:/@+()-]{1,200}$")
 FENCE = re.compile("^" + chr(96) * 3 + r"(?:json)?\s*([\s\S]*?)\s*" + chr(96) * 3 + "$")
 
@@ -127,7 +136,7 @@ FENCE = re.compile("^" + chr(96) * 3 + r"(?:json)?\s*([\s\S]*?)\s*" + chr(96) * 
 def fill(value, document):
     """A copy of a request body with one document in place of the marks."""
     if isinstance(value, str):
-        return MARK.sub(lambda m: document[m.group(0)], value)
+        return MARK.sub(lambda m: document.get(m.group(0), m.group(0)), value)
     if isinstance(value, list):
         return [fill(item, document) for item in value]
     if isinstance(value, dict):
@@ -138,17 +147,18 @@ def fill(value, document):
 def build_request(row, args, folder, number):
     """(doc_id, request body, the PDF's data or "") for one row of the corpus; the body is None without a document."""
     doc_id = row.get(args.id_column) or str(number)
+    inserts = {"<<INSERT:%s>>" % name: (row.get(column) or "") if column else "" for name, column in INSERTS.items()}
     path = (row.get(args.file_column) or "").strip()
     if path and REQUEST_PDF is not None:
         with open(os.path.join(folder, path), "rb") as f:
             data = base64.b64encode(f.read()).decode("ascii")
         name = row.get(args.name_column) or os.path.basename(path)
-        return doc_id, fill(REQUEST_PDF, {"<<DOCUMENT_FILENAME>>": name, "<<DOCUMENT_TEXT>>": "", "<<FILE_BASE64>>": data}), data
+        return doc_id, fill(REQUEST_PDF, {**inserts, "<<DOCUMENT_FILENAME>>": name, "<<DOCUMENT_TEXT>>": "", "<<FILE_BASE64>>": data}), data
     text = row.get(args.text_column) or ""
     if not text.strip() or REQUEST is None:
         return doc_id, None, ""
     name = row.get(args.name_column) or doc_id
-    return doc_id, fill(REQUEST, {"<<DOCUMENT_FILENAME>>": name, "<<DOCUMENT_TEXT>>": text, "<<FILE_BASE64>>": ""}), ""
+    return doc_id, fill(REQUEST, {**inserts, "<<DOCUMENT_FILENAME>>": name, "<<DOCUMENT_TEXT>>": text, "<<FILE_BASE64>>": ""}), ""
 
 
 def without_data(value, data):
@@ -322,6 +332,9 @@ def main():
         sys.exit("No rows found in " + args.corpus)
     if args.text_column not in rows[0] and args.file_column not in rows[0]:
         sys.exit("Neither column '%s' nor column '%s' was found. Columns: %s" % (args.text_column, args.file_column, ", ".join(rows[0].keys())))
+    absent = [column for column in INSERTS.values() if column and column not in rows[0]]
+    if absent:
+        sys.exit("The prompt inserts values from columns that were not found: %s. Columns: %s" % (", ".join(absent), ", ".join(rows[0].keys())))
     folder = os.path.dirname(os.path.abspath(args.corpus))
     url = URL if not args.base_url else args.base_url.rstrip("/") + "/" + URL.split("/", 3)[3]
 
@@ -399,8 +412,9 @@ function allowedValues(frame:RequestFrame,fields:string[]):Record<string,string[
  return out;
 }
 // text, pdf: the run's request for a text and for a PDF sent as a file (lib/request-frame.ts); at least one.
-// repeats: the run's annotations per text (absent: one).
-export type ScriptInput={lab:string;studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;repeats?:number;note?:string};
+// repeats: the run's annotations per text (absent: one). inserts: for each placeholder of the prompt that was
+// filled in, the corpus column that holds its values (null: the study no longer has the column).
+export type ScriptInput={lab:string;studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;repeats?:number;note?:string;inserts?:[string,string|null][]};
 export function scriptValues(input:ScriptInput):Record<string,string>{
  const frame=(input.text||input.pdf)!,model=requestParts(frame).model;
  return {
@@ -409,6 +423,7 @@ export function scriptValues(input:ScriptInput):Record<string,string>{
   API_KEY_ENV:keyVariable(input.provider),API_KEY_ENV_NAME:JSON.stringify(keyVariable(input.provider)),
   PROVIDER:JSON.stringify(input.provider),URL:JSON.stringify(frame.url),
   REQUEST:input.text?pyLiteral(JSON.parse(input.text.body)):'None',REQUEST_PDF:input.pdf?pyLiteral(JSON.parse(input.pdf.body)):'None',
+  INSERTS:pyLiteral(Object.fromEntries(input.inserts||[])),
   FIELDS:pyLiteral(input.plain?[]:input.fields),ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
   TIMEOUT:String(input.provider==='gemini'&&isGemini4(model)?900:180),
  };
