@@ -73,7 +73,7 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
  if(p.numeric){
   p.level='ordinal';
   // The range of the answers is read from every answer of the run, not only the paired ones.
-  const seen=numbersOf(answersAll),seenRange:[number,number]|undefined=seen.length?[Math.min(...seen),Math.max(...seen)]:undefined;
+  const seen=numbersOf(answersAll);
   if(type==='ordinal'&&declared.length){
    const points=declared.map(Number),lo=Math.min(...points),hi=Math.max(...points);
    // A second run without the type may answer beyond the scale: it is widened by those whole numbers so that no
@@ -83,8 +83,10 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
    p.allowed=byNumber([...declared,...extra]);if(extra.length)p.range=[lo,hi];
    p.basis=`Scale: the field’s allowed values, ${lo} to ${hi}${extra.length?`, extended to ${p.allowed[0]} to ${p.allowed.at(-1)} because the run without allowed values answered beyond them`:''}.`;
   }else{
-   p.scaleSeen=true;p.range=seenRange;
-   p.basis=seenRange?`Scale: read from the run’s answers, ${seenRange[0]} to ${seenRange[1]}; no allowed values are declared for this field.`:'';
+   // Two runs: the range seen in either, so the figures do not depend on which run comes first.
+   const seenBoth=twoRuns?[...seen,...numbersOf(answersAll===va?vb:va)]:seen,range:[number,number]|undefined=seenBoth.length?[Math.min(...seenBoth),Math.max(...seenBoth)]:undefined;
+   p.scaleSeen=true;p.range=range;
+   p.basis=range?`Scale: read from ${twoRuns?'the two runs’':'the run’s'} answers, ${range[0]} to ${range[1]}; no allowed values are declared for this field.`:'';
   }
  }else{
   // Categories: the values a run gives anywhere are real categories (a run that answers "none" keeps it); with two
