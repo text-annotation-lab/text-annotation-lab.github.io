@@ -22,6 +22,7 @@ import {fieldLabel,parseSource,pickField,sourceKey,type CompareSource} from '@/l
 import type {Agreement} from '@/lib/research/metrics';
 import {answersLabel} from '@/lib/answer-types';
 import {downloadBytes,downloadText} from './download';
+import {ResultsPanel} from './results-panel';
 
 const when=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(date.getTime())?'—':date.toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});};
 // In the table the date and the time may go on two lines, so the table fits a laptop screen.
@@ -222,6 +223,11 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
    </tr>;})}</tbody></table></div>:<p className="research-empty">No runs yet. {dataset.kind==='texts'?'Annotate texts in the Workspace. Each setup you run (model, reasoning effort, prompt, and answer fields) is listed here as a numbered run.':'Annotate subjects under Model knowledge. Each repeat of the study is listed here as a numbered run.'}</p>}
    {inspected&&<RunSettings dataset={dataset} run={inspected} facts={facts.get(inspected.number)!} state={runState(dataset.rows,inspected)} onClose={()=>setInspect(undefined)}/>}
   </section>
+
+  {lines.length>0&&<section aria-labelledby="results-heading">
+   <h3 id="results-heading">Results</h3>
+   <ResultsPanel key={dataset.kind} rows={dataset.rows} columns={dataset.columns} scoreScale={dataset.scoreScale} runs={lines} unit={unit} studyName={studyName}/>
+  </section>}
 
   <section aria-labelledby="agreement-heading">
    <h3 id="agreement-heading">Agreement</h3>
