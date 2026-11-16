@@ -192,6 +192,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.equal(form.get('answerFields'),JSON.stringify(['Tone','Notes']));assert.equal(form.get('answerSettings'),JSON.stringify(sentForm),'A request carries only what differs from the standard format');
   assert.deepEqual(typed.latest().docs.map(doc=>[doc.status,doc.runNo,doc.answers.f0,JSON.stringify(doc.answerSettings)]),Array(3).fill(['done',1,'positive',JSON.stringify(sentForm)]));
   assert.deepEqual(typed.latest().runs.map(run=>[run.number,JSON.stringify(run.answerSettings)]),[[1,JSON.stringify(sentForm)]]);
+  assert.deepEqual(typed.find(n=>n.type==='ResearchTools').props.fields,['Tone','Notes'],'A spreadsheet column named after an answer field is guessed to hold human labels');
   assert(typed.text(typed.button('Remaining')).includes('Remaining (0)'));
   // Asking for an explanation again is another setup: every text remains, and they form a new run.
   editor().onChange(['Tone','Notes'],{fields:asked.fields});await typed.flush();
@@ -527,6 +528,13 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   const tools=()=>h.find(n=>n.type==='ResearchTools').props;
   tools().onApply(h.latest().docs.map(doc=>({...doc,cells:doc.cells?[doc.cells[1]]:undefined})),[{name:'tone_human',role:'label'}],[],'Column “year” removed.');await h.flush();
   assert.deepEqual(h.latest().removed[0].cells,['NEGATIVE']);
+  // A label sheet reaches the deleted text too (its label still counts in its run's comparisons); the guess at a
+  // column's role knows the study's answer fields.
+  assert.deepEqual(tools().removed.map(doc=>doc.name),['text-1.txt']);assert.deepEqual(tools().fields,[]);
+  tools().onApply(h.latest().docs,[{name:'tone_human',role:'label'}],[],'1 column added to 3 texts (1 of them deleted but kept for their runs).',undefined,h.latest().removed.map(doc=>({...doc,cells:['MIXED']})));await h.flush();
+  assert.deepEqual(h.latest().removed.map(doc=>[doc.name,doc.cells,doc.removedPlace,typeof doc.removedAt]),[['text-1.txt',['MIXED'],1,'string']]);
+  await tab('runs');assert.deepEqual(panel().datasets[0].rows.map(row=>[row.name,row.cells]),[['text-0.txt',['POSITIVE']],['text-1.txt',['MIXED']],['text-3.txt',['NEGATIVE']]]);await tab('workspace');
+  tools().onApply(h.latest().docs,[{name:'tone_human',role:'label'}],[],'',undefined,h.latest().removed.map(doc=>({...doc,cells:['NEGATIVE']})));await h.flush();
   // The same file added again brings the text back with its result; a changed file of that name is a new text.
   await h.add([new File(['Text 1'],'text-1.txt')]);await h.flush();
   assert.deepEqual(h.latest().docs.map(doc=>[doc.name,doc.status,doc.runNo,doc.removedAt,doc.cells]),[['text-0.txt','done',1,undefined,['POSITIVE']],['text-3.txt','pending',undefined,undefined,['NEGATIVE']],['text-1.txt','done',1,undefined,['NEGATIVE']]]);

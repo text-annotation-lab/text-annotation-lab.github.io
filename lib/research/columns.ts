@@ -37,14 +37,16 @@ export function columnValues(rows:{cells?:string[]}[],index:number,limit=200):st
 // Which spreadsheet row belongs to which text. A row matches a text by file
 // name, with or without the extension, ignoring case. A row that names the
 // source of chunked texts applies to all of its chunks.
-export function matchRows(docs:CellRow[],keys:string[]):{rowOf:Map<string,number>;unmatched:number[];ambiguous:number[];repeated:number[]}{
+// more: the later rows that named a text an earlier row had already matched (by text). named: the texts a row
+// named that matched more than one of them, which the row leaves alone.
+export function matchRows(docs:CellRow[],keys:string[]):{rowOf:Map<string,number>;unmatched:number[];ambiguous:number[];repeated:number[];more:Map<string,number[]>;named:Set<string>}{
  const exact=new Map<string,CellRow[]>(),loose=new Map<string,CellRow[]>(),sources=new Map<string,CellRow[]>();
  const push=(map:Map<string,CellRow[]>,key:string,doc:CellRow)=>{if(!key)return;const list=map.get(key);if(list)list.push(doc);else map.set(key,[doc]);};
  for(const doc of docs){
   push(exact,fold(doc.name),doc);push(loose,fold(stem(tidy(doc.name))),doc);
   if(doc.sourceName){push(sources,fold(doc.sourceName),doc);push(sources,fold(stem(tidy(doc.sourceName))),doc);}
  }
- const rowOf=new Map<string,number>(),unmatched:number[]=[],ambiguous:number[]=[],repeated:number[]=[];
+ const rowOf=new Map<string,number>(),unmatched:number[]=[],ambiguous:number[]=[],repeated:number[]=[],more=new Map<string,number[]>(),named=new Set<string>();
  keys.forEach((raw,row)=>{
   const key=fold(raw);if(!key)return;
   // Paths in a manifest ("texts/1961-Kennedy.txt") match by their file name.
@@ -53,11 +55,11 @@ export function matchRows(docs:CellRow[],keys:string[]):{rowOf:Map<string,number
   let chunks=false;
   if(!found){found=sources.get(key)||sources.get(base)||sources.get(fold(stem(base)));chunks=Boolean(found);}
   if(!found){unmatched.push(row);return;}
-  if(found.length>1&&!chunks){ambiguous.push(row);return;}
-  if(found.some(doc=>rowOf.has(doc.id))){repeated.push(row);return;}
+  if(found.length>1&&!chunks){ambiguous.push(row);for(const doc of found)named.add(doc.id);return;}
+  if(found.some(doc=>rowOf.has(doc.id))){repeated.push(row);for(const doc of found)if(rowOf.has(doc.id))more.set(doc.id,[...(more.get(doc.id)||[]),row]);return;}
   for(const doc of found)rowOf.set(doc.id,row);
  });
- return {rowOf,unmatched,ambiguous,repeated};
+ return {rowOf,unmatched,ambiguous,repeated,more,named};
 }
 // The column that names the texts: the one whose values match the most texts.
 export function guessKeyColumn(docs:CellRow[],sheet:Sheet):number{
@@ -68,14 +70,29 @@ export function guessKeyColumn(docs:CellRow[],sheet:Sheet):number{
  });
  return best;
 }
-// A first guess at what each column holds, from its name.
-export function guessRole(name:string):Role{
- return /\b(label|labels|code|coded|coder|coding|human|gold|manual|rating|rated|rater|annotat\w*|score|judg\w*)\b/i.test(name.replace(/[_-]+/g,' '))?'label':'meta';
+// A first guess at what each column holds, from its name. A column named after an answer field, alone or with
+// marker words (tone, tone_coder2, gold_tone, tone_expert), holds human labels; so does one whose name has a word
+// such as coder, rater, gold, or human, with or without a number (coder2).
+const MARKER=/^(gold|human|coder|rater|annotator|pilot|expert|final|consensus|standard|coded|reference|adjudicated|manual)\d*$/;
+const words=(name:string)=>fold(name).split(/[\s_.-]+/).filter(Boolean);
+export function guessRole(name:string,fields:string[]=[]):Role{
+ const parts=words(name);let i=0,j=parts.length;
+ while(j-i>1&&MARKER.test(parts[j-1]))j--;
+ while(j-i>1&&MARKER.test(parts[i]))i++;
+ const core=parts.slice(i,j).join('_');
+ if(core&&fields.some(field=>words(field).join('_')===core))return 'label';
+ return /\b(label|labels|code|coded|coder|coding|human|gold|manual|rating|rated|rater|annotat\w*|score|judg\w*|expert|consensus|adjudicated)\d*\b/i.test(name.replace(/[_-]+/g,' '))?'label':'meta';
 }
 
-// Add the chosen columns' values to the texts they match. A blank cell never
-// erases a value that is already there.
-export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sheet,keyIndex:number,roles:Role[]):{docs:T[];columns:Column[];matched:number;unmatched:string[];ambiguous:string[];repeated:string[];changed:number;added:string[]}{
+// Add the chosen columns' values to the texts a sheet lists. For those texts a column gets the sheet's value,
+// and a blank cell leaves none. Texts the sheet does not list keep their values, unless `clearUnlisted` (a
+// sheet that replaces an earlier one for all texts); a text named by a row that matches more than one text
+// keeps its values too. Several rows for one text are merged when no value differs; when values differ (one
+// row per coder, say), the sheet cannot be used as it is: `conflicts` names those texts and nothing changes.
+// replaced: the chosen columns that already hold values. removed: per such column, the earlier values that
+// go (blank here, or not listed). unlisted: the ids of the texts not listed that hold a value in one of them.
+export type SheetResult<T>={docs:T[];columns:Column[];matched:number;unmatched:string[];ambiguous:string[];repeated:string[];conflicts:string[];changed:number;added:string[];replaced:string[];removed:Map<string,number>;unlisted:string[]};
+export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sheet,keyIndex:number,roles:Role[],options:{clearUnlisted?:boolean}={}):SheetResult<T>{
  const next=columns.map(c=>({...c})),targets:{from:number;to:number}[]=[],added:string[]=[];
  sheet.header.forEach((header,from)=>{
   const role=roles[from];if(!role||from===keyIndex||!validColumnName(header))return;
@@ -84,15 +101,42 @@ export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sh
   targets.push({from,to});
  });
  const keys=sheet.rows.map(row=>row[keyIndex]||''),match=matchRows(docs,keys);
- let changed=0;
+ // The values each listed text gets: every row that names it, merged.
+ const values=new Map<string,string[]>(),conflicts:string[]=[],repeated:string[]=[];
+ for(const [id,first] of match.rowOf){
+  const rows=[first,...(match.more.get(id)||[])],merged=targets.map(()=>'');let differ=false;
+  for(const row of rows)targets.forEach(({from},t)=>{const value=tidy(sheet.rows[row][from]);if(!value)return;if(merged[t]&&merged[t]!==value)differ=true;else merged[t]=value;});
+  if(rows.length>1)(differ?conflicts:repeated).push(keys[first]);
+  values.set(id,merged);
+ }
+ const had=new Set(targets.filter(({to})=>docs.some(doc=>doc.cells?.[to])).map(({to})=>to));
+ const replaced=targets.filter(({to})=>had.has(to)).map(({to})=>next[to].name),removed=new Map<string,number>();
+ let changed=0;const unlisted:string[]=[];
  const result=docs.map(doc=>{
-  const row=match.rowOf.get(doc.id);if(row===undefined)return doc;
+  const listed=values.get(doc.id);
+  if(!listed){
+   if(match.named.has(doc.id)||!targets.some(({to})=>had.has(to)&&doc.cells?.[to]))return doc;
+   unlisted.push(doc.id);if(!options.clearUnlisted)return doc;
+  }
   const cells=Array.from({length:next.length},(_,i)=>doc.cells?.[i]??'');
-  for(const {from,to} of targets){const value=tidy(sheet.rows[row][from]);if(!value)continue;if(cells[to]&&cells[to]!==value)changed++;cells[to]=value;}
-  return {...doc,cells};
+  targets.forEach(({to},t)=>{
+   const value=listed?listed[t]:'';
+   if(!listed&&!had.has(to))return;
+   if(cells[to]&&!value)removed.set(next[to].name,(removed.get(next[to].name)||0)+1);else if(cells[to]&&cells[to]!==value)changed++;
+   cells[to]=value;
+  });
+  return cells.some(Boolean)?{...doc,cells}:(doc.cells?{...doc,cells:undefined}:doc);
  });
  const name=(rows:number[])=>rows.map(row=>keys[row]);
- return {docs:result,columns:next,matched:match.rowOf.size,unmatched:name(match.unmatched),ambiguous:name(match.ambiguous),repeated:name(match.repeated),changed,added};
+ return {docs:conflicts.length?docs:result,columns:conflicts.length?columns:next,matched:match.rowOf.size,unmatched:name(match.unmatched),ambiguous:name(match.ambiguous),repeated,conflicts,changed,added,replaced,removed,unlisted};
+}
+
+// Columns only the Lab's own results files have (the tables of a run and of its requests, and the standard
+// Lab's workbook). A sheet with one of them holds the model's answers, not human labels. response_id alone is
+// not enough: a survey's export may have a column of that name.
+const RESULTS_COLUMNS=new Set(['n_ok','n_error','prompt_hash','model_requested','model_reported','stop_reason','request_id','lab_version','sent_again','reasoning_tokens','cache_read_tokens','cache_write_tokens','annotation id','annotated / collected at (utc)']);
+export function resultsFileColumns(header:string[]):string[]{
+ return header.filter(name=>RESULTS_COLUMNS.has(fold(name))||/^run\d+_explanation$/.test(fold(name))||/_replicate_agreement$/.test(fold(name)));
 }
 
 // Texts added from a table or from pasted text. `values` holds what the table's
@@ -100,9 +144,9 @@ export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sh
 // join the study's columns (a column with the same name is reused).
 // back: the id of a deleted text that this one brings back (the same name and the same text; research mode).
 export type NewText={name:string;text:string;values:string[];back?:string};
-export function appendTexts<T extends CellRow>(docs:T[],columns:Column[],texts:NewText[],names:string[],make:(text:NewText)=>T):{docs:T[];columns:Column[]}{
+export function appendTexts<T extends CellRow>(docs:T[],columns:Column[],texts:NewText[],names:string[],make:(text:NewText)=>T,fields:string[]=[]):{docs:T[];columns:Column[]}{
  const next=columns.map(c=>({...c}));
- const to=names.map(name=>{let index=columnIndex(next,name);if(index<0){next.push({name:tidy(name),role:guessRole(name)==='label'?'label':'meta'});index=next.length-1;}return index;});
+ const to=names.map(name=>{let index=columnIndex(next,name);if(index<0){next.push({name:tidy(name),role:guessRole(name,fields)==='label'?'label':'meta'});index=next.length-1;}return index;});
  const added=texts.map(text=>{
   const doc=make(text);if(!to.length)return doc;
   // A text brought back keeps its values; the table's values are written over them.
