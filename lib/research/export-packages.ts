@@ -21,6 +21,7 @@ import {tiedVote} from './repeats';
 import {sampleNote} from './sample';
 import {fieldLabel} from './view';
 import {scaleText} from './score-scale';
+import {offScaleLeftOut} from './scale-combine';
 
 // Told each step as it starts: "Computing agreement", or the file about to be written.
 export type Progress=(step:string)=>void|Promise<void>;
@@ -90,6 +91,8 @@ const requestNote=(sent:RunRequests)=>sent.total===0?'':sent.rebuilt===0&&sent.u
 function runRecord(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequests,exportedAt:string){
  const {dataset}=study,{run}=facts,unit=unitOf(dataset),frame=(sent.text||sent.pdf)?.frame,parts=frame?requestParts(frame):undefined,known=facts.tokens.knownFor>0;
  const body=(kind:string,request?:SentRequest&{count:number})=>request?[{kind,requests:request.count,recorded:request.recorded,url:request.frame.url,body:JSON.parse(request.frame.body)}]:[];
+ // Scores off the study's scale left out when a text's annotations were combined, because another was on it (scale-combine.ts).
+ const offScale=run.answerSettings?.plain&&(run.repeats||1)>1?offScaleLeftOut(dataset.rows,run.number,dataset.scoreScale):0;
  return {
   software:{name:'Text Annotation Lab',version:study.lab,versions_used_for_run:facts.labs},
   exported_at:exportedAt,study:study.name,data:sourceOf(dataset),
@@ -103,7 +106,7 @@ function runRecord(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequests
   corpus:{[`n_${unit}s_in_run`]:facts.texts,[`n_${unit}s_with_usable_annotation`]:facts.usable,[`n_${unit}s_all_requests_failed`]:facts.allFailed,[`n_${unit}s_without_result_yet`]:facts.active,...((run.repeats||1)>1?{[`n_${unit}s_with_fewer_usable_annotations`]:run.fewer}:{})},
   // total, ok, failed: each text's last request in the run (with several annotations per text, the last request
   // for each annotation). replaced_by_retries: failed attempts that were sent again.
-  requests:{total:facts.requests.total,ok:facts.requests.ok,failed:facts.requests.failed,replaced_by_retries:facts.requests.replaced,sent_in_all:facts.requests.total+facts.requests.replaced,first_requested_at:facts.requests.first||null,last_completed_at:facts.requests.last||null},
+  requests:{total:facts.requests.total,ok:facts.requests.ok,failed:facts.requests.failed,replaced_by_retries:facts.requests.replaced,sent_in_all:facts.requests.total+facts.requests.replaced,first_requested_at:facts.requests.first||null,last_completed_at:facts.requests.last||null,...(offScale?{scores_off_scale_left_out_when_combined:offScale}:{})},
   tokens:known?{input:facts.tokens.input,output:facts.tokens.output,reasoning:facts.tokens.reasoning,cache_read:facts.tokens.cacheRead,cache_write:facts.tokens.cacheWrite,known_for_requests:facts.tokens.knownFor}:null,
   cost_usd:facts.cost.knownFor?{amount:facts.cost.amount,known_for_requests:facts.cost.knownFor,of_requests:facts.cost.of}:null,
  };
@@ -210,7 +213,9 @@ export function methodsParagraph(study:ExportStudy,report:RunReport,record:RunRe
  const results=reps>1&&voted.length?study.dataset.rows.map(row=>rowForRun(row,run.number)).filter(result=>result.status==='done'):[];
  const ties=voted.map(name=>[name,results.filter(result=>tiedVote(result,name)).length] as const).filter(tie=>tie[1]>0);
  const tieText=!voted.length?'':` A tied vote is kept as both values (for example, “a | b”) and counts as a disagreement in the agreement figures${ties.length?` (${ties.map(([name,n],i)=>`${i?count(n):units(n)} for ${fieldLabel(name)}`).join(', ')})`:'; no vote was tied'}.`;
- const combined=reps<2?'':plain?`${annotated}; numbers in the answers were combined by the median, other values by majority vote.`:`${annotated}; ${!run.answerFields.some(name=>typeOf(name))?'the answers were combined by majority vote':kinds.length>2?kinds.slice(0,-1).join(', ')+', and '+kinds[kinds.length-1]:kinds.join(' and ')}.${tieText}`;
+ const offScale=record.requests.scores_off_scale_left_out_when_combined??0;
+ const offScaleText=offScale?` ${count(offScale)} score${offScale===1?'':'s'} off the scale (for example, a code such as 9 for “can’t tell”) ${was(offScale)} left out when the answers were combined, like a missing value, where another answer for the same ${unit} was on the scale.`:'';
+ const combined=reps<2?'':plain?`${annotated}; numbers in the answers were combined by the median, other values by majority vote.${offScaleText}`:`${annotated}; ${!run.answerFields.some(name=>typeOf(name))?'the answers were combined by majority vote':kinds.length>2?kinds.slice(0,-1).join(', ')+', and '+kinds[kinds.length-1]:kinds.join(' and ')}.${tieText}`;
  // Placeholders of the prompt that held a text's own value.
  const valued=valuedInserts(study.dataset,run.number),inserted=runInserts(report.sent).filter(name=>valued.has(name)),metaNames=inserted.filter(name=>name!=='id').map(name=>name.slice(5)),insertedParts=[...(inserted.includes('id')?['its name']:[]),...(metaNames.length?[`its value${metaNames.length===1?'':'s'} of the metadata column${metaNames.length===1?'':'s'} ${listed(metaNames)}`]:[])];
  const insertedText=insertedParts.length?`For each ${unit}, the prompt was completed with ${insertedParts.join(' and ')}.`:'';

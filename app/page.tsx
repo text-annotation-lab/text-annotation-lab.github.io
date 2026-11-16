@@ -12,7 +12,7 @@ import {reviewStoredAnswer,annotationValidationError} from '@/lib/answer-validat
 import {annotationFormatRecord,answerInstructions,hasSeparateExplanation,validAnswerFields,resultColumns,resultAnswer,answerValues,sentAnswers,cleanAnswerSettings,type NamedAnswers,type AnswerSettings} from '@/lib/answer-fields';
 import {DEFAULT_ANNOTATION_CONCURRENCY,concurrencyChoices,annotationConcurrency,runAnnotationQueue,sendAnnotation} from '@/lib/annotation-queue';
 import {missingAnnotationSetup,isPlainConfirmation,rateLimitNotice} from '@/lib/annotation-feedback';
-import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import {StudyManager,type OpenStudyDraft} from '@/components/study-manager';
 import {NAMED_STUDIES_ENABLED,studyWorkspaceKey} from '@/lib/studies';
 import type {BatchJob,BatchPart,BatchUpdate,BatchResult} from '@/lib/batch-types';
@@ -56,6 +56,7 @@ import {MAX_REPEATS,annotationCount,annotationFrom,claimRepeats,cleanRepeats,inc
 import {CORPUS_TABLE,appendTexts,cleanColumns,columnIndex,removeColumn,type Column,type NewText} from '@/lib/research/columns';
 import {bringBack,cleanRemoved,matchReturning,pruneRemoved,removeTexts,usedByRuns,withRemoved} from '@/lib/research/removed';
 import {cleanScoreScale,type ScoreScale} from '@/lib/research/score-scale';
+import {onScaleItems,onScaleRows} from '@/lib/research/scale-combine';
 import {cleanSamples,type SampleRecord} from '@/lib/research/sample';
 import {DEFAULT_VIEW,researchRows,viewNarrowed,runTag,pickRandom,parseSource,type View,type Compared} from '@/lib/research/view';
 import {knowledgeRows} from '@/lib/research/knowledge';
@@ -665,10 +666,14 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   if(view.run===number||view.compare==='run:'+number)setView(current=>({...current,run:current.run===number?'latest':current.run,compare:current.compare==='run:'+number?'':current.compare}));
  }
  function openText(id:string){setView(current=>({...DEFAULT_VIEW,compare:current.compare,field:current.field}));changeTab('workspace');viewDocument(id);}
- async function download(){try{setExporting(true);const {createResultsWorkbook}=await import('@/lib/export-results');const buffer=await createResultsWorkbook(docs,{answerFields:sentFields,prompt,model,effort,provider,studyName});const blob=new Blob([new Uint8Array(buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='annotations.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{setNotice('The Excel download failed. Your saved results are still here; please try again.');}finally{setExporting(false);}}
+ async function download(){try{setExporting(true);const {createResultsWorkbook}=await import('@/lib/export-results');const buffer=await createResultsWorkbook(research?viewDocs:docs,{answerFields:sentFields,prompt,model,effort,provider,studyName});const blob=new Blob([new Uint8Array(buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='annotations.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{setNotice('The Excel download failed. Your saved results are still here; please try again.');}finally{setExporting(false);}}
 
+ // Research mode reads the results with the study's scale for the scores: a text's annotations are combined on it
+ // (scale-combine.ts). viewDocs: the texts as the Workspace shows them; studyRows: with the deleted texts runs used.
+ const scaled=useMemo(()=>{const all=withRemoved(docs,removed);if(!research||!scoreScale)return {viewDocs:docs,studyRows:all};const rows=onScaleRows(all,scoreScale).rows;return {viewDocs:removed.length?rows.filter(row=>!row.removedAt):rows,studyRows:rows};},[research,scoreScale,docs,removed]);
+ const {viewDocs}=scaled;
  // Student mode lists every text. Research mode lists the texts the filters leave, as of the chosen run.
- const shown=research?researchRows(docs,columns,view):undefined;
+ const shown=useMemo(()=>research?researchRows(viewDocs,columns,view,scoreScale,scaled.studyRows):undefined,[research,viewDocs,columns,view,scoreScale,scaled.studyRows]);
  const rows:(Doc&{compared?:Compared})[]=shown?shown.rows:docs;
  const summaries=research?runSummaries(docs,runs):[];
  // The run buttons act on the ticked texts, else on the texts the filters leave, else on all texts.
@@ -687,7 +692,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // Research mode, several annotations per text: the share of them that gave the combined value, shown when not all did.
  const shareTag=(d:Doc,key:string)=>{const share=research&&d.status==='done'?d.consistency?.[key]:undefined;return typeof share==='number'&&share<1?<span className="research-tag warn" title={`${Math.round(share*100)}% of this text’s annotations gave this value`}>{Math.round(share*100)}%</span>:null;};
  const tableFields=research&&view.run!=='latest'?resultColumns(rows,[]):{names:resultNames,showLegacy:showLegacyScore};
- const done=docs.filter(d=>d.status==='done').length,waiting=docs.filter(d=>d.status==='pending').length,current=rows.find(d=>d.id===selected)||docs.find(d=>d.id===selected);
+ const done=docs.filter(d=>d.status==='done').length,waiting=docs.filter(d=>d.status==='pending').length,current=rows.find(d=>d.id===selected)||viewDocs.find(d=>d.id===selected);
  const canSplit=docs.some(d=>d.status==='pending'&&!d.sourceId&&!d.history?.length&&!d.earlier?.length),canRestore=restorableSourceIds(docs).size>0;
  const resultStart=Math.min(resultPage,Math.max(0,Math.ceil(rows.length/100)-1))*100;
  // Research mode: the details step through the texts shown (Previous and Next), turning the page of results with them.
@@ -696,7 +701,9 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  const promptVersions=new Map(summaries.map(summary=>[summary.number,summary.promptVersion]));
  useEffect(()=>{const index=rows.findIndex(item=>item.id===selected);if(index>=0)setResultPage(Math.floor(index/100));},[selected]);
  const researchData=research&&(activeTab==='runs'||activeTab==='export');
- const datasets=researchData?[{kind:'texts' as const,rows:withRemoved(docs,removed),runs,columns,samples,requests,scoreScale},{kind:'knowledge' as const,rows:knowledgeRows(knowledgeData?.items||[]),runs:[],columns:knowledgeData?.columns||[],samples:knowledgeData?.samples||[],requests:knowledgeData?.requests,scoreScale:knowledgeData?.scoreScale}]:[];
+ // Model knowledge's results, read with its own scale for the scores in the same way.
+ const knowledgeItems=useMemo(()=>research&&knowledgeData?.scoreScale?onScaleItems(knowledgeData.items,knowledgeData.scoreScale):knowledgeData?.items||[],[research,knowledgeData]);
+ const datasets=researchData?[{kind:'texts' as const,rows:scaled.studyRows,runs,columns,samples,requests,scoreScale},{kind:'knowledge' as const,rows:knowledgeRows(knowledgeItems),runs:[],columns:knowledgeData?.columns||[],samples:knowledgeData?.samples||[],requests:knowledgeData?.requests,scoreScale:knowledgeData?.scoreScale}]:[];
  // The whole study as a backup file (Export tab): both workspaces as they are now, never an API key.
  const studyBackup=draftRef?async()=>{const {texts,knowledge}=draftRef.current;if(!texts||!knowledge)throw new Error('Wait for both workspaces to finish opening');const {encodeStudyBackup}=await import('@/lib/study-backup');return encodeStudyBackup({name:studyName||'Study',texts,knowledge,createdAt:new Date().toISOString()});}:undefined;
  const setupDefaults={prompt,setPrompt,ready,workspaceLocked,busy};

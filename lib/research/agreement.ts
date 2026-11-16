@@ -5,7 +5,7 @@ import {agreement,fmtPct,fmtStat,type Agreement,type CiStat,type Level} from './
 import {normalizeLabel} from './normalize';
 import {rowForRun,type Row} from './runs';
 import {cellOf,columnIndex,type Column} from './columns';
-import {fieldLabel,fieldsOf,pickField,sourceResult,valueOf,type CompareSource} from './view';
+import {fieldLabel,fieldsOf,pickField,sourceResult,valueOf,type CompareSource} from './fields';
 import {fieldSpec,type FieldType} from '../answer-types';
 import {onScale,scalePoints,scaleText,type ScoreScale} from './score-scale';
 
