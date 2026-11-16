@@ -6,6 +6,7 @@ import {BatchError,buildBatchBody,createBatchPayload,createBatch,checkBatch,canc
 import {knowledgeInstructions,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
 import {MAX_BATCH_ITEMS,MAX_BATCH_SOURCE_BYTES,MAX_BATCH_REQUEST_BYTES} from '@/lib/batch-limits';
 import {readRequestSettings} from '@/lib/request-settings';
+import {formText} from '@/lib/request-frame';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export async function POST(request:Request){
  try{
@@ -23,7 +24,7 @@ export async function POST(request:Request){
   if(provider==='openai'&&(!/^sk-[\w-]+$/.test(key)||key.startsWith('sk-ant-')))return reply({error:'Use an OpenAI key for OpenAI batches.'},401);
   if(action==='submit'){
    let answerFields:string[],answerSettings,requestSettings;try{answerFields=readAnswerFields(f.get('answerFields'));answerSettings=readAnswerSettings(f.get('answerSettings'),answerFields);requestSettings=readRequestSettings(f.get('requestSettings'));}catch(error){throw new BatchError((error as Error).message);}
-   const model=String(f.get('model')||''),effort=String(f.get('effort')||''),prompt=String(f.get('prompt')||''),runId=String(f.get('runId')||'');
+   const model=String(f.get('model')||''),effort=String(f.get('effort')||''),prompt=formText(String(f.get('prompt')||'')),runId=String(f.get('runId')||'');
    if(!PROVIDERS[provider].models.includes(model)||!reasoningOptions(provider,model).includes(effort))throw new BatchError('Unsupported model or reasoning setting.');
    if(!prompt.trim()||prompt.length>100000||!/^lab_[a-zA-Z0-9_-]{1,60}$/.test(runId))throw new BatchError('Provide an annotation prompt and a valid batch reference.');
    const mode=f.get('mode'),knowledge=mode==='model-knowledge';
@@ -51,6 +52,8 @@ export async function POST(request:Request){
   const id=f.get('id');if(!validBatchId(provider,id))throw new BatchError('Enter a valid batch ID for the selected provider.');
   if(action==='cancel'){await cancelBatch(provider,key,id);return reply({cancelRequested:true});}
   if(action!=='check'&&action!=='collect')throw new BatchError('Unsupported batch action.');
-  return reply(await checkBatch(provider,key,id,action==='collect',f.get('plain')==='true'));
+  // Research mode: collected results also carry the model the provider names, its stop reason, and the text it returned.
+  const record=f.get('record');if(record!==null&&record!=='true')throw new BatchError('Invalid record setting.');
+  return reply(await checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true'));
  }catch(error){return reply({error:error instanceof BatchError?error.message:'Could not process this batch request. Check your provider’s console before retrying.',uncertain:error instanceof BatchError?error.uncertain:false},error instanceof BatchError?error.status:400);}
 }

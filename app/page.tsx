@@ -40,6 +40,9 @@ import CostEstimate from '@/lib/cost-estimate/panel';
 import {studentEstimate,countStudentInputs} from '@/lib/student-estimate';
 import {ModeSwitch,ResearchKeys,ResearchTools,ResearchAnswerFields,ResearchCacheOption,ResearchFilters,ResearchDetail,ResearchRuns,ResearchExport} from '@/components/research-mode';
 import {cleanRequestSettings,sentRequestSettings,type RequestSettings} from '@/lib/request-settings';
+import {requestFrame} from '@/lib/request-frame';
+import {cleanRequests,recordRequest,usedRequests,replyNotes,NOT_RECORDED,type RecordedRequest,type Recorded} from '@/lib/research/requests';
+import {LAB_VERSION} from '@/lib/version';
 import {readResearchMode,writeResearchMode,readSavedKeys,writeSavedKeys,forgetSavedKeys,sessionKeys,keepSessionKeys,type Keyring} from '@/lib/research/mode';
 import {adoptUnnumbered,beginRun,cleanRuns,clearRuns,deleteRun,earlierCount,remainingFor,requeue,runSummaries,type RunRecord,type Earlier} from '@/lib/research/runs';
 import {CORPUS_TABLE,appendTexts,cleanColumns,type Column,type NewText} from '@/lib/research/columns';
@@ -47,7 +50,8 @@ import {cleanSamples,type SampleRecord} from '@/lib/research/sample';
 import {DEFAULT_VIEW,researchRows,viewNarrowed,runTag,pickRandom,parseSource,type View,type Compared} from '@/lib/research/view';
 import {knowledgeRows} from '@/lib/research/knowledge';
 // runNo, earlier, and cells belong to research mode: the run a result was made in, the results of earlier runs, and labels or metadata.
-type Doc={runNo?:number;earlier?:Earlier[];cells?:string[];requestSettings?:RequestSettings}&{chartYear?:number|null;chartGroup?:string|null}&NamedAnswers&Partial<ChunkInfo>&{inputMode?:string;runId?:string;runStartedAt?:string;runSize?:number;history?:Attempt[];startedAt?:string;concurrency?:number;processing?:string;batchId?:string;provider?:Provider;id:string;name:string;file:File;status:string;score?:string;explanation?:string;error?:string;model?:string;prompt?:string;effort?:string;tokens?:number;usage?:any;time?:string;responseId?:string};
+// So does the record of a result's request (Recorded).
+type Doc={runNo?:number;earlier?:Earlier[];cells?:string[];requestSettings?:RequestSettings}&Recorded&{chartYear?:number|null;chartGroup?:string|null}&NamedAnswers&Partial<ChunkInfo>&{inputMode?:string;runId?:string;runStartedAt?:string;runSize?:number;history?:Attempt[];startedAt?:string;concurrency?:number;processing?:string;batchId?:string;provider?:Provider;id:string;name:string;file:File;status:string;score?:string;explanation?:string;error?:string;model?:string;prompt?:string;effort?:string;tokens?:number;usage?:any;time?:string;responseId?:string};
 const SAMPLE='Classify the document’s overall tone as POSITIVE (mainly favorable or hopeful), NEGATIVE (mainly critical or pessimistic), MIXED (substantial positive and negative tone), or NEUTRAL (primarily factual, with no clear positive or negative tone). Choose one label. If the tone cannot be judged from the document, return UNCLEAR instead. Use only the document as evidence. Give a brief explanation with a supporting phrase, and note any uncertainty.';
 
 export default function Home(){
@@ -94,6 +98,8 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  const [research,setResearch]=useState(readResearchMode),researchNow=useRef(research);researchNow.current=research;
  const [keyring,setKeyring]=useState<Keyring>(()=>readResearchMode()?{...readSavedKeys(),...sessionKeys()}:{}),[rememberKeys,setRememberKeys]=useState(()=>readResearchMode()&&readSavedKeys()!==undefined),[keysOpen,setKeysOpen]=useState(false);
  const [runs,setRuns]=useState<RunRecord[]>([]),runsNow=useRef<RunRecord[]>([]);runsNow.current=runs;
+ // Research mode: the requests the runs sent, each kept once (lib/research/requests.ts).
+ const [requests,setRequests]=useState<RecordedRequest[]|undefined>(),requestsNow=useRef<RecordedRequest[]|undefined>(undefined);requestsNow.current=requests;
  const [columns,setColumns]=useState<Column[]>([]),[samples,setSamples]=useState<SampleRecord[]>([]);
  const [view,setView]=useState<View>(DEFAULT_VIEW),[checked,setChecked]=useState<string[]>([]),[tryCount,setTryCount]=useState('10');
  const [knowledgeData,setKnowledgeData]=useState<KnowledgeResearchData>();
@@ -176,11 +182,11 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   (knowledgeSaveState==='conflict'||knowledgeSaved);
  useEffect(()=>{onRecoveryChange?.(canRecover);return ()=>onRecoveryChange?.(false);},[canRecover,onRecoveryChange]);
  const stop=useRef(false),lock=useRef(false),latest=useRef<Doc[]>([]);latest.current=docs;
- useEffect(()=>{storage.current.restore().then(v=>{canSave.current=true;if(v){setProvenance(v.provenance);if((v.docs||[]).some((d:Doc)=>reviewStoredAnswer(d,false)!==d)){firstSave.current=false;setNotice('Some earlier answers need review under their recorded output instructions. Their returned values are preserved; no new requests were sent.');}const numbered=adoptUnnumbered<Doc>((v.docs||[]).map((d:Doc)=>reviewStoredAnswer(d,false)).map((d:Doc)=>d.status==='running'?{...d,status:'error',error:'Interrupted. Check your provider’s usage before retrying; the request may have completed.'}:d),cleanRuns(v.runs));setDocs(numbered.docs);setRuns(numbered.runs);setColumns(cleanColumns(v.columns));setSamples(cleanSamples(v.samples));setPrompt(v.prompt||'');setAnswerFields(validAnswerFields(v.answerFields)?v.answerFields:[]);setAnswerSettings(cleanAnswerSettings(v.answerSettings));setProcessing(v.processing==='batch'?'batch':'instant');setConcurrency(v.concurrency===undefined?DEFAULT_ANNOTATION_CONCURRENCY:annotationConcurrency(v.concurrency,true));setRequestSettings(cleanRequestSettings(v.requestSettings));if(v.batchJob&&Array.isArray(v.batchJob.docIds)){setBatchJob({...v.batchJob,state:v.batchJob.state==='submitting'?'unknown':v.batchJob.state});}setChunkMethod(v.chunkMethod==='sentences'?'sentences':'exact-words');setChunkWords(String(validChunkWords(Number(v.chunkWords))?Number(v.chunkWords):DEFAULT_CHUNK_WORDS));const p=availableProvider(v.provider);setProvider(p);const restoredModel=selectedModel(p,v.model),restoredEffort=reasoningOptions(p,restoredModel).includes(v.effort)?v.effort:defaultEffort(p,restoredModel);if((v.docs||[]).some((d:Doc)=>d.status==='running')||p!==v.provider||restoredModel!==v.model||restoredEffort!==v.effort)firstSave.current=false;setModel(restoredModel);setEffort(restoredEffort); }}).catch(()=>{canSave.current=false;setStorageIssue('Browser storage could not be read. Existing saved data has not been overwritten. Download any new results before leaving.');}).finally(()=>setReady(true));},[]);
+ useEffect(()=>{storage.current.restore().then(v=>{canSave.current=true;if(v){setProvenance(v.provenance);if((v.docs||[]).some((d:Doc)=>reviewStoredAnswer(d,false)!==d)){firstSave.current=false;setNotice('Some earlier answers need review under their recorded output instructions. Their returned values are preserved; no new requests were sent.');}const numbered=adoptUnnumbered<Doc>((v.docs||[]).map((d:Doc)=>reviewStoredAnswer(d,false)).map((d:Doc)=>d.status==='running'?{...d,status:'error',error:'Interrupted. Check your provider’s usage before retrying; the request may have completed.'}:d),cleanRuns(v.runs));setDocs(numbered.docs);setRuns(numbered.runs);setRequests(usedRequests(cleanRequests(v.requests),numbered.docs));setColumns(cleanColumns(v.columns));setSamples(cleanSamples(v.samples));setPrompt(v.prompt||'');setAnswerFields(validAnswerFields(v.answerFields)?v.answerFields:[]);setAnswerSettings(cleanAnswerSettings(v.answerSettings));setProcessing(v.processing==='batch'?'batch':'instant');setConcurrency(v.concurrency===undefined?DEFAULT_ANNOTATION_CONCURRENCY:annotationConcurrency(v.concurrency,true));setRequestSettings(cleanRequestSettings(v.requestSettings));if(v.batchJob&&Array.isArray(v.batchJob.docIds)){setBatchJob({...v.batchJob,state:v.batchJob.state==='submitting'?'unknown':v.batchJob.state});}setChunkMethod(v.chunkMethod==='sentences'?'sentences':'exact-words');setChunkWords(String(validChunkWords(Number(v.chunkWords))?Number(v.chunkWords):DEFAULT_CHUNK_WORDS));const p=availableProvider(v.provider);setProvider(p);const restoredModel=selectedModel(p,v.model),restoredEffort=reasoningOptions(p,restoredModel).includes(v.effort)?v.effort:defaultEffort(p,restoredModel);if((v.docs||[]).some((d:Doc)=>d.status==='running')||p!==v.provider||restoredModel!==v.model||restoredEffort!==v.effort)firstSave.current=false;setModel(restoredModel);setEffort(restoredEffort); }}).catch(()=>{canSave.current=false;setStorageIssue('Browser storage could not be read. Existing saved data has not been overwritten. Download any new results before leaving.');}).finally(()=>setReady(true));},[]);
  useEffect(()=>{
-  if(draftRef)draftRef.current.texts=ready&&(canSave.current||storageConflict)?{provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,batchJob,runs,columns,samples}:undefined;
- },[draftRef,ready,storageConflict,provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,batchJob,runs,columns,samples]);
- useEffect(()=>{if(!ready||!canSave.current)return;if(firstSave.current){firstSave.current=false;setSaved(true);return;}let current=true;setSaved(false);storage.current.save({provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,batchJob,runs,columns,samples},{replaceable:true}).then(()=>{if(current){setSaved(true);setStorageIssue('');}}).catch(error=>{stop.current=true;const conflict=error instanceof Error&&error.message.startsWith('Another tab');if(conflict){canSave.current=false;setStorageConflict(true);}if(current||conflict){setSaved(false);setStorageIssue(conflict?error.message:'Could not save locally. Download your results before leaving.');}});return()=>{current=false;};},[docs,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,batchJob,provenance,ready,runs,columns,samples]);
+  if(draftRef)draftRef.current.texts=ready&&(canSave.current||storageConflict)?{provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,requests,batchJob,runs,columns,samples}:undefined;
+ },[draftRef,ready,storageConflict,provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,requests,batchJob,runs,columns,samples]);
+ useEffect(()=>{if(!ready||!canSave.current)return;if(firstSave.current){firstSave.current=false;setSaved(true);return;}let current=true;setSaved(false);storage.current.save({provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,requests,batchJob,runs,columns,samples},{replaceable:true}).then(()=>{if(current){setSaved(true);setStorageIssue('');}}).catch(error=>{stop.current=true;const conflict=error instanceof Error&&error.message.startsWith('Another tab');if(conflict){canSave.current=false;setStorageConflict(true);}if(current||conflict){setSaved(false);setStorageIssue(conflict?error.message:'Could not save locally. Download your results before leaving.');}});return()=>{current=false;};},[docs,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,requests,batchJob,provenance,ready,runs,columns,samples]);
  useEffect(()=>{const h=(e:BeforeUnloadEvent)=>{if(lock.current||(ready&&!saved)){e.preventDefault();e.returnValue='';}};window.addEventListener('beforeunload',h);return()=>window.removeEventListener('beforeunload',h);},[ready,saved]);
  function update(id:string,changes:Partial<Doc>){latest.current=latest.current.map(d=>d.id===id?{...d,...changes}:d);setDocs(latest.current);}
  // Research mode: a table (CSV, TSV, Excel, JSON) holds a whole corpus, one text per row; every other file is one text.
@@ -211,13 +217,13 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   const added:Doc[]=files.map(file=>({id:newId(),name:file.name,file,status:'pending'}));
   latest.current=[...latest.current,...added];setDocs(latest.current);setPendingImport(null);setNotice(`${added.length} ${added.length===1?'document':'documents'} added. ${summary}`.trim());
  }
- function retry(id?:string){if(workspaceLocked||!ready||storageConflict)return;const count=latest.current.filter(d=>d.status==='error'&&(!id||d.id===id)).length;if(count&&confirm(retryMessage(count))){latest.current=queueRetries(latest.current,id);setDocs(latest.current);setNotice('Retries queued. Review the current prompt and settings, then choose Annotate next or '+(processing==='batch'?'Submit batch':'Run all')+'.');}}
+ function retry(id?:string){if(workspaceLocked||!ready||storageConflict)return;const count=latest.current.filter(d=>d.status==='error'&&(!id||d.id===id)).length;if(count&&confirm(retryMessage(count))){latest.current=queueRetries(latest.current,id,research?['runNo']:[]);setDocs(latest.current);setNotice('Retries queued. Review the current prompt and settings, then choose Annotate next or '+(processing==='batch'?'Submit batch':'Run all')+'.');}}
  const detailRequest=useRef(false);
  function viewDocument(id:string){detailRequest.current=true;setSelected(id);if(id===selected){const detail=document.getElementById('annotation-detail');detail?.focus();detail?.scrollIntoView({block:'nearest'});detailRequest.current=false;}}
  useEffect(()=>{if(!detailRequest.current)return;detailRequest.current=false;const detail=document.getElementById('annotation-detail');detail?.focus();detail?.scrollIntoView({block:'nearest'});},[selected]);
 
- function clearWorkspace(){if(lock.current||batchJob)return;if(confirm('Clear all documents and results from this browser? Download the Excel workbook first.')){latest.current=[];setDocs([]);setSelected('');runsNow.current=[];setRuns([]);setColumns([]);setSamples([]);setChecked([]);setView(DEFAULT_VIEW);}}
- function clearResults(){if(lock.current||batchJob||exporting||!ready||storageConflict)return;if(!confirm('Clear all annotation results'+(earlierCount(latest.current)?', including the results of earlier runs,':'')+' and keep the uploaded documents? Save a version in Studies or download a study backup first if you want to keep these results.'))return;latest.current=latest.current.map(clearRuns);setDocs(latest.current);runsNow.current=[];setRuns([]);setSelected('');setNotice('Results cleared. Your documents are ready to annotate again with the current settings.');}
+ function clearWorkspace(){if(lock.current||batchJob)return;if(confirm('Clear all documents and results from this browser? Download the Excel workbook first.')){latest.current=[];setDocs([]);setSelected('');runsNow.current=[];setRuns([]);setRequests(undefined);setColumns([]);setSamples([]);setChecked([]);setView(DEFAULT_VIEW);}}
+ function clearResults(){if(lock.current||batchJob||exporting||!ready||storageConflict)return;if(!confirm('Clear all annotation results'+(earlierCount(latest.current)?', including the results of earlier runs,':'')+' and keep the uploaded documents? Save a version in Studies or download a study backup first if you want to keep these results.'))return;latest.current=latest.current.map(clearRuns);setDocs(latest.current);runsNow.current=[];setRuns([]);setRequests(undefined);setSelected('');setNotice('Results cleared. Your documents are ready to annotate again with the current settings.');}
  async function splitDocuments(){
   if(lock.current||batchJob||exporting||!ready||storageConflict)return;
   const words=Number(chunkWords);if(!validChunkWords(words)){setNotice('Enter a whole number from 1 to 1,000,000 for words per chunk.');return;}
@@ -243,6 +249,21 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   if(research&&errors.key)setKeysOpen(true);else document.getElementById(errors.key?'key':errors.prompt?'prompt':'workspace')?.focus();
   return false;
  }
+ // Research mode: what a result about to be made records of its request: the request itself (kept once in the
+ // list) and the build of the Lab. The standard Lab records nothing.
+ function recorder(batch:boolean){
+  const made=new Map<boolean,Recorded>();
+  return (d:Doc):Recorded=>{
+   if(!research)return {};
+   const pdf=/\.pdf$/i.test(d.file.name);let noted=made.get(pdf);
+   if(!noted){
+    const kept=recordRequest(requestsNow.current,requestFrame({provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,batch},pdf));
+    if(kept.list!==requestsNow.current){requestsNow.current=kept.list;setRequests(kept.list);}
+    noted={...NOT_RECORDED,requestId:kept.id,lab:LAB_VERSION};made.set(pdf,noted);
+   }
+   return noted;
+  };
+ }
  // `only` limits the run to some texts (research mode); without it every ready text is annotated.
  async function run(all:boolean,only?:Set<string>,newRun=false){
   if(lock.current||batchJob||!ready||storageConflict||keyRejected)return;
@@ -253,7 +274,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   // Texts annotated with an unchanged setup join the latest run; a changed setup starts the next one.
   let runNo:number|undefined;
   if(eligible.length){const begun=beginRun(latest.current,runsNow.current,{provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings},newRun,runStartedAt,new Set((all?eligible:eligible.slice(0,1)).map(r=>r.id)));latest.current=begun.docs;runsNow.current=begun.runs;setDocs(begun.docs);setRuns(begun.runs);runNo=begun.number;}
-  let claimed=0,failed=false;
+  let claimed=0,failed=false;const recorded=recorder(false);
   try{
    await runAnnotationQueue({
     concurrency:all?parallel:1,
@@ -264,20 +285,20 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      if(!all&&claimed)return;
      const d=latest.current.find(x=>x.status==='pending'&&(!only||only.has(x.id)));if(!d)return;
      claimed++;
-     update(d.id,{inputMode:provider==='openrouter'?(/\.pdf$/i.test(d.file.name)?'pdf-native':'text'):undefined,status:'running',runNo,runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,concurrency:all?parallel:1,processing:'instant',batchId:undefined});
+     update(d.id,{inputMode:provider==='openrouter'?(/\.pdf$/i.test(d.file.name)?'pdf-native':'text'):undefined,status:'running',runNo,runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,concurrency:all?parallel:1,processing:'instant',batchId:undefined,...recorded(d)});
      if(claimed===1)setSelected(d.id);
      return d;
     },
     perform:async(d,place)=>{
      try{
-      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);
+      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');
       const sent=await sendAnnotation(()=>fetch('/api/annotate',{method:'POST',headers:{Authorization:`Bearer ${key.trim()}`},body:form}),place);
       // The run stopped while this text waited out a rate limit: it was not annotated and waits again as before.
       if(!sent){latest.current=latest.current.map(x=>x.id===d.id?d:x);setDocs(latest.current);return;}
       const r=sent.response,out=sent.out as {responseFormat?:string;rawResponse?:string;answers?:Record<string,string>;error?:string;score:string;explanation:string;tokens?:number;usage?:any;responseId?:string}|null;
       if(!out)throw new Error('The server returned an unreadable response. Check provider usage before retrying.');
       if(out.usage)update(d.id,{usage:out.usage,tokens:out.tokens,responseId:out.responseId});
-      if(!r.ok){if(out.rawResponse)update(d.id,{...out,time:new Date().toISOString()});throw new Error(out.error||'Request failed.');}
+      if(!r.ok){if(out.rawResponse)update(d.id,{...out,time:new Date().toISOString()});else if(research)update(d.id,replyNotes(out));throw new Error(out.error||'Request failed.');}
       const invalid=annotationValidationError(out,sentFields,prompt,false,sentSettings);
       if(invalid){update(d.id,{...out,rawResponse:JSON.stringify(out),time:new Date().toISOString()});throw new Error(invalid);}
       update(d.id,{status:'done',...out,answers:answerValues(out,sentFields),provider,model,prompt,effort,time:new Date().toISOString()});
@@ -295,7 +316,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  }
 
  async function batchRequest(action:string,job:BatchJob,extra?:FormData){
-  const form=extra||new FormData();form.set('action',action);form.set('provider',job.provider);if(job.id)form.set('id',job.id);if(job.answerSettings?.plain)form.set('plain','true');
+  const form=extra||new FormData();form.set('action',action);form.set('provider',job.provider);if(job.id)form.set('id',job.id);if(job.answerSettings?.plain)form.set('plain','true');if(research&&action==='collect')form.set('record','true');
   const r=await fetch('/api/batch',{method:'POST',headers:{Authorization:`Bearer ${key.trim()}`},body:form});
   const out:any=await r.json().catch(()=>null);
   if(!out||!r.ok){const error=new Error(out?.error||'The connection was interrupted. Check your provider before submitting again.') as Error&{uncertain:boolean};error.uncertain=out?.uncertain??true;throw error;}return out;
@@ -307,18 +328,18 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   if(pending.length>MAX_BATCH_ITEMS||pending.reduce((n,d)=>n+d.file.size,0)>MAX_BATCH_SOURCE_BYTES){setNotice('Submit up to 10,000 texts and 50 MB of files together. Submit fewer or smaller files when this limit is exceeded.');return;}
   lock.current=true;setBatchBusy(true);setNotice('');
   const job:BatchJob={responseFormat:annotationFormatRecord(sentFields,prompt,false,sentSettings),answerFields:sentFields,...(sentSettings?{answerSettings:sentSettings}:{}),...(sentRequest?{requestSettings:sentRequest}:{}),runId:'lab_'+newId(),provider,model,prompt,effort,docIds:pending.map(d=>d.id),createdAt:new Date().toISOString(),state:'submitting'};
-  const queuedIds=new Set(job.docIds);
+  const queuedIds=new Set(job.docIds),recorded=recorder(true);
   const begun=beginRun(latest.current,runsNow.current,{provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings},newRun,job.createdAt,queuedIds);
-  const queued=begun.docs.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runNo:begun.number,runId:job.runId,runStartedAt:job.createdAt,runSize:job.docIds.length,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,concurrency:undefined,processing:'batch'}:d);
+  const queued=begun.docs.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runNo:begun.number,runId:job.runId,runStartedAt:job.createdAt,runSize:job.docIds.length,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,concurrency:undefined,processing:'batch',...recorded(d)}:d);
   let submitted=false;
   try{
    // Save the recovery reference before anything can create a paid provider job.
-   await storage.current.save({provenance,docs:queued,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,batchJob:job,runs:begun.runs,columns,samples});
+   await storage.current.save({provenance,docs:queued,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,requests:requestsNow.current,batchJob:job,runs:begun.runs,columns,samples});
    latest.current=queued;setDocs(queued);runsNow.current=begun.runs;setRuns(begun.runs);setBatchJob(job);
    const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(pending.map((_,i)=>job.runId+'_'+i)));pending.forEach(d=>form.append('files',d.file));
    submitted=true;
    const out=await batchRequest('submit',job,form);if(typeof out.id!=='string'||!out.id)throw new Error('Submission was not confirmed. Check the provider’s console.');const accepted={...job,id:out.id,state:'processing' as const};setBatchJob(accepted);
-   await storage.current.save({provenance,docs:queued,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,batchJob:accepted,runs:begun.runs,columns,samples});
+   await storage.current.save({provenance,docs:queued,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,requests:requestsNow.current,batchJob:accepted,runs:begun.runs,columns,samples});
    setNotice('Batch submitted. Once this workspace is saved, you can close the page and return in this browser.');
   }catch(error){
    const uncertain=submitted&&((error as Error&{uncertain?:boolean}).uncertain!==false);
@@ -340,9 +361,9 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
     const results=new Map<string,BatchResult>((out.results||[]).map(r=>[r.id,r]));
     const indices=new Map(job.docIds.map((id,i)=>[id,i])),expected=new Set(job.docIds.map((_,i)=>job.runId+'_'+i));
     if([...results.keys()].some(id=>!expected.has(id)))throw new Error('These results belong to a different batch. Check the batch ID; your workspace has not been changed.');
-    const collected=latest.current.map(d=>{const index=indices.get(d.id);if(index===undefined)return d;const r=results.get(job.runId+'_'+index);if(r&&!r.error){r.error=annotationValidationError(r,job.answerFields,job.prompt,false,job.answerSettings);if(r.error)r.rawResponse=JSON.stringify({score:r.score,explanation:r.explanation,answers:r.answers});else delete r.rawResponse;}return {...d,...(r?{...collectedAnswers(r,job.answerFields),answerSettings:job.answerSettings,responseFormat:job.responseFormat,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId}:{}),status:r&&!r.error?'done':'error',error:r?.error||(!r?'No result was returned for this document. Check the provider’s batch report before retrying.':undefined),provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,processing:'batch',batchId:job.id,time:new Date().toISOString()};});
+    const collected=latest.current.map(d=>{const index=indices.get(d.id);if(index===undefined)return d;const r=results.get(job.runId+'_'+index);if(r&&!r.error){r.error=annotationValidationError(r,job.answerFields,job.prompt,false,job.answerSettings);if(r.error)r.rawResponse=JSON.stringify({score:r.score,explanation:r.explanation,answers:r.answers});else delete r.rawResponse;}return {...d,...(r?{...collectedAnswers(r,job.answerFields),answerSettings:job.answerSettings,responseFormat:job.responseFormat,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),status:r&&!r.error?'done':'error',error:r?.error||(!r?'No result was returned for this document. Check the provider’s batch report before retrying.':undefined),provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,processing:'batch',batchId:job.id,time:new Date().toISOString()};});
     // Retain the job until the complete result set is safely stored.
-    await storage.current.save({provenance,docs:collected,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,batchJob:null,runs:runsNow.current,columns,samples});
+    await storage.current.save({provenance,docs:collected,answerFields,answerSettings,prompt,model,effort,provider,chunkWords,chunkMethod,processing,concurrency,requestSettings,requests:requestsNow.current,batchJob:null,runs:runsNow.current,columns,samples});
     latest.current=collected;setDocs(collected);setBatchJob(null);setSelected(job.docIds[0]||'');setRecoverId('');setNotice('Batch results collected. Any failed texts are marked for review; completed results are kept.');
    }else{setBatchJob({...job,state:out.terminal?'ready':'processing',completed:out.completed,total:out.total,providerState:out.state});setNotice(out.terminal?'The batch has ended. Collect results to see completed annotations and any errors.':'The batch is still processing. You can close this page once the workspace is saved.');}
   }catch(error){setNotice(error instanceof Error?error.message:'Could not check this batch. Your saved job is unchanged.');}
@@ -357,7 +378,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  function again(ids:string[],start:(only:Set<string>,newRun:boolean)=>void){
   if(lock.current||batchJob||!ready||storageConflict||keyRejected||!ids.length||!setupReady())return;
   const only=new Set(ids);
-  const retried=latest.current.map(d=>only.has(d.id)&&d.status==='error'?queueRetries([d])[0]:d);
+  const retried=latest.current.map(d=>only.has(d.id)&&d.status==='error'?queueRetries([d],undefined,['runNo'])[0]:d);
   const moved=requeue(retried,runsNow.current,only);
   latest.current=moved.docs;runsNow.current=moved.runs;setDocs(moved.docs);setRuns(moved.runs);
   start(only,moved.archived>0);
@@ -390,7 +411,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  function removeRun(number:number){
   if(lock.current||batchJob||!ready||storageConflict)return;
   const next=deleteRun(latest.current,runsNow.current,number);
-  latest.current=next.docs;runsNow.current=next.runs;setDocs(next.docs);setRuns(next.runs);
+  latest.current=next.docs;runsNow.current=next.runs;setDocs(next.docs);setRuns(next.runs);setRequests(usedRequests(requestsNow.current,next.docs));
   if(view.run===number||view.compare==='run:'+number)setView(current=>({...current,run:current.run===number?'latest':current.run,compare:current.compare==='run:'+number?'':current.compare}));
  }
  function openText(id:string){setView(current=>({...DEFAULT_VIEW,compare:current.compare,field:current.field}));changeTab('workspace');viewDocument(id);}

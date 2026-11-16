@@ -17,8 +17,9 @@ type ResultFields={provider?:string;model?:string;effort?:string;prompt?:string;
 export type Earlier=ResultFields&{runNo:number;status:string};
 export type Row=ResultFields&{id:string;status:string;name:string;runNo?:number;earlier?:Earlier[];cells?:string[]};
 
-// Everything a single annotation writes on a text (the same list Clear results removes).
-export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','requestSettings','answers','history','startedAt','concurrency','provider','score','explanation','error','model','prompt','effort','tokens','usage','time','responseId','processing','batchId','runNo'] as const;
+// Everything a single annotation writes on a text (the same list Clear results removes). The last five are
+// the record research mode keeps of a request (lib/research/requests.ts).
+export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','requestSettings','answers','history','startedAt','concurrency','provider','score','explanation','error','model','prompt','effort','tokens','usage','time','responseId','processing','batchId','runNo','requestId','modelReported','stopReason','output','lab'] as const;
 
 // Field names and their settings together: the same answers are asked for exactly when this is the same.
 const fieldsKey=(setup:{answerFields?:string[];answerSettings?:AnswerSettings})=>JSON.stringify([setup.answerFields||[],setup.answerSettings||null]);

@@ -186,7 +186,7 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
   const source=fs.readFileSync(path.join(root,page),'utf8');
   assert(source.includes('const sentRequest=research?sentRequestSettings(provider,model,requestSettings):undefined;'),page+': the standard Lab never sends or records the setting');
   assert.equal(source.split("form.set('requestSettings'").length-1,2,page+': texts sent now and in a batch');assert.equal(source.split("if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));").length-1,2,page);
-  assert.equal(source.split('requestSettings:sentRequest').length-1,3,page+': every started result and the batch record what was sent');
+  assert.equal(source.split('requestSettings:sentRequest').length-1,4,page+': every started result, the batch, and the recorded request hold what was sent');
   assert(source.includes('{research&&<ResearchCacheOption '),page+': the option is shown in research mode only');
  }
 
