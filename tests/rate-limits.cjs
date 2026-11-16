@@ -62,8 +62,9 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
   const body={error:{message:'SECRET sk-userkey try again in SECRET',code:'SECRET',details:[{retryDelay:'SECRET'}]}},out=providerFailure(provider,429,body,new Headers({'retry-after':'SECRET'}));
   assert.deepEqual(Object.keys(out).sort(),['error','retryAfterMs']);assert.equal(out.retryAfterMs,0);assert(!JSON.stringify(out).includes('SECRET'));
   assert.equal(out.error,providerError(provider,429,body,new Headers({'retry-after':'SECRET'})),'The message is the one the Lab already gave');
-  assert.deepEqual(Object.keys(providerFailure(provider,401,{error:{code:'invalid_api_key'}})),['error']);
-  assert.deepEqual(Object.keys(providerFailure(provider,429,{error:{code:'insufficient_quota'}})),['error']);
+  // Neither is sent again. (`shared` marks a failure every request would meet; see tests/carry-on.cjs.)
+  assert.deepEqual(Object.keys(providerFailure(provider,401,{error:{code:'invalid_api_key'}})),['error','shared']);
+  assert.deepEqual(Object.keys(providerFailure(provider,429,{error:{code:'insufficient_quota'}})),['error','shared']);
  }
 
  // --- What the annotate route tells the page ----------------------------------------------

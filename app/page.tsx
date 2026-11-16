@@ -49,6 +49,7 @@ import {insertValues,insertNotes} from '@/lib/research/inserts';
 import {LAB_VERSION} from '@/lib/version';
 import {readResearchMode,writeResearchMode,readSavedKeys,writeSavedKeys,forgetSavedKeys,sessionKeys,keepSessionKeys,type Keyring} from '@/lib/research/mode';
 import {adoptUnnumbered,beginRun,cleanRuns,clearRuns,deleteRun,earlierCount,remainingFor,requeue,resumable,runSummaries,type RunRecord,type Earlier} from '@/lib/research/runs';
+import {carriedOnNotice,connectionFailure,earlyStopNotice,earlyStopper,takeShared} from '@/lib/research/early-stop';
 import {MAX_REPEATS,annotationCount,annotationFrom,cleanRepeats,incomplete,missingRepeats,repeatsOf,settle,unclaimed,withAnnotation,type Annotation} from '@/lib/research/repeats';
 import {CORPUS_TABLE,appendTexts,cleanColumns,type Column,type NewText} from '@/lib/research/columns';
 import {cleanSamples,type SampleRecord} from '@/lib/research/sample';
@@ -309,6 +310,9 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   let runNo:number|undefined;
   if(eligible.length){const begun=beginRun(latest.current,runsNow.current,setupNow,newRun,runStartedAt,new Set((all?eligible:eligible.slice(0,1)).map(r=>r.id)));latest.current=begun.docs;runsNow.current=begun.runs;setDocs(begun.docs);setRuns(begun.runs);runNo=begun.number;}
   let claimed=0,failed=false;const recorded=recorder(false);
+  // Research mode: a failed text is marked and the run carries on; it stops only when its first requests all
+  // failed in a way every request would meet. answered, failures: the requests that came back, and those that failed.
+  const early=research?earlyStopper():undefined;let answered=0,failures=0;
   // Several annotations per text. waitingTasks: annotations of the texts begun that are still to be sent.
   // open: per text begun, how it was before, how many of its annotations are outstanding, and how many came back.
   type Task={d:Doc;n:number};
@@ -351,11 +355,15 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      // as an annotation of its own.
      const got:Record<string,any>=n?{runId,runStartedAt,runSize,startedAt:new Date().toISOString(),processing:'instant',concurrency:all?parallel:1,...recorded(d)}:{};
      const write=n?(changes:Partial<Doc>)=>{Object.assign(got,changes);}:(changes:Partial<Doc>)=>update(d.id,changes);
+     // The mark of a failure every request of the run would meet. It is read off the reply and never kept.
+     // back: a reply came back (a request that did not get as far as a reply may have had no connection).
+     let shared:string|undefined,back=false;
      try{
       const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,d,columns)));
       const sent=await sendAnnotation(()=>fetch('/api/annotate',{method:'POST',headers:{Authorization:`Bearer ${key.trim()}`},body:form}),place);
       // The run stopped while this text waited out a rate limit: it was not annotated and waits again as before.
       if(!sent){if(n)close(d.id);else{latest.current=latest.current.map(x=>x.id===d.id?d:x);setDocs(latest.current);}return;}
+      back=true;shared=takeShared(sent.out);
       const r=sent.response,out=sent.out as {responseFormat?:string;rawResponse?:string;answers?:Record<string,string>;error?:string;score:string;explanation:string;tokens?:number;usage?:any;responseId?:string}|null;
       if(!out)throw new Error('The server returned an unreadable response. Check provider usage before retrying.');
       if(out.usage)write({usage:out.usage,tokens:out.tokens,responseId:out.responseId});
@@ -363,10 +371,18 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
       const invalid=annotationValidationError(out,sentFields,prompt,false,sentSettings);
       if(invalid){write({...out,rawResponse:JSON.stringify(out),time:new Date().toISOString()});throw new Error(invalid);}
       write({status:'done',...out,answers:answerValues(out,sentFields),provider,model,prompt,effort,time:new Date().toISOString()});
+      answered++;early?.(d.id);
      }catch(e){
-      stop.current=true;failed=true;
-      write({status:'error',error:e instanceof Error?e.message:'Request failed'});
-      setSelected(d.id);setNotice('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.');
+      if(early){
+       write({status:'error',error:e instanceof Error?e.message:'Request failed'});
+       answered++;failures++;
+       const stopped=early(d.id,back?shared:connectionFailure(e).shared);
+       if(stopped&&!failed){stop.current=true;failed=true;setNotice(earlyStopNotice(stopped,'text'));}
+      }else{
+       stop.current=true;failed=true;
+       write({status:'error',error:e instanceof Error?e.message:'Request failed'});
+       setSelected(d.id);setNotice('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.');
+      }
      }
      if(n)close(d.id,annotationFrom(n,got.status==='done',{...got,time:got.time||new Date().toISOString()}),typeof got.responseFormat==='string'?got.responseFormat:undefined);
     }
@@ -375,7 +391,8 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
    // Several annotations per text: what was not sent stays unsent, and every text begun is settled.
    for(const task of waitingTasks.splice(0))close(task.d.id);
    for(const id of [...open.keys()])settleText(id);
-   if(stop.current&&!failed)setNotice('Paused. Active annotations have finished; completed results are kept.');
+   if(stop.current&&!failed)setNotice('Paused. Active annotations have finished; completed results are kept.'+(failures?' '+carriedOnNotice(failures,answered,'workspace',true):''));
+   else if(failures&&!failed)setNotice(carriedOnNotice(failures,answered,'workspace'));
    lock.current=false;setBusy(false);
   }
  }

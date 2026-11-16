@@ -1,6 +1,6 @@
 import {answerValues,plainAnswer,EMPTY_REPLY,type AnswerSettings} from './answer-fields';
 import {extractText,TextEncodingError} from './extract-text';
-import {providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
+import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from './provider-errors';
 import {requestTimeout,type RequestSettings} from './request-settings';
 import {providerBody,requestUrl,replyCode,replyText,reasoningSummary,type RequestDocument} from './request-frame';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
@@ -44,5 +44,5 @@ export async function annotateOpenRouter(file:File,prompt:string,model:string,ef
   if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return reply({...accounting,error:'OpenRouter returned an unexpected annotation format. Check usage before retrying.'},422);
   let answers;try{answers=answerValues(result,answerFields);}catch(error){return reply({...accounting,error:(error as Error).message},422);}
   return reply({...accounting,rawResponse:raw,answers,score:result.score,explanation:result.explanation,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id});
- }catch{return reply({error:'OpenRouter connection interrupted or timed out. Refresh your allowance before retrying; the request may have completed and been charged.'},502);}
+ }catch(error){return reply({error:'OpenRouter connection interrupted or timed out. Refresh your allowance before retrying; the request may have completed and been charged.',...connectionFailure(error)},502);}
 }

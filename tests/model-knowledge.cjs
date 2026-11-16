@@ -94,6 +94,32 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   await standard.button('Run all').props.onClick();await standard.flush();assert.equal(standard.requests.length,1);assert.deepEqual(standard.latest().items.map(item=>item.status),['error','pending','pending']);assert.equal(standard.latest().concurrency,128);
   // The standard Lab keeps no record of a request.
   assert.equal(standard.requests[0].options.body.get('record'),null);assert.equal(standard.latest().requests,undefined);assert(standard.latest().items.every(item=>['requestId','modelReported','stopReason','output','lab'].every(key=>!(key in item))));
+  // When a subject fails, research mode marks it and carries on. A failure every request would meet (the reply
+  // marks it `shared`) stops the run once the first three requests, for at least two subjects, all failed that way.
+  const five=()=>({prompt:'Classify',concurrency:1,items:subjects.slice(0,5)}),said=(h,text)=>h.find(n=>(n.props?.role==='status'||n.props?.role==='alert')&&h.text(n)===text);
+  const fine=()=>Response.json({score:'ONE',explanation:'Fine'}),refusal=()=>Response.json({error:'OpenAI rejected the API key.',shared:'account'},{status:401});
+  let nth=0;const carried=harness(five(),async()=>++nth===2?Response.json({error:'The reply was cut off.'},{status:422}):fine());carried.props.research=true;await carried.flush();
+  await carried.button('Run all').props.onClick();await carried.flush();
+  assert.equal(carried.requests.length,5);assert.deepEqual(carried.latest().items.map(item=>item.status),['done','error','done','done','done']);assert.equal(carried.latest().items[1].error,'The reply was cut off.');
+  said(carried,'1 of 5 requests failed, and the run carried on. “Queue failed items for retry” makes it ready to run again.');
+  const refused=harness(five(),async()=>refusal());refused.props.research=true;await refused.flush();
+  await refused.button('Run all').props.onClick();await refused.flush();
+  assert.equal(refused.requests.length,3);assert.deepEqual(refused.latest().items.map(item=>item.status),['error','error','error','pending','pending']);
+  said(refused,'Stopped: the first 3 requests all failed the same way, which points to the settings or the account rather than the subjects. Requests under way will finish, and completed results are kept. See the error of a failed subject before running again.');
+  assert(refused.latest().items.every(item=>!('shared' in item)&&!JSON.stringify(item).includes('"shared"')),'The mark is never kept with a result');
+  // One result among the first requests: the failures are not about every request, and the run goes through.
+  nth=0;const mixed=harness(five(),async()=>++nth===1?fine():refusal());mixed.props.research=true;await mixed.flush();
+  await mixed.button('Run all').props.onClick();await mixed.flush();
+  assert.equal(mixed.requests.length,5);assert.deepEqual(mixed.latest().items.map(item=>item.status),['done','error','error','error','error']);
+  said(mixed,'4 of 5 requests failed, and the run carried on. “Queue failed items for retry” makes them ready to run again.');
+  // "Annotate next" sends one request and says that it failed.
+  const next=harness(five(),async()=>refusal());next.props.research=true;await next.flush();
+  await next.button('Annotate next').props.onClick();await next.flush();assert.equal(next.requests.length,1);said(next,'The request failed. “Queue failed items for retry” makes it ready to run again.');
+  // The standard Lab stops at the first failure, whatever the reply carries.
+  const first=harness(five(),async()=>refusal());await first.flush();
+  await first.button('Run all').props.onClick();await first.flush();
+  assert.equal(first.requests.length,1);assert.deepEqual(first.latest().items.map(item=>item.status),['error','pending','pending','pending','pending']);assert(!('shared' in first.latest().items[0]));
+  said(first,'Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.');
  }
  // An error prevents new starts while already active results are still collected.
  const errorReleases=[];const parallelError=harness({prompt:'Classify',concurrency:2,items:subjects},()=>new Promise(resolve=>errorReleases.push(resolve)));await parallelError.flush();const errorRun=parallelError.button('Run all').props.onClick();await parallelError.flush();assert.equal(parallelError.requests.length,2);
