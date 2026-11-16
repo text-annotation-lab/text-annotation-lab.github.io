@@ -1,7 +1,7 @@
 // Research mode, the study's scale for the scores beyond the agreement figures: with several annotations per text,
 // a number off the scale is left out of a text's combined score when another annotation is on it, the exports count
 // how many were, and "Disagree" and "Agree" leave a value off the scale out. The rules are in
-// lib/research/scale-combine.ts and lib/research/view.ts.
+// lib/research/scale-combine.ts and lib/research/view.ts. (A yes / no in numbers: tests/score-pairing.cjs.)
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {createRequire}=require('node:module'),root=process.cwd(),ts=require('../node_modules/typescript'),req=createRequire(path.join(root,'package.json'));
 const cache=new Map();
@@ -50,7 +50,8 @@ const race=row=>JSON.parse(row.answers.f0).race;
  rows[0].earlier=once(-2);rows[1].earlier=once(9);rows[2].earlier=once(2);rows[4].earlier=once(0);
  assert.deepEqual(rows.map(race),[-1,9,2,3,0,-3],'As stored: the median of every number');
  // Which scores run 2 reads on the scale: race (mostly on it), not a 0–100 confidence.
- assert.deepEqual([...combine.scaleKeysByRun(rows,SCALE).get(2)],['race']);
+ assert.deepEqual([...combine.scaleKeysByRun(rows,SCALE).get(2)],[['race','scale']]);
+ assert.equal(combine.scaleKeysByRun(rows,undefined).size,0,'Without the scale, no score of these runs has a fixed one');
  assert.equal(combine.scaleKeysByRun(rows,SCALE,true).has(1),false,'Run 1 has nothing to combine');
 
  const scaled=combine.onScaleRows(rows,SCALE);
@@ -72,9 +73,9 @@ const race=row=>JSON.parse(row.answers.f0).race;
 
  // "Disagree" and "Agree" with a column of labels: as the agreement figures compare them.
  const columns=[{name:'race_gold',role:'label'}],pick=(docs,show,scale,compare='col:race_gold')=>view.researchRows(docs,columns,{...view.DEFAULT_VIEW,compare,field:'race',show},scale).rows.map(row=>row.id).join(' ');
- assert.equal(pick(rows,'disagree'),'t1 t6','Without the scale: the values as they are, but for the “NA”, as in the agreement figures');
+ assert.equal(pick(rows,'disagree'),'t1 t6','Without the scale: the values as they are, but for the “NA”, a blank cell in the agreement figures');
  assert.equal(pick(rows,'agree'),'t2 t3 t5');
- assert.equal(pick(scaled.rows,'disagree',SCALE),'t1','On the scale: a 9, a 7, and an “NA” are left out');
+ assert.equal(pick(scaled.rows,'disagree',SCALE),'t1','On the scale: a 9 and a 7 are left out, and the “NA” is a blank cell');
  assert.equal(pick(scaled.rows,'agree',SCALE),'t3 t5');
  const t2=view.researchRows(scaled.rows,columns,{...view.DEFAULT_VIEW,compare:'col:race_gold',field:'race'},SCALE).rows[1].compared;
  assert.deepEqual(t2,{own:'9',other:'9',match:null});

@@ -205,7 +205,7 @@ assert.equal(agree.autoLevel(numbers),'ordinal');assert.deepEqual(agree.disagree
  const share=value=>(ans.filter(x=>x===value).length+lab.filter(x=>x===value).length)/20,pe=scale.reduce((sum,value)=>sum+share(value)*(1-share(value)),0)/6;
  near(onScale.gwetAC1,(0.6-pe)/(1-pe),'AC1 worked out separately');
  const untyped=agree.pairSources(ans.map((answer,i)=>({id:String(i),name:'t'+i,status:'done',runNo:1,score:answer,cells:[lab[i]]})),cols,run1,'',human,'');
- assert.deepEqual([untyped.scaleSeen,untyped.range,untyped.allowed],[true,[-1,2],[]]);assert.match(untyped.basis,/read from the run’s answers, -1 to 2; no allowed values are declared/);
+ assert.deepEqual([untyped.scaleSeen,untyped.range,untyped.allowed],[true,[-1,2],['-1','0','1','2']],'Whole-number answers: every whole number of the range seen is a point of the scale');assert.match(untyped.basis,/read from the run’s answers, -1 to 2; no allowed values are declared/);
  assert(Math.abs(stat(untyped).gwetAC1-onScale.gwetAC1)>0.01,'Without a declared scale, q is the range that was seen');
  // A label off the declared scale (a 9 for “cannot tell”) is left out and reported.
  const off=stat(pair(typedRows('ordinal',scale,['1','2','0'],['1','9','0'])));assert.equal(off.n,2);assert.match(agree.leftOutNote(off,'text','marker'),/1 text was left out because a value was not a number on the scale -3 to 3: “9”/);

@@ -59,13 +59,15 @@ const backup=load('lib/study-backup.ts');
  assert.deepEqual(agreement.pairSources(typed,columns,run,'race',gold,'',{min:-3,max:3}).allowed,['-2','-1','0','1','2']);
  const standard=rows.map(row=>({...row,answerFields:[],answerSettings:undefined,answers:undefined,score:String(JSON.parse(row.answers.f0).race)}));
  assert.equal(agreement.pairSources(standard,columns,run,'',gold,'',{min:-3,max:3}).studyScale,undefined);
- // Two plain-text runs: on the scale when both are; a run of 0 and 1 keeps them on the range seen.
+ // Two plain-text runs: on the scale when both are, and also when one of them is (a run of 0 and 1 next to one on
+ // the scale): the scale, widened by the other run's answers where they reach beyond it.
  const two=rows.map(row=>({...row,earlier:[{...row,runNo:2}]}));
  // (The earlier result of each text is run 2's here; rowForRun reads it.)
  const both=agreement.pairSources(two,columns,run,'race',{kind:'run',run:2},'race',{min:-3,max:3});
  assert.deepEqual(both.studyScale,{min:-3,max:3});
  const flags=rows.map((row,i)=>({...row,earlier:[{...row,runNo:2,answers:{f0:reply(i%2,50)}}]}));
- assert.equal(agreement.pairSources(flags,columns,run,'race',{kind:'run',run:2},'race',{min:-3,max:3}).studyScale,undefined);
+ const mixed=agreement.pairSources(flags,columns,run,'race',{kind:'run',run:2},'race',{min:-3,max:3});
+ assert.deepEqual([mixed.studyScale,mixed.scaleSeen,mixed.allowed],[{min:-3,max:3},false,['-3','-2','-1','0','1','2','3']]);
 
  // A study backup carries the scale; a malformed one is refused.
  const study=texts=>backup.encodeStudyBackup({name:'Scale',createdAt:'2026-11-16',texts,knowledge:{items:[],scoreScale:{min:0,max:4}}});
