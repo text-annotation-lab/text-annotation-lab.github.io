@@ -24,15 +24,16 @@ function MoreMenu({items}:{items:MenuItem[]}){
  return <span className="research-menu" ref={box}><Button type="button" variant="outline" className="research-menu-button" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>More<ChevronDown size={15} aria-hidden="true"/></Button>{open&&<span className="research-menu-list" role="menu">{items.map(item=><button key={item.label} type="button" role="menuitem" className={item.danger?'danger':undefined} disabled={item.disabled} onClick={()=>{setOpen(false);item.onSelect();}}>{item.label}</button>)}</span>}</span>;
 }
 
-export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,shown,total,checked,onClearChecked,actions,menu}:{view:View;onChange:(view:View)=>void;columns:Column[];rows:Row[];runs:RunSummary[];fields:string[];field:string;shown:number;total:number;checked:number;onClearChecked:()=>void;actions?:ReactNode;menu?:MenuItem[]}){
+// unit: what the rows are, texts (the Workspace) or subjects (Model knowledge).
+export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,shown,total,checked,onClearChecked,actions,menu,unit='text'}:{view:View;onChange:(view:View)=>void;columns:Column[];rows:Row[];runs:RunSummary[];fields:string[];field:string;shown:number;total:number;checked:number;onClearChecked:()=>void;actions?:ReactNode;menu?:MenuItem[];unit?:'text'|'subject'}){
  const set=(changes:Partial<View>)=>onChange({...view,...changes});
  const comparing=Boolean(view.compare),labels=columns.filter(c=>c.role==='label'),others=columns.filter(c=>c.role!=='label');
  const filterIndex=view.column?columnIndex(columns,view.column):-1;
  const otherRuns=runs.filter(run=>view.run==='latest'||run.number!==view.run);
  return <div className="research-filters" role="group" aria-label="Filter and compare results">
-  <label className="research-search"><Search size={15} aria-hidden="true"/><input type="search" value={view.query} placeholder="Search" aria-label="Search texts, answers, labels, and metadata" onChange={event=>set({query:event.target.value})}/></label>
+  <label className="research-search"><Search size={15} aria-hidden="true"/><input type="search" value={view.query} placeholder="Search" aria-label={`Search ${unit}s, answers, labels, and metadata`} onChange={event=>set({query:event.target.value})}/></label>
   <select aria-label="Show" value={view.show} onChange={event=>set({show:event.target.value})}>
-   <option value="all">All texts</option><option value="pending">Ready</option><option value="done">Complete</option><option value="error">Needs attention</option>
+   <option value="all">{`All ${unit}s`}</option><option value="pending">Ready</option><option value="done">Complete</option><option value="error">Needs attention</option>
    {comparing&&<><option value="disagree">Disagreements</option><option value="agree">Agreements</option></>}
   </select>
   {columns.length>0&&<>
@@ -40,7 +41,7 @@ export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,sh
    {filterIndex>=0&&<select aria-label={`Value of ${view.column}`} value={view.value} onChange={event=>set({value:event.target.value})}><option value="">Choose a value…</option>{columnValues(rows,filterIndex).map(v=><option key={v}>{v}</option>)}</select>}
   </>}
   <select aria-label="Results shown" value={String(view.run)} onChange={event=>{const run=event.target.value==='latest'?'latest':Number(event.target.value);set({run,compare:view.compare==='run:'+run?'':view.compare});}}>
-   <option value="latest">Latest result per text</option>{runs.map(run=><option key={run.number} value={run.number}>Run #{run.number} · {modelName(run.model)}</option>)}
+   <option value="latest">{`Latest result per ${unit}`}</option>{runs.map(run=><option key={run.number} value={run.number}>Run #{run.number} · {modelName(run.model)}</option>)}
   </select>
   {(labels.length>0||runs.length>1)&&<label className="research-pick"><span>Compare with</span><select aria-label="Compare with" value={view.compare} onChange={event=>set({compare:event.target.value,show:event.target.value?view.show:['disagree','agree'].includes(view.show)?'all':view.show})}>
    <option value="">Nothing</option>

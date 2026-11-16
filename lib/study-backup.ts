@@ -83,7 +83,7 @@ export function decodeStudyBackup(json:string):StudyBackupData{
  for(const [kind,value]of Object.entries(decoded)){
   if(!['texts','knowledge'].includes(kind))throw Error('The backup contains an unknown workspace.');
   const checked=workspace.safeParse(value);if(!checked.success){const issue=checked.error.issues[0];throw Error(`Invalid ${kind} workspace at ${issue.path.join('.')||'root'}: ${issue.message}`);}
-  const rows=kind==='texts'?[...(checked.data.docs||[]),...(checked.data.removed||[])]:checked.data.items||[];
+  const rows=[...(kind==='texts'?checked.data.docs||[]:checked.data.items||[]),...(checked.data.removed||[])];
   if(new Set(rows.map(r=>r.id)).size!==rows.length)throw Error(`Duplicate record IDs in the ${kind} workspace.`);
   for(const r of rows){if(r.status==='done'&&(typeof r.score!=='string'||typeof r.explanation!=='string'))throw Error('A completed result is missing its score or explanation.');if(kind==='texts'&&!(r.file instanceof File)||kind==='knowledge'&&(!r.fields||!r.fields.some(f=>f.value.trim())))throw Error(`Missing source data in the ${kind} workspace.`);if(r.sourceId&&(!(r.sourceFile instanceof File)||!r.sourceName||!r.chunkIndex||!r.chunkCount||!r.wordsPerChunk||!r.wordStart||!r.wordEnd))throw Error('Incomplete chunk provenance in the backup.');}
   if(checked.data.batchJob&&(new Set(checked.data.batchJob.docIds).size!==checked.data.batchJob.docIds.length||checked.data.batchJob.docIds.some(id=>!rows.some(r=>r.id===id))))throw Error('A batch refers to records missing from this backup.');
