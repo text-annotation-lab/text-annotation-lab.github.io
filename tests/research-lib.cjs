@@ -124,9 +124,9 @@ assert.equal(columns.guessKeyColumn(texts,sheet),1);assert.equal(columns.guessRo
 let applied=columns.applySheet(texts,[],sheet,1,['meta','','label','']);
 assert.deepEqual(applied.columns,[{name:'year',role:'meta'},{name:'tone_human',role:'label'}]);assert.equal(applied.matched,2);assert.deepEqual(applied.unmatched,['missing']);
 assert.deepEqual(applied.docs.slice(0,3).map(doc=>doc.cells),[['1961','POSITIVE'],['1981',''],undefined]);
-// A second import adds to what is there; a blank cell does not erase a value.
+// A second import replaces the values of the texts it lists: a blank cell leaves no value (tests/label-sheets.cjs has the rest).
 applied=columns.applySheet(applied.docs,applied.columns,{header:['file','tone_human','party'],rows:[['1961-Kennedy','','Democratic'],['1981-Reagan','MIXED','Republican']]},0,['','label','meta']);
-assert.deepEqual(applied.docs.slice(0,2).map(doc=>doc.cells),[['1961','POSITIVE','Democratic'],['1981','MIXED','Republican']]);assert.deepEqual(applied.added,['party']);assert.equal(applied.changed,0);
+assert.deepEqual(applied.docs.slice(0,2).map(doc=>doc.cells),[['1961','','Democratic'],['1981','MIXED','Republican']]);assert.deepEqual(applied.added,['party']);assert.equal(applied.changed,0);assert.deepEqual([...applied.removed],[['tone_human',1]]);
 // Column names from a spreadsheet are data: they never become property names on a text.
 const hostile=columns.applySheet(texts,[],{header:['file','__proto__','key'],rows:[['notes.txt','a','b']]},0,['','meta','meta']);
 assert.deepEqual(hostile.docs[4].cells,['a','b']);assert.deepEqual(Object.keys(hostile.docs[4]).sort(),['cells','id','name']);
@@ -135,7 +135,7 @@ assert.deepEqual(marked.docs.map(doc=>columns.cellOf(doc,3)),['validation','',''
 marked=columns.markColumn(marked.docs,marked.columns,new Set(['2']),'sample','validation',true);
 assert.deepEqual(marked.docs.map(doc=>columns.cellOf(doc,3)),['','validation','','','',''],'A redraw replaces the earlier marks');
 const fewer=columns.removeColumn(marked.docs,marked.columns,'YEAR');
-assert.deepEqual(fewer.columns.map(column=>column.name),['tone_human','party','sample']);assert.deepEqual(fewer.docs[0].cells,['POSITIVE','Democratic','']);
+assert.deepEqual(fewer.columns.map(column=>column.name),['tone_human','party','sample']);assert.deepEqual(fewer.docs[0].cells,['','Democratic','']);
 assert.deepEqual(columns.cleanColumns([{name:'a',role:'label'},{name:'A'},null,{name:'b',role:'other'}]),[{name:'a',role:'label'},{name:'Column 2',role:'meta'},{name:'Column 3',role:'meta'},{name:'b',role:'meta'}],'Unreadable columns keep their place so cells stay aligned');
 assert.deepEqual(columns.setRole(applied.columns,'party','label')[2],{name:'party',role:'label'});
 

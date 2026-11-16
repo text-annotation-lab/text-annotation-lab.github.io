@@ -5,21 +5,23 @@
 import {useEffect,useMemo,useState,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
-import {applySheet,columnIndex,columnValues,guessKeyColumn,guessRole,markColumn,matchRows,removeColumn,setRole,validColumnName,type Column,type Role,type Sheet} from '@/lib/research/columns';
+import {applySheet,columnIndex,columnValues,guessKeyColumn,guessRole,markColumn,matchRows,removeColumn,resultsFileColumns,setRole,validColumnName,type Column,type Role,type Sheet} from '@/lib/research/columns';
 import {SPREADSHEET_ACCEPT,parseSpreadsheet} from '@/lib/research/parse-table';
 import {allocationNote,drawStratifiedSample,orderStrata,recordSample,sampleRecord,type SampleRecord} from '@/lib/research/sample';
 import type {Row} from '@/lib/research/runs';
 import {PasteTextDialog,TableImportDialog,type AddTexts} from './import-texts';
 
-type Apply=(rows:Row[],columns:Column[],samples:SampleRecord[],notice:string,filter?:{column:string;value:string})=>void;
+// removed: the deleted texts kept for their runs, when a change reaches them too (a label sheet).
+type Apply=(rows:Row[],columns:Column[],samples:SampleRecord[],notice:string,filter?:{column:string;value:string},removed?:Row[])=>void;
 // `lead` is shown first in the row of tools (the cost calculator). With `onAddTexts` (the Workspace), texts can be
 // pasted, and `tableFile` is a table chosen in the drop zone whose rows are to become texts.
 // removed: texts deleted from the study but kept for the runs that used them (adding one again brings it back).
-type Props={rows:Row[];removed?:Row[];columns:Column[];samples:SampleRecord[];unit:'text'|'subject';disabled?:boolean;onApply:Apply;lead?:ReactNode;onAddTexts?:AddTexts;tableFile?:File;onTableDone?:()=>void};
+// fields: the answer fields of the study (the prompt's and its runs'), for the guess at what a column holds.
+type Props={rows:Row[];removed?:Row[];fields?:string[];columns:Column[];samples:SampleRecord[];unit:'text'|'subject';disabled?:boolean;onApply:Apply;lead?:ReactNode;onAddTexts?:AddTexts;tableFile?:File;onTableDone?:()=>void};
 const plural=(n:number,unit:string)=>`${n.toLocaleString('en-US')} ${unit}${n===1?'':'s'}`;
 const list=(names:string[],limit=5)=>names.slice(0,limit).join(', ')+(names.length>limit?`, and ${names.length-limit} more`:'');
 
-export function ResearchTools({rows,removed,columns,samples,unit,disabled,onApply,lead,onAddTexts,tableFile,onTableDone}:Props){
+export function ResearchTools({rows,removed,fields,columns,samples,unit,disabled,onApply,lead,onAddTexts,tableFile,onTableDone}:Props){
  const [dialog,setDialog]=useState<''|'labels'|'sample'|'paste'>(''),[labelSheet,setLabelSheet]=useState<{sheet:Sheet;fileName:string}>();
  const labels=columns.filter(c=>c.role==='label'),meta=columns.filter(c=>c.role==='meta');
  return <div className="research-tools">
@@ -37,7 +39,7 @@ export function ResearchTools({rows,removed,columns,samples,unit,disabled,onAppl
     <button type="button" className="textbutton" disabled={disabled} onClick={()=>{if(!confirm(`Remove the column “${column.name}” and its values from every ${unit}?`))return;const next=removeColumn(rows,columns,column.name);onApply(next.docs,next.columns,samples.filter(s=>s.column.toLowerCase()!==column.name.toLowerCase()),`Column “${column.name}” removed.`);}}>Remove</button>
    </li>)}</ul>
   </details>}
-  {dialog==='labels'&&<LabelsDialog rows={rows} columns={columns} samples={samples} unit={unit} onApply={onApply} initial={labelSheet} onClose={()=>{setDialog('');setLabelSheet(undefined);}}/>}
+  {dialog==='labels'&&<LabelsDialog rows={rows} removed={removed} fields={fields} columns={columns} samples={samples} unit={unit} onApply={onApply} initial={labelSheet} onClose={()=>{setDialog('');setLabelSheet(undefined);}}/>}
   {dialog==='paste'&&onAddTexts&&<PasteTextDialog rows={rows} removed={removed} onAdd={onAddTexts} onClose={()=>setDialog('')}/>}
   {tableFile&&onAddTexts&&!dialog&&<TableImportDialog key={tableFile.name+'/'+tableFile.size+'/'+tableFile.lastModified} file={tableFile} rows={rows} removed={removed} onAdd={onAddTexts} onClose={()=>onTableDone?.()} onUseAsLabels={(sheet,fileName)=>{setLabelSheet({sheet,fileName});setDialog('labels');onTableDone?.();}}/>}
   {dialog==='sample'&&<SampleDialog rows={rows} columns={columns} samples={samples} unit={unit} onApply={onApply} onClose={()=>setDialog('')}/>}
@@ -45,13 +47,15 @@ export function ResearchTools({rows,removed,columns,samples,unit,disabled,onAppl
 }
 
 // `initial` is a table handed over from the import of texts (its rows match texts already in the study).
-function LabelsDialog({rows,columns,samples,unit,onApply,onClose,initial}:Props&{onClose:()=>void;initial?:{sheet:Sheet;fileName:string}}){
+// A label sheet reaches the texts deleted from the study too: their labels still count in their runs' comparisons.
+function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,onClose,initial}:Props&{onClose:()=>void;initial?:{sheet:Sheet;fileName:string}}){
  const [sheet,setSheet]=useState<Sheet>(),[fileName,setFileName]=useState(''),[error,setError]=useState(''),[reading,setReading]=useState(false);
- const [keyIndex,setKeyIndex]=useState(0),[roles,setRoles]=useState<Role[]>([]);
+ const [keyIndex,setKeyIndex]=useState(0),[roles,setRoles]=useState<Role[]>([]),[clearUnlisted,setClearUnlisted]=useState(false);
+ const all=useMemo(()=>removed.length?[...rows,...removed]:rows,[rows,removed]);
  function use(parsed:Sheet,name:string){
   const key=guessKeyColumn(rows,parsed);
   setSheet(parsed);setFileName(name);setKeyIndex(key);
-  setRoles(parsed.header.map((header,i)=>i===key||!validColumnName(header)?'':columnIndex(columns,header)>=0?columns[columnIndex(columns,header)].role:guessRole(header)));
+  setRoles(parsed.header.map((header,i)=>i===key||!validColumnName(header)?'':columnIndex(columns,header)>=0?columns[columnIndex(columns,header)].role:guessRole(header,fields)));
  }
  useEffect(()=>{if(initial)use(initial.sheet,initial.fileName);},[]);
  async function choose(file:File|undefined){
@@ -64,13 +68,19 @@ function LabelsDialog({rows,columns,samples,unit,onApply,onClose,initial}:Props&
   }catch(problem){setSheet(undefined);setError(problem instanceof Error?problem.message:'This file could not be read.');}
   finally{setReading(false);}
  }
- const match=useMemo(()=>sheet?matchRows(rows,sheet.rows.map(row=>row[keyIndex]||'')):undefined,[sheet,keyIndex,rows]);
+ const match=useMemo(()=>sheet?matchRows(all,sheet.rows.map(row=>row[keyIndex]||'')):undefined,[sheet,keyIndex,all]);
  const chosen=roles.filter((role,i)=>role&&i!==keyIndex).length;
+ // What adding the sheet would do, shown before it is added.
+ const plan=useMemo(()=>sheet&&chosen?applySheet(all,columns,sheet,keyIndex,roles,{clearUnlisted}):undefined,[sheet,all,columns,keyIndex,roles,clearUnlisted,chosen]);
+ // The Lab's own results files hold the model's answers, which are not human labels.
+ const exported=useMemo(()=>sheet?resultsFileColumns(sheet.header):[],[sheet]);
+ const gone=useMemo(()=>new Set(removed.map(row=>row.id)),[removed]),matchedGone=match?[...match.rowOf.keys()].filter(id=>gone.has(id)).length:0,unlistedGone=plan?plan.unlisted.filter(id=>gone.has(id)).length:0;
+ const removedValues=(name:string)=>plan?.removed.get(name)||0;
  function apply(){
-  if(!sheet||!match)return;
-  const result=applySheet(rows,columns,sheet,keyIndex,roles);
-  const notes=[`${plural(chosen,'column')} added to ${plural(result.matched,unit)}.`,result.unmatched.length?`${plural(result.unmatched.length,'row')} matched no ${unit}: ${list(result.unmatched)}.`:'',result.ambiguous.length?`${plural(result.ambiguous.length,'row')} matched more than one ${unit} and ${result.ambiguous.length===1?'was':'were'} skipped: ${list(result.ambiguous)}.`:'',result.repeated.length?`${plural(result.repeated.length,'row')} repeated a ${unit} that an earlier row had already matched and ${result.repeated.length===1?'was':'were'} skipped.`:'',result.changed?`${plural(result.changed,'earlier value')} replaced.`:''];
-  onApply(result.docs,result.columns,samples,notes.filter(Boolean).join(' '));onClose();
+  if(!sheet||!match||!plan||plan.conflicts.length||exported.length)return;
+  const result=plan,dropped=[...result.removed.values()].reduce((n,v)=>n+v,0);
+  const notes=[`${plural(chosen,'column')} added to ${plural(result.matched,unit)}${matchedGone?` (${matchedGone.toLocaleString('en-US')} of them deleted but kept for their runs)`:''}.`,result.unmatched.length?`${plural(result.unmatched.length,'row')} matched no ${unit}: ${list(result.unmatched)}.`:'',result.ambiguous.length?`${plural(result.ambiguous.length,'row')} matched more than one ${unit} and ${result.ambiguous.length===1?'was':'were'} skipped: ${list(result.ambiguous)}.`:'',result.repeated.length?`${plural(result.repeated.length,unit)} listed more than once with the same values, merged.`:'',result.changed?`${plural(result.changed,'earlier value')} replaced.`:'',dropped?`${plural(dropped,'earlier value')} removed.`:''];
+  onApply(result.docs.filter(row=>!gone.has(row.id)),result.columns,samples,notes.filter(Boolean).join(' '),undefined,removed.length?result.docs.filter(row=>gone.has(row.id)):undefined);onClose();
  }
  return <Dialog open onOpenChange={open=>{if(!open)onClose();}}>
   <DialogContent className="research-dialog research-wide">
@@ -80,15 +90,18 @@ function LabelsDialog({rows,columns,samples,unit,onApply,onClose,initial}:Props&
    {reading&&<p className="hint" role="status">Reading the spreadsheet…</p>}
    {error&&<p className="message" role="alert">{error}</p>}
    {sheet&&match&&<>
-    <div className="research-field-row"><label htmlFor="labels-key">Column that names the {unit}s</label><select id="labels-key" value={keyIndex} onChange={event=>{const next=Number(event.target.value);setKeyIndex(next);setRoles(current=>current.map((role,i)=>i===next?'':role||(i===keyIndex&&validColumnName(sheet.header[i])?guessRole(sheet.header[i]):role)));}}>{sheet.header.map((name,i)=><option key={i} value={i}>{name}</option>)}</select></div>
-    <p className={match.rowOf.size?'hint':'message'} role="status">{match.rowOf.size.toLocaleString('en-US')} of {plural(rows.length,unit)} matched by {plural(sheet.rows.length,'row')}.{match.unmatched.length?` ${plural(match.unmatched.length,'row')} matched no ${unit}: ${list(match.unmatched.map(row=>sheet.rows[row][keyIndex]||'(blank)'),3)}.`:''}{match.ambiguous.length?` ${plural(match.ambiguous.length,'row')} matched more than one ${unit}.`:''}</p>
+    <div className="research-field-row"><label htmlFor="labels-key">Column that names the {unit}s</label><select id="labels-key" value={keyIndex} onChange={event=>{const next=Number(event.target.value);setKeyIndex(next);setRoles(current=>current.map((role,i)=>i===next?'':role||(i===keyIndex&&validColumnName(sheet.header[i])?guessRole(sheet.header[i],fields):role)));}}>{sheet.header.map((name,i)=><option key={i} value={i}>{name}</option>)}</select></div>
+    {exported.length>0&&<p className="message" role="alert">This is a results file exported from the Lab: it has the column{exported.length===1?'':'s'} {list(exported,4)}. Its values are the model’s answers, not human labels, so it cannot be added. To add metadata from it, delete those columns and the columns with the model’s answers, then add it again.</p>}
+    {plan&&plan.conflicts.length>0&&<p className="message" role="alert">Several rows for the same {unit} with different values ({plan.conflicts.length.toLocaleString('en-US')}): {list(plan.conflicts,3)}. Only one row per {unit} can be used, not one row per coder: put each coder’s labels in a column of their own (tone_coder1, tone_coder2, …). Nothing is added until the sheet is fixed.</p>}
+    <p className={match.rowOf.size?'hint':'message'} role="status">{(match.rowOf.size-matchedGone).toLocaleString('en-US')} of {plural(rows.length,unit)} matched by {plural(sheet.rows.length,'row')}{matchedGone?`, and ${plural(matchedGone,`deleted ${unit}`)} kept for ${matchedGone===1?'its':'their'} runs`:''}.{match.unmatched.length?` ${plural(match.unmatched.length,'row')} matched no ${unit}: ${list(match.unmatched.map(row=>sheet.rows[row][keyIndex]||'(blank)'),3)}.`:''}{match.ambiguous.length?` ${plural(match.ambiguous.length,'row')} matched more than one ${unit}.`:''}</p>
     <div className="research-table-scroll"><table className="research-table"><thead><tr><th>Column</th><th>First values</th><th>Add as</th></tr></thead><tbody>{sheet.header.map((name,i)=>i===keyIndex?null:<tr key={i}>
      <td>{name}</td><td className="research-muted">{list([...new Set(sheet.rows.map(row=>row[i]).filter(Boolean))].slice(0,4),4)||'—'}</td>
      <td>{validColumnName(name)?<select aria-label={`Add ${name} as`} value={roles[i]||''} onChange={event=>setRoles(current=>current.map((role,j)=>j===i?event.target.value as Role:role))}><option value="label">Human labels</option><option value="meta">Metadata</option><option value="">Do not add</option></select>:<span className="research-muted">Name too long</span>}</td>
     </tr>)}</tbody></table></div>
-    <p className="hint">Blank cells never erase a value that is already there. A column with the same name as an existing one updates it.</p>
+    <p className="hint">For the {unit}s this sheet lists, a column that is already there gets the sheet’s values, and a blank cell leaves no value. {unit==='text'?'Texts':'Subjects'} it does not list keep theirs.{plan&&plan.replaced.length>0?` Already present: ${plan.replaced.map(name=>name+(removedValues(name)?` (${plural(removedValues(name),'earlier value')} removed: blank here${clearUnlisted?' or not listed':''})`:'')).join(', ')}.`:''}{plan&&plan.repeated.length>0?` Listed more than once with the same values, merged: ${list(plan.repeated,3)}.`:''}</p>
+    {plan&&plan.unlisted.length>0&&<label className="research-check"><input type="checkbox" checked={clearUnlisted} onChange={event=>setClearUnlisted(event.target.checked)}/> Also remove the values of the {plan.unlisted.length===1?unit:plural(plan.unlisted.length,unit)} this sheet does not list (in {list(plan.replaced,3)}{unlistedGone?`; ${plan.unlisted.length===1?'':unlistedGone===plan.unlisted.length?'all ':`${unlistedGone.toLocaleString('en-US')} of them `}deleted but kept for ${unlistedGone===1?'its':'their'} runs`:''}), for example when it replaces an earlier sheet for all {unit}s</label>}
    </>}
-   <div className="research-dialog-actions"><Button type="button" disabled={!sheet||!match?.rowOf.size||!chosen} onClick={apply}>Add {chosen?plural(chosen,'column'):'columns'}</Button><Button type="button" variant="outline" onClick={onClose}>Cancel</Button></div>
+   <div className="research-dialog-actions"><Button type="button" disabled={!sheet||!match?.rowOf.size||!chosen||!plan||plan.conflicts.length>0||exported.length>0} onClick={apply}>Add {chosen?plural(chosen,'column'):'columns'}</Button><Button type="button" variant="outline" onClick={onClose}>Cancel</Button></div>
   </DialogContent>
  </Dialog>;
 }
