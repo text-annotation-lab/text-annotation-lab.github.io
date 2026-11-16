@@ -6,7 +6,7 @@
 import {fieldSpec,PLAIN_FIELD} from '../answer-types';
 import {reasoningOptionLabel,type Provider} from '../providers';
 import {fillRequest} from '../request-frame';
-import {insertMap,markedInserts} from '../prompt-inserts';
+import {insertMap,markedInserts,placesText} from '../prompt-inserts';
 import {columnIndex} from './columns';
 import {agreementTable,runAgreement,type AgreementLine,type Intervals,type LabelPair,type Skipped} from './export-agreement';
 import {fileHash,fullestRun,requestFinder,requestLines,requestParts,requestRecord,responseRecord,runFolder,runRequests,type DocumentReader,type ExportStudy,type RunRequests,type SentRequest} from './export-data';
@@ -271,7 +271,7 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   '## Files','','| File | Contents |','|---|---|',
   tableRow(['`metadata.json`','Machine-readable record of the model, settings, dates, counts, and token use, with the bodies of the requests as sent (marks stand for the document'+(inserted.length?' and for the values of the prompt’s placeholders':'')+')']),
   tableRow(['`prompt/prompt.txt`','The annotation prompt as written'+insertedNote]),
-  ...(has.asSent?[tableRow(['`prompt/prompt_as_sent.txt`','The prompt as each request carried it: with the instructions the Lab adds'+(plain?'':' on the answer format')+(knowledge?' and on judging from learned knowledge':'')+', and with its line breaks as they were sent (CR LF)'+(inserted.length?'; the placeholders stand where each request had the values':'')])]:[]),
+  ...(has.asSent?[tableRow(['`prompt/prompt_as_sent.txt`','The prompt as each request carried it: with the instructions the Lab adds'+(plain?'':' on the answer format')+(knowledge?' and on judging from learned knowledge':'')+', and with its line breaks as they were sent (CR LF)'+(inserted.length?'; the placeholders stand where each request had the values':'')+([report.sent.text].some(sent=>sent&&placesText(run.prompt)&&requestParts(sent.frame).prompt.includes('{{text}}'))?`; \`{{text}}\` stands where each request had the ${knowledge?'subject’s fields':unit}`:'')])]:[]),
   ...(run.system?[tableRow(['`prompt/system_prompt.txt`','The system prompt sent unchanged with every request; the prompt opened the message with each '+unit])]:[]),
   ...(plain?[tableRow(['`prompt/codebook.md`','Says that the model returned free text: there were no answer fields and no answer format'])]:[tableRow(['`prompt/codebook.md`','The answer fields: types, allowed values, and descriptions']),...(has.schema?[tableRow(['`prompt/output_schema.json`','The JSON schema the replies had to follow'])]:[])]),
   tableRow(['`results/results.csv`',`One row per ${unit}${options.texts?` (with ${knowledge?'the details the model was given':'its text'})`:''}: answers${(run.repeats||1)>1?` (combined across the ${unit}’s annotations; \`<field>_replicate_agreement\` is the share of them that gave the combined value)`:''}, labels, and metadata`]),

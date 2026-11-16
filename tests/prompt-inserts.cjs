@@ -41,11 +41,14 @@ const WRITTEN=`Text {{id}} was published in {{meta.year}} by {{ meta.Outlet name
 Rate the tone of {{id}}. {{text}}, {{meta.}}, {{unknown}}, {{meta.${LONG}}}, {{meta.a<b}}, {{}}, {single}, and {{text}} again stay as written.`;
 const NAMES=['id','meta.year','meta.Outlet name','meta.Year (first ed.)','meta.køn'];
 assert.deepEqual(inserts.promptInserts(WRITTEN),NAMES,'Each placeholder once, in the order of first appearance; {{ID}} is {{id}}');
-assert.deepEqual(inserts.strayPlaceholders(WRITTEN),['{{text}}','{{meta.}}','{{unknown}}',`{{meta.${LONG}}}`,'{{meta.a<b}}','{{}}'],'Anything else in double braces, each once');
+assert.deepEqual(inserts.strayPlaceholders(WRITTEN),['{{meta.}}','{{unknown}}',`{{meta.${LONG}}}`,'{{meta.a<b}}','{{}}'],'Anything else in double braces, each once; {{text}} places the text');
+assert(inserts.placesText(WRITTEN)&&inserts.placesText('Rate {{ TEXT }}.')&&!inserts.placesText('Rate {text} and {{texts}}.'));
 assert.deepEqual(inserts.promptInserts('No placeholder: {{text}} and { {id} } and {{meta.two\nlines}}.'),[]);
 assert.deepEqual(inserts.promptInserts('{{meta.'+'x'.repeat(60)+'}}'),['meta.'+'x'.repeat(60)],'A column’s name has at most 60 characters');
 assert.equal(inserts.fixedLength(WRITTEN),5);assert.equal(inserts.fixedLength('{{id}} first'),0);assert.equal(inserts.fixedLength('None, {{text}}.'),15);
 assert.equal(inserts.fixedLength('{{text}} is no placeholder, {{meta.a}} is.'),28,'The part every text shares ends at the first placeholder that is filled in');
+assert.equal(inserts.fixedLength('None, {{text}}.',true),6);assert.equal(inserts.fixedLength('{{text}} first, {{meta.a}}.',true),0,'Where the text is placed, {{text}} ends the shared part too');
+assert.deepEqual(inserts.fillPlaces('A {{text}}, {{ Text }}, {{id}}, {{texts}}.',name=>name==='id'?'{{text}} <<DOCUMENT_TEXT>>':'?'),{prompt:'A , , {{text}} <<DOCUMENT_TEXT>>, {{texts}}.',spots:[2,4]},'Each {{text}} taken out; a value is never read again');
 // Filling in: each name's value wherever it stands; a value is never read again.
 const VALUES=['text “1”.txt','1975','The\n"Post" \\ <<DOCUMENT_TEXT>>','{{id}} $& $1 <<INSERT:id>>','æøå 日本 🙂'];
 const FILLED=inserts.fillInserts(WRITTEN,VALUES);
@@ -72,10 +75,11 @@ const COLUMNS=[{name:'Year',role:'meta'},{name:'Outlet name',role:'meta'},{name:
 const ROW={name:'text “1”.txt',cells:['1975','The Post','5','body','1974']};
 assert.deepEqual(research.insertValues(['id','meta.year','meta.OUTLET NAME','meta.tone_human','meta.none','meta.text','meta.Year (first ed.)'],ROW,COLUMNS),['text “1”.txt','1975','The Post','','','body','1974'],'A column by its name in any case; a label column and a missing column give nothing');
 assert.deepEqual(research.insertValues(['id','meta.year'],{name:'bare'},COLUMNS),['bare',''],'A text without values');assert.deepEqual(research.insertValues(['id'],{},[]),['']);
-assert.deepEqual(research.insertNotes('Rate the tone.',COLUMNS,'text'),['{{meta.Year}} in the prompt inserts each text’s value of that column; {{id}} inserts its name.']);
-assert.deepEqual(research.insertNotes('Rate the tone.',[{name:'tone_human',role:'label'}],'text'),[],'No metadata, nothing to say');assert.deepEqual(research.insertNotes('Rate the tone.',[],'subject'),[]);
+assert.deepEqual(research.insertNotes('Rate the tone.',COLUMNS,'text'),['{{text}} in the prompt places each text there instead of after the prompt; {{meta.Year}} inserts its value of that column, and {{id}} its name.']);
+assert.deepEqual(research.insertNotes('Rate the tone.',[{name:'tone_human',role:'label'}],'text'),['{{text}} in the prompt places each text there instead of after the prompt.'],'No metadata: only {{text}}');assert.deepEqual(research.insertNotes('Rate the tone.',[],'subject'),['{{text}} in the prompt places each subject there instead of after the prompt.']);
+assert.deepEqual(research.insertNotes('Rate {{text}} now.',COLUMNS,'text'),['The text goes where the prompt has {{text}}, instead of after the prompt.']);
 assert.deepEqual(research.insertNotes('{{id}} from {{meta.year}}.',COLUMNS,'text'),['Filled in for each text: {{id}}, {{meta.year}}.']);
-assert.deepEqual(research.insertNotes('{{id}} from {{meta.year}}, {{meta.decade}}, {{meta.tone_human}}, {{text}}, {{name}}.',COLUMNS,'subject'),['Filled in for each subject: {{id}}, {{meta.year}}.','No such metadata column: decade (filled in empty).','Human labels are not sent to the model: tone_human (filled in empty).','Sent as written: {{text}}, {{name}}. The subject always follows the prompt, between <entry> tags.']);
+assert.deepEqual(research.insertNotes('{{id}} from {{meta.year}}, {{meta.decade}}, {{meta.tone_human}}, {{text}}, {{name}}.',COLUMNS,'subject').sort(),['Filled in for each subject: {{id}}, {{meta.year}}.','No such metadata column: decade (filled in empty).','Human labels are not sent to the model: tone_human (filled in empty).','The subject’s fields go where the prompt has {{text}}, instead of after the prompt.','Sent as written: {{name}}.'].sort());
 assert.deepEqual(research.insertNotes('About {{name}}.',COLUMNS,'text'),['Sent as written: {{name}}.']);
 assert.deepEqual(research.insertNotes('From {{meta.decade}}.',[],'text'),['No such metadata column: decade (filled in empty).']);
 
@@ -215,7 +219,8 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  // The page then records the request without the option, and says why it cannot be switched on.
  for(const page of ['app/page.tsx','components/model-knowledge.tsx']){
   const text=source(page);
-  assert(text.includes('const insertNames=research?promptInserts(prompt):[],promptFixed=insertNames.length?fixedLength(prompt):undefined;'),page+': the standard Lab fills in nothing');
+  assert(text.includes('const insertNames=research?promptInserts(prompt):[],placed=research&&placesText(prompt),promptFixed=insertNames.length||placed?fixedLength(prompt,placed):undefined;'),page+': the standard Lab fills in nothing, and places no text');
+  assert.equal(text.split("if(placed)form.set('placeText','true');").length-1,2,page+': the place of the text travels with its request, now and in a batch');
   assert(text.includes('promptFixed!==undefined&&!prompt.slice(0,promptFixed).trim()&&!requestSettings?.system?.trim()?{...requestSettings,cache:undefined}:requestSettings'),page+': nothing to cache, unless a system prompt of one’s own');
   assert.equal(text.split("if(insertNames.length)form.set('inserts',").length-1,2,page+': a text’s values travel with its request, now and in a batch');
   assert(text.includes('inserts:insertNames.length>0'),page+': the record says whether placeholders were filled in');

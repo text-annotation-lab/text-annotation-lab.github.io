@@ -46,7 +46,7 @@ import {ModeSwitch,OtherTabNotice,ResearchKeys,ResearchTools,ResearchAnswerField
 import {cleanRequestSettings,sentRequestSettings,requestSummary,type RequestSettings} from '@/lib/request-settings';
 import {requestFrame,LAYOUT} from '@/lib/request-frame';
 import {cleanRequests,recordRequest,usedRequests,replyNotes,NOT_RECORDED,type RecordedRequest,type Recorded} from '@/lib/research/requests';
-import {promptInserts,fixedLength,insertMap} from '@/lib/prompt-inserts';
+import {promptInserts,fixedLength,insertMap,placesText} from '@/lib/prompt-inserts';
 import {insertValues,insertNotes} from '@/lib/research/inserts';
 import {LAB_VERSION} from '@/lib/version';
 import {tabLock} from '@/lib/research/tab-lock';
@@ -155,8 +155,8 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // request to the selected model (lib/request-settings.ts).
  // Research mode: the placeholders of the prompt that are filled in for each text (lib/prompt-inserts.ts). A
  // prompt that begins with one has no part that every text shares, so nothing of it can be cached (a system prompt of
- // one's own still can be).
- const insertNames=research?promptInserts(prompt):[],promptFixed=insertNames.length?fixedLength(prompt):undefined;
+ // one's own still can be). placed: the text goes where the prompt has {{text}}, instead of after it.
+ const insertNames=research?promptInserts(prompt):[],placed=research&&placesText(prompt),promptFixed=insertNames.length||placed?fixedLength(prompt,placed):undefined;
  // Research mode: your own price for the model, for the cost estimate before a run.
  const ownPrices=useOwnPrices(),typedPrice=research?ownPrice(provider,model,ownPrices):undefined;
  const sentRequest=research?sentRequestSettings(provider,model,promptFixed!==undefined&&!prompt.slice(0,promptFixed).trim()&&!requestSettings?.system?.trim()?{...requestSettings,cache:undefined}:requestSettings,effort):undefined;
@@ -167,7 +167,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // What a run reads of the settings. "Retry failed" (research mode) sends a run's failed requests again with
  // that run's own. scopeNote: which texts the next start covers, in words, for the run's record.
  // layout: where the prompt goes in a request (lib/request-frame.ts); a run made before it is retried in its own.
- const useNow={provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,key,layout:LAYOUT as string|undefined};
+ const useNow={provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,placed,key,layout:LAYOUT as string|undefined};
  // The study's answer fields (the prompt's and its runs'): a column named after one is a guess for human labels.
  const studyFields=research?[...new Set([...sentFields,...(sentSettings?.fields||[]).map(field=>field.name),...runs.flatMap(run=>[...(run.answerFields||[]),...(run.answerSettings?.fields||[]).map(field=>field.name)])])]:[];
  const scopeNote=useRef('');
@@ -356,7 +356,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
    if(!research)return {};
    const pdf=/\.pdf$/i.test(d.file.name);let noted=made.get(pdf);
    if(!noted){
-    const kept=recordRequest(requestsNow.current,requestFrame({provider:use.provider,model:use.model,effort:use.effort,prompt:use.prompt,answerFields:use.sentFields,answerSettings:use.sentSettings,requestSettings:use.sentRequest,batch,inserts:use.insertNames.length>0,layout:use.layout},pdf));
+    const kept=recordRequest(requestsNow.current,requestFrame({provider:use.provider,model:use.model,effort:use.effort,prompt:use.prompt,answerFields:use.sentFields,answerSettings:use.sentSettings,requestSettings:use.sentRequest,batch,inserts:use.insertNames.length>0,placed:use.placed,layout:use.layout},pdf));
     if(kept.list!==requestsNow.current){requestsNow.current=kept.list;setRequests(kept.list);}
     noted={...NOT_RECORDED,requestId:kept.id,lab:LAB_VERSION};made.set(pdf,noted);
    }
@@ -369,7 +369,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // `retryOf` (research mode, "Retry failed"): the run whose requests without a usable answer are sent again, with
  // the settings of that run. Inside this function the names of the settings stand for whichever settings apply.
  async function run(all:boolean,only?:Set<string>,newRun=false,resume?:Set<string>,retryOf?:{number:number;use:typeof useNow}){
-  const {provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,key,layout}=retryOf?.use||useNow;
+  const {provider,model,effort,prompt,sentFields,sentSettings,sentRequest,times,insertNames,placed,key,layout}=retryOf?.use||useNow;
   const scope=scopeNote.current;scopeNote.current='';
   if(lock.current||batchJob||!ready||storageConflict||(keyRejected&&!retryOf))return;
   if(!retryOf&&!setupReady())return;
@@ -444,7 +444,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      // back: a reply came back (a request that did not get as far as a reply may have had no connection).
      let shared:string|undefined,back=false;
      try{
-      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,d,columns)));if(layout!==LAYOUT)form.set('layout','earlier');
+      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,d,columns)));if(layout!==LAYOUT)form.set('layout','earlier');else if(placed)form.set('placeText','true');
       const sent=await sendAnnotation(()=>fetch('/api/annotate',{method:'POST',headers:{Authorization:`Bearer ${key.trim()}`},body:form}),place);
       // The run stopped while this text waited out a rate limit: it was not annotated and waits again as before.
       if(!sent){if(n)close(d.id);else{latest.current=latest.current.map(x=>x.id===d.id?failedBefore.get(d.id)||d:x);setDocs(latest.current);}return;}
@@ -513,7 +513,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   const queuedIds=new Set(job.docIds),recorded=recorder(true);
   const queued=begun.docs.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runNo:begun.number,runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout:LAYOUT,concurrency:undefined,processing:'batch',...recorded(d),...claimRepeats(d,times)}:d);
   const save=(next:BatchJob|null,docs:Doc[]=queued)=>storage.current.save({provenance,docs,answerFields,answerSettings,prompt,model,effort,provider,customModel,chunkWords,chunkMethod,processing,concurrency,repeats:storedRepeats,requestSettings,requests:requestsNow.current,batchJob:next,runs:begun.runs,columns,samples,...(removed.length?{removed}:{}),...(scoreScale?{scoreScale}:{})});
-  const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns))));pending.forEach(d=>form.append('files',d.file));
+  const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns))));if(placed)form.set('placeText','true');pending.forEach(d=>form.append('files',d.file));
   // Research mode: one batch of the prepared run goes up.
   const partForm=(k:number)=>{const f=new FormData();f.set('model',model);f.set('runId',job.runId);f.set('part',String(k));return f;};
   let sending=job,submitted=false;
@@ -687,7 +687,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   if(errors.prompt||errors.model){setNotice(`The requests of run #${number} cannot be sent again: ${errors.model?'its model or reasoning setting is not one this version of the Lab offers':'it has no prompt'}.`);return;}
   // The request settings the run's results recorded, with the temperature and output limit of the run's record.
   const recorded=cleanRequestSettings(runRequestSettings(latest.current,number)),tuned={...recorded,...(record.temperature!==undefined?{temperature:record.temperature}:{}),...(record.maxOutput!==undefined?{maxOutput:record.maxOutput}:{})};
-  const runTimes=record.repeats||1,use={provider:runProvider,model:record.model,effort:record.effort,prompt:record.prompt,sentFields:record.answerFields,sentSettings:record.answerSettings,sentRequest:sentRequestSettings(runProvider,record.model,Object.keys(tuned).length?tuned:undefined,record.effort),times:runTimes,insertNames:promptInserts(record.prompt),key:runKey,layout:record.layout};
+  const runTimes=record.repeats||1,use={provider:runProvider,model:record.model,effort:record.effort,prompt:record.prompt,sentFields:record.answerFields,sentSettings:record.answerSettings,sentRequest:sentRequestSettings(runProvider,record.model,Object.keys(tuned).length?tuned:undefined,record.effort),times:runTimes,insertNames:promptInserts(record.prompt),placed:record.layout===LAYOUT&&placesText(record.prompt),key:runKey,layout:record.layout};
   // Each text concerned gets its result of this run back as its current one; a later result moves to its earlier ones.
   const ids=new Set(targets.ids);latest.current=raiseRun(latest.current,number,ids);setDocs(latest.current);
   void run(true,ids,false,runTimes>1?new Set(latest.current.filter(d=>ids.has(d.id)&&incomplete(d)).map(d=>d.id)):undefined,{number,use});
@@ -742,7 +742,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  const studyBackup=draftRef?async()=>{const {texts,knowledge}=draftRef.current;if(!texts||!knowledge)throw new Error('Wait for both workspaces to finish opening');const {encodeStudyBackup}=await import('@/lib/study-backup');return encodeStudyBackup({name:studyName||'Study',texts,knowledge,createdAt:new Date().toISOString()});}:undefined;
  const setupDefaults={prompt,setPrompt,ready,workspaceLocked,busy};
  // "Preview request" (research mode): the request a run would send for the first text.
- const previewSource=()=>({settings:{provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,batch:processing==='batch',inserts:insertNames.length>0},document:async()=>{
+ const previewSource=()=>({settings:{provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,batch:processing==='batch',inserts:insertNames.length>0,placed},document:async()=>{
   const first=docs[0];if(!first)return undefined;
   const inserts=insertMap(prompt,insertValues(insertNames,first,columns));
   if(/\.pdf$/i.test(first.file.name))return {filename:first.file.name,pdf:true as const,inserts};

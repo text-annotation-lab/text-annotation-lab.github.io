@@ -12,7 +12,7 @@ import {knowledgeInstructions,knowledgeDocumentText,validKnowledgeFields,type Kn
 import {researchKnowledge,KnowledgeWebError} from '@/lib/knowledge-web';
 import {readRequestSettings,sentRequestSettings,requestTimeout,type RequestSettings} from '@/lib/request-settings';
 import {providerBody,requestUrl,replyCode,replyText,reasoningSummary,formText,type RequestDocument} from '@/lib/request-frame';
-import {readInserts,fillInserts} from '@/lib/prompt-inserts';
+import {readInserts,fillInserts,placesText,fillPlaces,insertMap} from '@/lib/prompt-inserts';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const MAX_REQUEST_BYTES=22*1024*1024;
 export async function POST(request:Request){
@@ -50,8 +50,11 @@ export async function POST(request:Request){
  // Research mode: the text's values for the placeholders of the prompt ({{id}}, {{meta.<column>}}). The prompt
  // is sent with them filled in; the answer format is still read from the prompt as written.
  let inserts:string[]|undefined;try{const raw=f.get('inserts');inserts=readInserts(raw===null?null:JSON.parse(String(raw)),prompt);}catch{return json({error:'Could not read the values for the placeholders of the prompt.'},400);}
- const annotationPrompt=prompt;let subjectFields:KnowledgeFields|undefined;
- if(inserts){prompt=fillInserts(prompt,inserts);if(prompt.length>100000)return json({error:'With the values of its placeholders filled in, the prompt is longer than 100,000 characters.'},400);}
+ // Research mode: the text goes where the prompt has {{text}}, instead of after it (lib/request-frame.ts).
+ const placeFlag=f.get('placeText');if(placeFlag!==null&&(placeFlag!=='true'||earlier||!placesText(prompt)))return json({error:'Invalid setting for the place of the text.'},400);
+ const annotationPrompt=prompt;let subjectFields:KnowledgeFields|undefined,spots:number[]|undefined;
+ if(placeFlag){const values=insertMap(prompt,inserts);({prompt,spots}=fillPlaces(prompt,(name,whole)=>inserts?values.get(name)??'':whole));if(prompt.length>100000)return json({error:'With the values of its placeholders filled in, the prompt is longer than 100,000 characters.'},400);}
+ else if(inserts){prompt=fillInserts(prompt,inserts);if(prompt.length>100000)return json({error:'With the values of its placeholders filled in, the prompt is longer than 100,000 characters.'},400);}
  const writtenPrompt=prompt;
  if(knowledge){
   const raw=f.get('fields');let fields:unknown;
@@ -84,9 +87,9 @@ export async function POST(request:Request){
   // answer, or the reply kept with a rejected result.
   if(result.output!==undefined&&(result.output===result.rawResponse||answerSettings?.plain&&result.output===result.answers?.f0))delete result.output;
   return json({...result,responseFormat:annotationFormatRecord(answerFields,annotationPrompt,knowledge,answerSettings),...(error?{error}:{}),...(knowledge?{webUsed:Boolean(research)}:{}),...(research?{research,...(response.ok?{tokens:(result.tokens||0)+(research.tokens||0)}:{})}:{})},error?422:response.status);};
- if(provider==='openrouter')return finish(await annotateOpenRouter(file,prompt,String(model),String(effort),auth.slice(7),knowledge,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier));
- if(provider==='anthropic')return finish(await annotateAnthropic(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier));
- if(provider==='gemini')return finish(await annotateGemini(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier));
+ if(provider==='openrouter')return finish(await annotateOpenRouter(file,prompt,String(model),String(effort),auth.slice(7),knowledge,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier,spots));
+ if(provider==='anthropic')return finish(await annotateAnthropic(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier,spots));
+ if(provider==='gemini')return finish(await annotateGemini(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier,spots));
  let doc:RequestDocument;
  if(/\.pdf$/i.test(file.name)){const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));doc={filename:file.name,pdf:btoa(binary)};}else{
  let text:string;
@@ -94,7 +97,7 @@ export async function POST(request:Request){
  if(!text.trim())return json({error:'The document contains no readable text. For an image-only document, upload a PDF instead.'},400);
  if(text.length>2000000)return json({error:'The extracted text is too large. Split the document into smaller files.'},400);
  doc={filename:file.name,text};}
- const r=await fetch(requestUrl('openai',String(model)),{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('openai',String(model),sent)),body:JSON.stringify(providerBody({provider:'openai',model:String(model),effort:String(effort),prompt,schemaPrompt:annotationPrompt,answerFields,settings:answerSettings,request:sent,knowledge,inserts:Boolean(inserts),earlier},doc))});
+ const r=await fetch(requestUrl('openai',String(model)),{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},signal:AbortSignal.timeout(requestTimeout('openai',String(model),sent)),body:JSON.stringify(providerBody({provider:'openai',model:String(model),effort:String(effort),prompt,schemaPrompt:annotationPrompt,answerFields,settings:answerSettings,request:sent,knowledge,inserts:Boolean(inserts),earlier,spots},doc))});
  const out:any=await providerJson(r);
  if(!r.ok)return finish(json(providerFailure('openai',r.status,out,r.headers,sent,String(model)),r.status));
  if(!out)return finish(json({error:'OpenAI returned an unreadable response. Check OpenAI Platform usage before retrying; the request may have completed.'},502));

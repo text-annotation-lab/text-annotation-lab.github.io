@@ -7,7 +7,7 @@ import {knowledgeInstructions,knowledgeItemText,validKnowledgeFields} from '@/li
 import {MAX_BATCH_ITEMS,MAX_BATCH_SOURCE_BYTES,MAX_BATCH_REQUEST_BYTES,MAX_SPLIT_REQUESTS,MAX_SPLIT_SOURCE_BYTES,MAX_SPLIT_UPLOAD_BYTES} from '@/lib/batch-limits';
 import {readRequestSettings} from '@/lib/request-settings';
 import {formText} from '@/lib/request-frame';
-import {readInserts,fillInserts} from '@/lib/prompt-inserts';
+import {readInserts,fillInserts,placesText,fillPlaces,insertMap} from '@/lib/prompt-inserts';
 const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 // Research mode: the requests of a run, prepared ("prepare") and then sent batch by batch ("send"), so the page can
 // record each batch as it goes up. They are kept in this page only, until sent or discarded.
@@ -60,6 +60,9 @@ export async function POST(request:Request){
    if(f.get('inserts')!==null){
     try{const raw:unknown=JSON.parse(String(f.get('inserts')));if(!Array.isArray(raw)||raw.length!==files.length)throw Error();inserts=raw.map(values=>{const read=readInserts(values,prompt);if(!read)throw Error();return read;});}catch{throw new BatchError('Could not read the values for the placeholders of the prompt.');}
    }
+   // Research mode: the text goes where the prompt has {{text}}, instead of after it (lib/request-frame.ts).
+   const placeFlag=f.get('placeText');if(placeFlag!==null&&(placeFlag!=='true'||!placesText(prompt)))throw new BatchError('Invalid setting for the place of the text.');
+   const placed=placeFlag==='true';
    const total=copies?copies.reduce((sum,n)=>sum+n,0):files.length;
    if(!files.length||total>maxItems||!Array.isArray(ids)||ids.length!==total||new Set(ids).size!==ids.length||ids.some((id,i)=>typeof id!=='string'||id!==runId+'_'+i))throw new BatchError(copies?`Submit between 1 and ${most} requests (items × annotations per item) with unique references.`:`Submit between 1 and ${most} items with unique references.`);
    if(files.some(file=>!(file instanceof File)||!file.size||file.size>20*1024*1024||!supportedFile.test(file.name)))throw new BatchError('Use nonempty PDF, DOCX, TXT, MD, HTML, or RTF documents.');
@@ -70,9 +73,9 @@ export async function POST(request:Request){
    f.delete('files');f.delete('subjects');
    const added=knowledge?'\n\n'+knowledgeInstructions(false):'';
    for(let i=0,at=0;i<files.length;i++){
-    const written=inserts?fillInserts(prompt,inserts[i]):prompt;
+    const values=inserts?insertMap(prompt,inserts[i]):undefined,filled=placed?fillPlaces(prompt,(name,whole)=>values?values.get(name)??'':whole):undefined,written=filled?filled.prompt:inserts?fillInserts(prompt,inserts[i]):prompt;
     if(written.length>100000)throw new BatchError(`${(files[i] as File).name}: with the values of its placeholders filled in, the prompt is longer than 100,000 characters.`);
-    const body=await buildBatchBody(provider,files[i] as File,written+added,model,effort,knowledge,false,answerFields,answerSettings,requestSettings,inserts?prompt+added:undefined);for(let copy=0;copy<(copies?copies[i]:1);copy++){if('plan' in payload)payload.append(i,ids[at++],body);else payload.append(ids[at++],body);}files[i]='';}
+    const body=await buildBatchBody(provider,files[i] as File,written+added,model,effort,knowledge,false,answerFields,answerSettings,requestSettings,inserts||placed?prompt+added:undefined,filled?.spots);for(let copy=0;copy<(copies?copies[i]:1);copy++){if('plan' in payload)payload.append(i,ids[at++],body);else payload.append(ids[at++],body);}files[i]='';}
    if('plan' in payload){const plan=payload.plan();prepared={runId,provider,model,payload,parts:plan.parts.map(part=>({requests:part.requests}))};return reply(plan);}
    return reply({id:await createBatch(provider,key,model,runId,payload.finish())});
   }
