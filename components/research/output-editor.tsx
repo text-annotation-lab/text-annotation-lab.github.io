@@ -55,7 +55,7 @@ export function OutputEditor({names,settings,onChange,disabled}:{names:string[];
    <button type="button" role="radio" aria-checked={!plain} disabled={disabled} onClick={()=>emit(drafts,{plain:false})}>Structured fields</button>
    <button type="button" role="radio" aria-checked={plain} disabled={disabled} onClick={()=>emit(drafts,{plain:true})}>Plain text</button>
   </div>
-  {plain?<p className="hint">The whole reply is stored as one column, “{PLAIN_FIELD}.” No answer format is sent or added to your prompt, and no explanation is asked for separately.</p>:<>
+  {plain?<p className="hint">The whole reply is stored as one column, “{PLAIN_FIELD}.” When a reply is one JSON object, exports, charts, and comparisons also have a column for each of its values; a reply with JSON among other text counts as failed. No answer format is sent or added to your prompt, and no explanation is asked for separately.</p>:<>
    <p className="hint">{drafts.length?'The model must return exactly these fields, so every result becomes a clean column. It writes them in this order.':'Without fields, the model returns one score or category. Add fields to get one column per judgment.'}</p>
    {drafts.map((draft,index)=>{
     const problem=problemOf(drafts,index),notWhole=draft.type==='ordinal'&&listed(draft.values).some(value=>!Number.isInteger(toNumber(value)));
