@@ -180,8 +180,10 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   // As a batch: each subject's request is repeated as many times as it has annotations to make.
   const jobs=[];let returned=()=>[];
   const b=harness(three({processing:'batch'}),async(url,options)=>{
-   assert.equal(url,'/api/batch');const action=options.body.get('action');
-   if(action==='submit'){jobs.push({ids:JSON.parse(options.body.get('ids')),copies:options.body.get('copies'),subjects:JSON.parse(options.body.get('subjects')).map(fields=>fields[0].value)});return Response.json({id:'batch_'+jobs.length});}
+   const action=options.body.get('action');assert.equal(url,action==='prepare'?'/api/batch?split=1':'/api/batch');
+   // Research mode prepares the run first, then sends it batch by batch (here one).
+   if(action==='prepare'){jobs.push({ids:JSON.parse(options.body.get('ids')),copies:options.body.get('copies'),subjects:JSON.parse(options.body.get('subjects')).map(fields=>fields[0].value)});const n=jobs.at(-1).ids.length;return Response.json({parts:[{items:[0,jobs.at(-1).subjects.length],requests:[0,n],bytes:1}],bytes:1,requests:n,bySize:false});}
+   if(action==='send')return Response.json({id:'batch_'+jobs.length});
    if(action==='check')return Response.json({terminal:true,state:'completed',completed:1,total:1});
    return Response.json({terminal:true,state:'completed',results:returned(jobs.at(-1).ids)});
   });b.props.research=true;await b.flush();
