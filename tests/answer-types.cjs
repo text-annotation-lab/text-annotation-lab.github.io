@@ -103,6 +103,14 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
   body=JSON.parse(calls[0].options.body);assert.equal(schemaOf(provider,body),undefined,provider+': no schema in plain text');assert.equal(instructionsOf(provider,body),PROMPT,provider+': the prompt is sent as written');
   assert(!/json_schema|responseSchema|responseMimeType|response_format/.test(calls[0].options.body),provider+': no answer format of any kind');
   mock=async()=>Response.json(reply(provider,'   '));response=await route.POST(request(provider,['response'],{plain:true}));assert.equal(response.status,422,'An empty reply is a failed result');
+  // A reply that is one JSON object is stored whole, as written. JSON among other words is a failed result that keeps the reply.
+  const whole='```json\n{"tone":{"score":2,"explanation":"Hopeful."}}\n```';
+  mock=async()=>Response.json(reply(provider,whole));response=await route.POST(request(provider,['response'],{plain:true}));out=await response.json();
+  assert.equal(response.status,200,provider+' JSON reply: '+out.error);assert.deepEqual(out.answers,{f0:whole});assert.equal(out.rawResponse,undefined);
+  mock=async()=>Response.json(reply(provider,'Here is my answer: {"tone": 2}'));response=await route.POST(request(provider,['response'],{plain:true}));out=await response.json();
+  assert.equal(response.status,422,provider+': JSON among other words is a failed result');assert.equal(out.error,validation.UNREADABLE_JSON);assert.equal(out.rawResponse,'Here is my answer: {"tone": 2}','The reply is kept for review');
+  // With answer fields, a free-text answer that quotes JSON is an answer like any other.
+  mock=async()=>Response.json(reply(provider,JSON.stringify(result({f0:'neutral'},'It says {"tone": 2} in passing.'))));response=await route.POST(request(provider,['Tone'],{fields:[tone]}));assert.equal(response.status,200);
   // Settings that are not in the sent form never reach a provider.
   calls=[];for(const bad of [{plain:true,fields:[tone]},{fields:[{...tone,values:['a','a']}]},'{'])assert.equal((await route.POST(request(provider,['Tone'],bad))).status,400);
   assert.equal((await route.POST(request(provider,['Tone'],{plain:true}))).status,400,'Plain text names its one field “response”');assert.equal(calls.length,0);

@@ -78,7 +78,7 @@ export function typedSchema(spec:FieldSpec,google:boolean,knowledge:boolean){
 // descriptions) and for the exported record of runs (`full`: every value and each field's description).
 const TYPE_WORDS:Record<FieldType,string>={category:'category',ordinal:'ordinal scale',number:'number',boolean:'yes / no',text:'free text'};
 export function answersLabel(names:string[]=[],settings?:AnswerSettings,full=false):string{
- if(settings?.plain)return full?'plain text: the whole reply is stored as “'+PLAIN_FIELD+'”; no answer format was sent':'Plain text';
+ if(settings?.plain)return full?'plain text: the whole reply is stored as “'+PLAIN_FIELD+'” (a reply that is one JSON object also has a column for each of its values); no answer format was sent':'Plain text';
  const note=(name:string)=>{
   const spec=fieldSpec(settings,name);if(!spec)return name;
   const values=spec.type==='boolean'?[]:full?spec.values:spec.values.slice(0,8),more=!full&&spec.values.length>8&&spec.type!=='boolean'?', …':'';

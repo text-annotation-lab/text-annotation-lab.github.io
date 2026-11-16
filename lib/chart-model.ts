@@ -2,6 +2,7 @@
 // Pure functions only: no DOM, no storage, no network.
 import {resultAnswer,type NamedAnswers} from './answer-fields';
 import {explicitAnswerRules} from './answer-validation';
+import {jsonAnswers,jsonKeyOrder,jsonValue} from './json-reply';
 import {chartNumber,suggestedYear,validChartYear} from './results-chart';
 
 export type ChartSourceRow=NamedAnswers&{
@@ -24,21 +25,26 @@ export type Scale={min:number;max:number;type:ScaleType;lowLabel:string;highLabe
 
 const ABSTAIN='INSUFFICIENT_KNOWLEDGE';
 
+// A plain-text reply that is JSON (research mode) can be charted by each of its values.
+const splitReply=(row:ChartSourceRow)=>row.answerSettings?.plain?jsonAnswers(row.answers):null;
+const isExplanation=(name:string)=>name.toLowerCase()==='explanation';
 export function chartFieldList(rows:ChartSourceRow[]):Field[]{
  const done=rows.filter(row=>row.status==='done');
- const names=Array.from(new Set(done.flatMap(row=>row.answerFields||[]))).filter(name=>name.toLowerCase()!=='explanation');
- const fields:Field[]=names.map(name=>({key:'field:'+name,label:name,name}));
+ const names=Array.from(new Set(done.flatMap(row=>row.answerFields||[])));
+ const keys=jsonKeyOrder(done.map(splitReply)).filter(key=>!names.includes(key));
+ if(keys.length){const at=names.indexOf('response');names.splice(at<0?names.length:at,0,...keys);}
+ const fields:Field[]=names.filter(name=>!isExplanation(name)).map(name=>({key:'field:'+name,label:name,name}));
  if(done.some(row=>!row.answerFields?.length&&row.score?.trim()))fields.unshift({key:'score',label:'Score / category'});
  return fields;
 }
 
 export function fieldValue(row:ChartSourceRow,field:Field){
- return (field.name===undefined?(!row.answerFields?.length?row.score||'':''):resultAnswer(row,field.name)).trim();
+ return (field.name===undefined?(!row.answerFields?.length?row.score||'':''):row.answerFields?.includes(field.name)?resultAnswer(row,field.name):jsonValue(splitReply(row),field.name)).trim();
 }
 
 function explanationOf(row:ChartSourceRow){
- const named=row.answerFields?.find(name=>name.toLowerCase()==='explanation');
- return row.explanation?.trim()||(named?resultAnswer(row,named).trim():'');
+ const named=row.answerFields?.find(isExplanation),reply=named?null:splitReply(row),key=reply?Object.keys(reply).find(isExplanation):undefined;
+ return row.explanation?.trim()||(named?resultAnswer(row,named).trim():key?jsonValue(reply,key).trim():'');
 }
 
 /** Identical prompt, model, effort and fields count as one setting. */

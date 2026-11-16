@@ -1,4 +1,5 @@
 import {fieldSpec,typedProblem,type AnswerSettings} from './answer-types';
+import {unreadableJson} from './json-reply';
 // Recognize explicit output declarations only; never infer scales from prose,
 // examples, or bare numbers. Conflicting or qualified declarations stay free text.
 export type AnswerRule={name:string;values:string[];min:number;max:number};
@@ -23,9 +24,15 @@ export function explicitAnswerRules(prompt:string,names:string[]=[],knowledge=fa
   return [{name,values,min,max}];
  });
 }
+export const UNREADABLE_JSON='The reply contains JSON that could not be read. A plain-text reply is split into columns only when the whole reply is one JSON object. The response is kept for review; no retry was sent.';
 export function annotationValidationError(result:any,names:string[]=[],prompt='',knowledge=false,settings?:AnswerSettings):string|undefined{
  if(!result||typeof result.score!=='string'||typeof result.explanation!=='string')return 'The response has an invalid answer format. Review the returned response before retrying.';
- if(settings?.plain)return typeof result.answers?.f0==='string'&&result.answers.f0.trim()?undefined:'The reply is empty. Review the returned response before retrying.';
+ if(settings?.plain){
+  if(typeof result.answers?.f0!=='string'||!result.answers.f0.trim())return 'The reply is empty. Review the returned response before retrying.';
+  // A reply that is JSON is split into columns in the exports. One that holds JSON among other words cannot be
+  // split, and its columns would be silently empty, so it counts as failed. Prose, even with {braces}, is fine.
+  return unreadableJson(result.answers.f0)?UNREADABLE_JSON:undefined;
+ }
  const rules=explicitAnswerRules(prompt,names,knowledge);
  const entries=names.length?names.map((name,i)=>[name,result.answers?.['f'+i]]):[['score',result.score]];
  for(const [name,value] of entries){
