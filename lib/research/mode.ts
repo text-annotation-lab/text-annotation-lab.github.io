@@ -12,6 +12,15 @@ export function writeResearchMode(on:boolean){
  try{if(on)window.localStorage.setItem(MODE_KEY,'research');else window.localStorage.removeItem(MODE_KEY);}catch{}
 }
 
+// Research mode asks the browser to keep this site's data (studies, texts, results) even when the disk runs low,
+// as the same author's separate research tool does; without this the browser may clear it without asking. The
+// browser decides (Chrome and Edge without asking, Firefox may ask once, after a click). It is asked each time research
+// mode opens, since Chrome grants it more readily to sites used often, and when the number of texts changes (as when
+// texts are added). Nothing changes if it is refused or unsupported, or once it is granted.
+export function keepSiteData(){
+ try{void navigator.storage?.persisted?.().then(kept=>kept||navigator.storage.persist()).catch(()=>undefined);}catch{}
+}
+
 // API keys are kept only when the researcher ticks "Remember keys in this
 // browser" (research mode only). They stay in this browser's local storage and
 // are never part of a study, a backup, or an export.

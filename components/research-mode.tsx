@@ -1,11 +1,19 @@
 'use client';
 // Research mode is the same Lab with more tools. Only the switch is part of
 // the page from the start; the research screens load when they are first shown.
-import {lazy,Suspense,type ComponentProps,type ReactNode} from 'react';
+import {lazy,Suspense,useState,type ComponentProps,type ReactNode} from 'react';
+import {Button} from '@/components/ui/button';
 import './research/research.css';
 
 export function ModeSwitch({on,onChange,disabled}:{on:boolean;onChange:(on:boolean)=>void;disabled?:boolean}){
  return <button type="button" role="switch" aria-checked={on} aria-label="Research mode" className={'mode-switch'+(on?' on':'')} disabled={disabled} onClick={()=>onChange(!on)} title={on?'Back to the standard Lab. Your texts, prompt, and results stay as they are.':'Adds tools for research: several runs per text, agreement with human labels, sampling, and more exports. Your texts, prompt, and results stay as they are.'}><span className="mode-switch-track" aria-hidden="true"><span className="mode-switch-thumb"/></span><span className="mode-switch-label">Research<span className="mode-switch-more"> mode</span></span></button>;
+}
+
+// Research mode works in one tab at a time (lib/research/tab-lock.ts). With openHere: shown instead of the Lab in a tab
+// that opened in research mode while another tab has it. Without: shown in the standard Lab when switching on is refused.
+export function OtherTabNotice({openHere}:{openHere?:()=>Promise<boolean>}){
+ const [stillOpen,setStillOpen]=useState(false);
+ return <div className={openHere?'other-tab':'other-tab-note'}><div className="message" role={openHere?'status':'alert'}><strong>Research mode is already open in another tab or window of this browser.</strong> It works in one tab at a time, so that the same requests are never sent (and paid for) twice and changes don’t overwrite each other. {openHere?'Switch to the other tab, or close it or turn research mode off there: this tab then opens research mode when you come back to it, or when you click Open here.':'Close it or turn research mode off there, then switch it on here.'}{openHere&&<div className="other-tab-actions"><Button onClick={async()=>setStillOpen(!(await openHere()))}>Open here</Button>{stillOpen&&<span>It is still open in another tab or window: close it there first.</span>}</div>}</div></div>;
 }
 
 // Research mode: step through the texts shown, from the details of one. The buttons stay in place (and keep the

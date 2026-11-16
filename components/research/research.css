@@ -305,3 +305,5 @@
 .research-glance p.research-glance-title{margin:10px 0 0;font-size:13px;color:#53657a}
 .batch-parts{margin:10px 0;padding-left:22px;line-height:1.6;list-style:decimal}
 .batch-parts code{font-family:monospace;overflow-wrap:anywhere}
+.other-tab{max-width:640px;margin:40px auto;padding:0 16px}.other-tab .message,.other-tab-note .message{margin:0}.other-tab-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;margin-top:14px}
+.other-tab-note{width:calc(100% - 56px);max-width:1384px;margin:16px auto}@media(max-width:780px){.other-tab-note{width:calc(100% - 32px)}}
