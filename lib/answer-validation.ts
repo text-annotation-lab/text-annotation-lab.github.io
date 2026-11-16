@@ -50,8 +50,10 @@ export function annotationValidationError(result:any,names:string[]=[],prompt=''
 
 // Recheck recorded results against their own prompt, never the current editor.
 // Preserve answers, usage, and timestamps; this only makes the review/retry path available.
-export function reviewStoredAnswer<T extends {status:string;prompt?:string;score?:string;explanation?:string;answerFields?:string[];answerSettings?:AnswerSettings;answers?:Record<string,string>;rawResponse?:string}>(row:T,knowledge=false):T{
- if(row.status!=='done'||typeof row.prompt!=='string'||typeof row.explanation!=='string')return row;
+export function reviewStoredAnswer<T extends {status:string;prompt?:string;score?:string;explanation?:string;answerFields?:string[];answerSettings?:AnswerSettings;answers?:Record<string,string>;rawResponse?:string;annotations?:unknown[]}>(row:T,knowledge=false):T{
+ // A result combined from several annotations (research mode) is not one reply: a tie or a median need not be
+ // a value the answer format allows. Each of its annotations was checked when it came back.
+ if(row.status!=='done'||typeof row.prompt!=='string'||typeof row.explanation!=='string'||row.annotations?.length)return row;
  const error=annotationValidationError(row,row.answerFields,row.prompt,knowledge,row.answerSettings);
  return error?{...row,status:'error',error,rawResponse:row.rawResponse||JSON.stringify({score:row.score,explanation:row.explanation,answers:row.answers})}:row;
 }

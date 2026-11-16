@@ -91,7 +91,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert.equal(results.length,14);assert.equal(tables.resultsTable(study,1).length,4,'Only the texts a run sent a request for');
  assert(!tables.resultsTable(study,2,{explanation:false})[0].includes('explanation'));
  const requests=tables.requestsTable(study,[2],hashes);
- assert.deepEqual(requests[0].slice(0,16),['study','data','run','prompt_version','prompt_hash','provider','model_requested','model_reported','reasoning_effort','doc_id','document','attempt','status','sent_again','Tone','explanation']);
+ assert.deepEqual(requests[0].slice(0,17),['study','data','run','prompt_version','prompt_hash','provider','model_requested','model_reported','reasoning_effort','doc_id','document','replicate','attempt','status','sent_again','Tone','explanation']);assert(column(requests,'replicate').every(n=>n===1),'One annotation per text: every request is replicate 1');
  assert.equal(requests.length,15);assert.deepEqual(column(requests,'status').filter(status=>status==='error').length,2);assert.deepEqual(column(requests,'sent_again').filter(Boolean),['yes']);
  const failed=requests.find(line=>line[9]==='doc-6');
  assert.equal(failed[requests[0].indexOf('Tone')],'');assert.equal(failed[requests[0].indexOf('error')],'The model stopped before finishing.');assert.equal(failed[requests[0].indexOf('stop_reason')],'max_tokens');
@@ -146,12 +146,12 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  const book=await packages.buildRunWorkbook(context(),2);
  assert.equal(book.name,'Tone-study_run2_2026-11-16.xlsx');
  const excel=new ExcelJS.Workbook();await excel.xlsx.load(book.data);
- assert.deepEqual(excel.worksheets.map(sheet=>sheet.name),['Results','By request','Agreement','Settings','All runs']);
+ assert.deepEqual(excel.worksheets.map(sheet=>sheet.name),['Results','By replicate','Agreement','Settings','All runs']);
  const sheetRows=name=>{const out=[];excel.getWorksheet(name).eachRow({includeEmpty:false},row=>out.push(row.values.slice(1)));return out;},resultSheet=sheetRows('Results');
  assert.deepEqual(resultSheet[0],['document','Tone','explanation','tone_human','Tone coder2','region','tone_note','quality','n_ok','n_error'],'The Lab’s identifier is left out of the Results sheet');
  assert.deepEqual(resultSheet[1].slice(0,4),['text-1.txt',5,'Because of text 1.',5],'Answers and labels are numbers where they look like numbers');
  assert.strictEqual(resultSheet[4][0],'2024','A name made of digits stays text');assert.strictEqual(resultSheet[2][5],'0045','So does an identifier with leading zeros');assert.strictEqual(resultSheet[12][3],'NA');
- assert.equal(sheetRows('By request').length,15);assert.equal(sheetRows('Agreement').length,4);assert.equal(sheetRows('All runs').length,3);
+ assert.equal(sheetRows('By replicate').length,15);assert.equal(sheetRows('Agreement').length,4);assert.equal(sheetRows('All runs').length,3);
  const settings=new Map(sheetRows('Settings').map(([key,value])=>[key,value]));
  assert.equal(settings.get('Model'),'claude-haiku-5-5');assert.equal(settings.get('Max output tokens'),12000);assert.equal(settings.get('Requests'),'kept when the run was made');assert(String(settings.get('Prompt as sent (with the Lab’s instructions)')).includes('Lab response format'));
  assert.equal(excel.getWorksheet('Results').views[0].state,'frozen');assert(excel.getWorksheet('Results').autoFilter);
@@ -162,7 +162,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  // --- The supplementary repository -------------------------------------------------------------------
  const full=await packages.buildSupplementary(context(),2,{texts:true,explanations:true,logs:true});
  assert.equal(full.name,'Tone-study_supplementary_2026-11-16');
- assert.deepEqual(names(full),['README.md','data/corpus.csv','data/files/report.pdf','logs/requests.jsonl','logs/responses.jsonl','metadata.json','prompt/codebook.md','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_request.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt']);
+ assert.deepEqual(names(full),['README.md','data/corpus.csv','data/files/report.pdf','logs/requests.jsonl','logs/responses.jsonl','metadata.json','prompt/codebook.md','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt']);
  const metadata=JSON.parse(await read(full,'metadata.json')),kept=study.requests;
  assert.deepEqual([metadata.study,metadata.data,metadata.run.number,metadata.run.status_when_exported,metadata.model.provider,metadata.model.requested,metadata.model.max_output_tokens,metadata.prompt.version,metadata.options.prompt_caching],['Tone study','uploaded texts',2,'finished','anthropic','claude-haiku-5-5',12000,2,'off']);
  assert.deepEqual(metadata.requests,{total:13,ok:12,failed:1,replaced_by_retries:1,sent_in_all:14,first_requested_at:'2026-11-16T09:59:00.000Z',last_completed_at:'2026-11-16T10:02:09.000Z'});
@@ -173,16 +173,16 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert.deepEqual(JSON.parse(await read(full,'prompt/output_schema.json')),JSON.parse(kept[0].body).output_config.format.schema);
  const resultsCsv=readCsv(await read(full,'results/results.csv'));
  assert((await read(full,'results/results.csv')).startsWith('﻿'),'With a byte-order mark, so Excel reads every letter');assert.deepEqual(resultsCsv[0],results[0]);assert.equal(resultsCsv[1][2],TEXTS[0]);assert.equal(resultsCsv.length,14);
- assert.equal(readCsv(await read(full,'results/results_by_request.csv')).length,15);assert.deepEqual(readCsv(await read(full,'results/agreement.csv')).map(line=>line[3]),['compared_with','tone_human','Tone coder2','Tone coder2']);
+ assert.equal(readCsv(await read(full,'results/results_by_replicate.csv')).length,15);assert.deepEqual(readCsv(await read(full,'results/agreement.csv')).map(line=>line[3]),['compared_with','tone_human','Tone coder2','Tone coder2']);
  assert.deepEqual(readCsv(await read(full,'data/corpus.csv'))[13].slice(0,6),['doc-13','report.pdf','report.pdf','','','files/report.pdf']);assert.equal(fileOf(full,'data/files/report.pdf').data,PDF);
  // The logs: every request as it was sent, and what was kept of every reply.
  const sentLines=jsonLines(await read(full,'logs/requests.jsonl')),replies=jsonLines(await read(full,'logs/responses.jsonl'));
  assert.equal(sentLines.length,14);assert.equal(replies.length,14);
- assert.deepEqual(sentLines[0],{doc_id:'doc-1',document:'text-1.txt',run:2,attempt:1,recorded:'kept when the request was sent',url:'https://api.anthropic.com/v1/messages',request:frames.fillRequest(kept[0].body,{filename:'text-1.txt',text:TEXTS[0]})});
+ assert.deepEqual(sentLines[0],{doc_id:'doc-1',document:'text-1.txt',run:2,replicate:1,attempt:1,recorded:'kept when the request was sent',url:'https://api.anthropic.com/v1/messages',request:frames.fillRequest(kept[0].body,{filename:'text-1.txt',text:TEXTS[0]})});
  assert.deepEqual(sentLines.slice(1,3).map(line=>[line.doc_id,line.attempt,line.sent_again]),[['doc-2',1,true],['doc-2',2,undefined]]);
  const pdfLine=sentLines[13],pdfData=pdfLine.request.messages[0].content[1].source.data;
  assert.match(pdfData,/^\[PDF file: report\.pdf, 15 bytes, SHA-256 [0-9a-f]{64}; in this package at data\/files\/report\.pdf\]$/);assert.equal(pdfLine.request.messages[0].content[0].text.split('\n')[0],'Document filename: report.pdf');
- assert.deepEqual(replies[0],{doc_id:'doc-1',document:'text-1.txt',run:2,attempt:1,status:'ok',response_text:dataset.rows[0].output,model_reported:'claude-haiku-5-5-20260901',stop_reason:'end_turn',response_id:'msg_0',usage:dataset.rows[0].usage,requested_at:'2026-11-16T10:00:00.000Z',completed_at:'2026-11-16T10:01:00.000Z'});
+ assert.deepEqual(replies[0],{doc_id:'doc-1',document:'text-1.txt',run:2,replicate:1,attempt:1,status:'ok',response_text:dataset.rows[0].output,model_reported:'claude-haiku-5-5-20260901',stop_reason:'end_turn',response_id:'msg_0',usage:dataset.rows[0].usage,requested_at:'2026-11-16T10:00:00.000Z',completed_at:'2026-11-16T10:01:00.000Z'});
  assert.deepEqual([replies[1].status,replies[1].sent_again,replies[1].error,replies[1].response_text],['error',true,'Claude did not return a valid annotation. Check your usage before retrying.',null]);
  const readme=await read(full,'README.md');
  for(const part of ['# Tone study: LLM annotation materials','| Provider / model | anthropic / `claude-haiku-5-5` |','| Texts with a usable annotation | 12 of 13 |','| Requests (ok / failed) | 12 / 1 |','| Failed attempts sent again | 1 (','## Agreement with human labels','| Tone | model | tone_human | 11 (of 13; 1 left out) | 81.8% [','| Tone | tone_human | Tone coder2 | 12 (of 13; 1 left out) |','Brackets: 95% intervals','human–human baseline','Label columns not used for agreement: tone_note (a note or rating), quality (mostly not values of Tone).','## Methods text (draft)','## Files','`data/files/`','## Reproducing','export ANTHROPIC_API_KEY=...','python annotate.py ../data/corpus.csv'])assert(readme.includes(part),'README: '+part);
@@ -191,8 +191,8 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert(!/\{\{[A-Z_]+\}\}/.test(script),'Every placeholder is filled');assert.match(await read(full,'scripts/annotate_template.py'),/REQUEST = \{\{REQUEST\}\}/);assert(script.includes('PROVIDER = "anthropic"')&&script.includes('API_KEY_ENV = "ANTHROPIC_API_KEY"')&&script.includes('FIELDS = ["Tone"]')&&script.includes('PLAIN_TEXT = False')&&script.includes('TIMEOUT = 180'));
  // Without the texts, the explanations, and the logs.
  const lean=await packages.buildSupplementary(context(),2,{texts:false,explanations:false,logs:false});
- assert.deepEqual(names(lean),['README.md','metadata.json','prompt/codebook.md','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_request.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt']);
- const leanResults=readCsv(await read(lean,'results/results.csv'))[0];assert(!leanResults.includes('text')&&!leanResults.includes('explanation'));assert(!readCsv(await read(lean,'results/results_by_request.csv'))[0].includes('explanation'));
+ assert.deepEqual(names(lean),['README.md','metadata.json','prompt/codebook.md','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt']);
+ const leanResults=readCsv(await read(lean,'results/results.csv'))[0];assert(!leanResults.includes('text')&&!leanResults.includes('explanation'));assert(!readCsv(await read(lean,'results/results_by_replicate.csv'))[0].includes('explanation'));
  const leanReadme=await read(lean,'README.md');assert(leanReadme.includes('The annotated texts are not included in this package')&&leanReadme.includes('python annotate.py your_corpus.csv')&&!leanReadme.includes('logs/'));
  for(const text of TEXTS)for(const file of lean.files)assert(!(await textOf(file.data)).includes(text.split('\n')[0]),'No text of the corpus is in a package made without the texts: '+file.path);
 
@@ -254,7 +254,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert(!names(searched).some(name=>name.startsWith('scripts/')));assert((await read(searched,'README.md')).includes('No script is included: each request of this run carried web search results'));
  assert((await read(searched,'README.md')).includes('The full prompt and the requests as sent are provided in the supplementary material.')&&learnedReadme.includes('The full prompt, the requests as sent, and an executable script are provided in the supplementary material.'),'The draft methods paragraph names only what the package holds');
  assert(jsonLines(await read(searched,'logs/requests.jsonl'))[0].request.input.some(part=>JSON.stringify(part).includes('Found on the web.')),'The log holds the request with the search results it carried');
- assert.equal(readCsv(await read(searched,'results/results_by_request.csv'))[1][readCsv(await read(searched,'results/results_by_request.csv'))[0].indexOf('web_search')],'yes');
+ assert.equal(readCsv(await read(searched,'results/results_by_replicate.csv'))[1][readCsv(await read(searched,'results/results_by_replicate.csv'))[0].indexOf('web_search')],'yes');
 
  // --- No API key can be part of an export: the files are built from texts, runs, columns, samples, and the kept requests ---
  for(const pack of [full,lean,repository,learned])for(const file of pack.files){const text=await textOf(file.data);assert(!/sk-[A-Za-z0-9]{8}|Bearer [A-Za-z0-9]{8}/.test(text),'No credential in '+file.path);}
@@ -285,8 +285,8 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
   fs.writeFileSync(path.join(folder,'report.pdf'),Buffer.from(await PDF.arrayBuffer()));
   fs.writeFileSync(path.join(folder,'corpus.csv'),toCsv([['doc_id','document','filename','text','file'],['d1','x','näme “1”.txt',TEXT,''],['d2','y','report.pdf','','report.pdf'],['d3','z','empty.txt','','']]));
   const models={openai:'gpt-6-luna',anthropic:'claude-haiku-5-5',gemini:'gemini-4-hydrogen',openrouter:'openai/gpt-6-luna'},keyHeader={openai:['authorization','Bearer '+KEY],anthropic:['x-api-key',KEY],gemini:['x-goog-api-key',KEY],openrouter:['authorization','Bearer '+KEY]};
-  const scriptFor=(provider,extra={})=>{const settings={...setup,provider,model:models[provider],...extra},text=frames.requestFrame(settings,false),pdf=frames.requestFrame(settings,true);
-   fs.writeFileSync(path.join(folder,provider+'.py'),python.fillScript(python.SCRIPT_TEMPLATE,python.scriptValues({lab:'test',studyName:'Tone “study”',runDescription:'#2',provider,text,pdf,fields:settings.answerFields,plain:Boolean(settings.answerSettings?.plain)})));return {text,pdf};};
+  const scriptFor=(provider,extra={},repeats)=>{const settings={...setup,provider,model:models[provider],...extra},text=frames.requestFrame(settings,false),pdf=frames.requestFrame(settings,true);
+   fs.writeFileSync(path.join(folder,provider+'.py'),python.fillScript(python.SCRIPT_TEMPLATE,python.scriptValues({lab:'test',studyName:'Tone “study”',runDescription:'#2',provider,text,pdf,fields:settings.answerFields,plain:Boolean(settings.answerSettings?.plain),repeats})));return {text,pdf};};
   for(const provider of ['openai','anthropic','gemini','openrouter']){
    const {text,pdf}=scriptFor(provider);received.length=0;respond=()=>[200,reply[provider],{}];
    const done=await run([provider+'.py','corpus.csv','--base-url',base,'--out',provider+'.csv','--log',provider+'.jsonl'],{[python.keyVariable(provider)]:KEY});
@@ -297,9 +297,9 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
    assert.equal(received[0].url,new URL(text.url).pathname,provider+': the same path');assert.equal(received[0].headers[keyHeader[provider][0]],keyHeader[provider][1],provider+': the key travels in the provider’s header');
    if(provider==='anthropic')assert.equal(received[0].headers['anthropic-version'],'2023-06-01');
    const out=readCsv(fs.readFileSync(path.join(folder,provider+'.csv'),'utf8'));
-   assert.deepEqual(out[0],['doc_id','status','Tone','explanation','error','model_reported','stop_reason','input_tokens','output_tokens','latency_s','completed_at','response_id']);
-   assert.deepEqual(out.slice(1).map(line=>line.slice(0,5)),[['d1','ok','4','Because “it” says so.',''],['d2','ok','4','Because “it” says so.',''],['d3','error','','','No document to send (an empty text, or a kind of document the run did not send)']],provider);
-   assert.deepEqual(out[1].slice(7,9),[provider==='anthropic'?'12':'10','5'],provider+': tokens as the provider counts them');
+   assert.deepEqual(out[0],['doc_id','replicate','status','Tone','explanation','error','model_reported','stop_reason','input_tokens','output_tokens','latency_s','completed_at','response_id']);
+   assert.deepEqual(out.slice(1).map(line=>line.slice(0,6)),[['d1','1','ok','4','Because “it” says so.',''],['d2','1','ok','4','Because “it” says so.',''],['d3','1','error','','','No document to send (an empty text, or a kind of document the run did not send)']],provider);
+   assert.deepEqual(out[1].slice(8,10),[provider==='anthropic'?'12':'10','5'],provider+': tokens as the provider counts them');
    const log=fs.readFileSync(path.join(folder,provider+'.jsonl'),'utf8');
    assert(!log.includes(KEY)&&!fs.readFileSync(path.join(folder,provider+'.csv'),'utf8').includes(KEY),provider+': the key is never written');assert(log.includes('[PDF data, 20 base64 characters]')&&!log.includes(Buffer.from(await PDF.arrayBuffer()).toString('base64')),provider+': the log names a PDF’s data, not the data');
   }
@@ -307,22 +307,28 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
   scriptFor('anthropic');received.length=0;respond=()=>[400,{type:'error',error:{type:'invalid_request_error',message:'Echo of a document: SECRET-TEXT'}},{}];
   let failedRun=await run(['anthropic.py','corpus.csv','--base-url',base,'--out','failed.csv','--log','failed.jsonl','--limit','1'],{ANTHROPIC_API_KEY:KEY});
   assert.equal(failedRun.code,0);assert.equal(received.length,1,'A request the provider refuses is not sent again');
-  assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'failed.csv'),'utf8'))[1].slice(0,5),['d1','error','','','The provider answered with an error (HTTP 400: invalid_request_error)']);assert(!fs.readFileSync(path.join(folder,'failed.csv'),'utf8').includes('SECRET-TEXT'));
+  assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'failed.csv'),'utf8'))[1].slice(0,6),['d1','1','error','','','The provider answered with an error (HTTP 400: invalid_request_error)']);assert(!fs.readFileSync(path.join(folder,'failed.csv'),'utf8').includes('SECRET-TEXT'));
   // Too many requests: the script waits as the provider asks and sends the request again.
   received.length=0;respond=()=>received.length===1?[429,{type:'error',error:{type:'rate_limit_error'}},{'retry-after':'0'}]:[200,reply.anthropic,{}];
   failedRun=await run(['anthropic.py','corpus.csv','--base-url',base,'--out','again.csv','--log','again.jsonl','--limit','1'],{ANTHROPIC_API_KEY:KEY});
-  assert.equal(received.length,2);assert.equal(received[0].body,received[1].body);assert.equal(readCsv(fs.readFileSync(path.join(folder,'again.csv'),'utf8'))[1][1],'ok');
+  assert.equal(received.length,2);assert.equal(received[0].body,received[1].body);assert.equal(readCsv(fs.readFileSync(path.join(folder,'again.csv'),'utf8'))[1][2],'ok');
   // A cut-off answer and an answer outside the allowed values count as failed, as in the Lab.
   received.length=0;respond=()=>[200,{...reply.anthropic,stop_reason:'max_tokens'},{}];
   await run(['anthropic.py','corpus.csv','--base-url',base,'--out','cut.csv','--log','cut.jsonl','--limit','1'],{ANTHROPIC_API_KEY:KEY});
-  assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'cut.csv'),'utf8'))[1].slice(1,5),['error','','','Incomplete answer (stop reason: max_tokens)']);
+  assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'cut.csv'),'utf8'))[1].slice(2,6),['error','','','Incomplete answer (stop reason: max_tokens)']);
   respond=()=>[200,{...reply.anthropic,content:[{type:'text',text:JSON.stringify({explanation:'x',score:'',answers:{f0:'9'}})}]},{}];
   await run(['anthropic.py','corpus.csv','--base-url',base,'--out','off.csv','--log','off.jsonl','--limit','1'],{ANTHROPIC_API_KEY:KEY});
-  assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'off.csv'),'utf8'))[1].slice(1,5),['error','','','The answer for Tone is not one of the allowed values']);
+  assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'off.csv'),'utf8'))[1].slice(2,6),['error','','','The answer for Tone is not one of the allowed values']);
   // Plain text: the whole reply is the answer.
   scriptFor('openai',{answerFields:['response'],answerSettings:{plain:true}});received.length=0;respond=()=>[200,{...reply.openai,output:[{type:'message',content:[{type:'output_text',text:' Mostly hopeful. '}]}]},{}];
   await run(['openai.py','corpus.csv','--base-url',base,'--out','plain.csv','--log','plain.jsonl','--limit','1'],{OPENAI_API_KEY:KEY});
-  const plainOut=readCsv(fs.readFileSync(path.join(folder,'plain.csv'),'utf8'));assert.deepEqual(plainOut[0].slice(0,4),['doc_id','status','response','error']);assert.deepEqual(plainOut[1].slice(0,4),['d1','ok','Mostly hopeful.','']);
+  const plainOut=readCsv(fs.readFileSync(path.join(folder,'plain.csv'),'utf8'));assert.deepEqual(plainOut[0].slice(0,5),['doc_id','replicate','status','response','error']);assert.deepEqual(plainOut[1].slice(0,5),['d1','1','ok','Mostly hopeful.','']);
+  // Several annotations per text: each document is sent that many times, with a row and a log line for each.
+  scriptFor('anthropic',{},3);received.length=0;respond=()=>[200,reply.anthropic,{}];
+  const thrice=await run(['anthropic.py','corpus.csv','--base-url',base,'--out','three.csv','--log','three.jsonl','--limit','1'],{ANTHROPIC_API_KEY:KEY});
+  assert.equal(thrice.code,0,thrice.stderr);assert.equal(received.length,3);assert(received.every(request=>request.body===received[0].body),'The same request each time');
+  assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'three.csv'),'utf8')).slice(1).map(line=>line.slice(0,4)),[['d1','1','ok','4'],['d1','2','ok','4'],['d1','3','ok','4']]);
+  assert.deepEqual(jsonLines(fs.readFileSync(path.join(folder,'three.jsonl'),'utf8')).map(line=>line.replicate),[1,2,3]);assert.match(thrice.stderr,/\[1\/1\] d1 \(annotation 3 of 3\)/);
   // A dry run prints the first request and sends nothing; without a key nothing is sent either.
   received.length=0;const {text:dryFrame}=scriptFor('anthropic'),dry=await run(['anthropic.py','corpus.csv','--dry-run'],{ANTHROPIC_API_KEY:'',PYTHONIOENCODING:'utf-8'});
   assert.equal(dry.code,0,dry.stderr);assert(dry.stdout.startsWith('POST https://api.anthropic.com/v1/messages\n'));assert.deepEqual(JSON.parse(dry.stdout.slice(dry.stdout.indexOf('\n')+1)),frames.fillRequest(dryFrame.body,{filename:'näme “1”.txt',text:TEXT}));

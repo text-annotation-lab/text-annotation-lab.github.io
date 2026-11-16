@@ -272,6 +272,90 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert.equal(stuck.calls.length,8);assert.equal(stuck.latest().docs[0].status,'error');assert.equal(stuck.latest().docs[0].error,'OpenAI reports a rate limit.');
  }
 
+ // Annotations per text: each text is sent several times and its answers are combined; what is missing is filled in.
+ {
+  const until=async(h,ready)=>{for(let n=0;n<200&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
+  const stored=()=>({docs:documents(),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1,repeats:3});
+  const research=async h=>{await h.flush();h.find(n=>n.type==='ModeSwitch').props.onChange(true);await h.flush();h.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-repeats'},false);await h.flush();};
+  const near=(a,b)=>Math.abs(a-b)<1e-9,remaining=h=>h.text(h.button('Remaining'));
+  // The standard Lab makes one annotation per text, whatever a study has stored.
+  const once=harness(stored());await once.flush();once.find(n=>n.props?.id==='key').props.onChange({target:{value:'sk-once'}});await once.flush();
+  once.button('Processing options').props.onClick();await once.flush();assert.throws(()=>once.find(n=>n.props?.id==='annotation-repeats'),'The setting is research mode’s');
+  await once.button('Run all').props.onClick();await once.flush();
+  assert.equal(once.calls.length,3);assert(once.latest().docs.every(doc=>doc.status==='done'&&!('annotations' in doc)&&doc.repeats===undefined&&doc.score==='POSITIVE'));assert.equal(once.latest().runs[0].repeats,undefined);assert.equal(once.latest().repeats,3,'The stored number is kept for research mode');
+
+  // Research mode, one request at a time. The second annotation of the second text fails.
+  const plan={'text-0.txt':['POSITIVE','NEGATIVE','POSITIVE'],'text-1.txt':['POSITIVE',null,'POSITIVE','NEGATIVE'],'text-2.txt':['NEGATIVE','NEGATIVE','NEGATIVE']},sent=new Map();
+  const r=harness(stored(),async()=>{},async(url,options)=>{
+   const name=options.body.get('file').name,at=sent.get(name)||0,score=at<plan[name].length?plan[name][at]:'POSITIVE';sent.set(name,at+1);
+   return score?Response.json({score,explanation:`${name} ${at+1}`,tokens:10,usage:{input_tokens:8,output_tokens:2},responseId:`r-${name}-${at+1}`}):Response.json({error:'The request failed.'},{status:400});
+  });
+  await research(r);
+  r.button('Processing options').props.onClick();await r.flush();
+  const select=()=>r.find(n=>n.props?.id==='annotation-repeats').props;
+  assert.equal(String(select().value),'3');assert.deepEqual(select().children.map(option=>String(option.props.value)),['1','2','3','4','5','6','7','8','9','10']);assert(r.text(r.button('Processing options')).includes('3 annotations per text'));
+  assert(remaining(r).includes('Remaining (3)'));r.button('Remaining').props.onClick();await until(r,()=>r.latest()?.docs[1].status==='done');
+  let docs=r.latest().docs;
+  assert.equal(r.calls.length,5,'Three requests for the first text, two for the second; nothing is started after a failure');assert.deepEqual(docs.map(doc=>doc.status),['done','done','pending']);
+  assert.deepEqual([docs[0].score,docs[0].explanation,docs[0].tokens,docs[0].repeats,docs[0].runNo],['POSITIVE','text-0.txt 1',30,3,1]);assert(near(docs[0].consistency.score,2/3));
+  assert.deepEqual(docs[0].annotations.map(a=>[a.n,a.status,a.score,a.responseId,a.requestId,a.runId===docs[0].runId,a.processing]),[[1,'done','POSITIVE','r-text-0.txt-1','q1',true,'instant'],[2,'done','NEGATIVE','r-text-0.txt-2','q1',true,'instant'],[3,'done','POSITIVE','r-text-0.txt-3','q1',true,'instant']]);
+  for(const key of ['usage','responseId','rawResponse'])assert.equal(docs[0][key],undefined,key+' belongs to each annotation');assert.deepEqual(docs[0].annotations[0].usage,{input_tokens:8,output_tokens:2});
+  assert.deepEqual(docs[1].annotations.map(a=>[a.n,a.status,a.error]),[[1,'done',undefined],[2,'error','The request failed.']]);assert.deepEqual([docs[1].score,docs[1].error,docs[1].consistency],['POSITIVE',undefined,undefined],'One usable annotation: its answer, and no share');
+  assert.equal(docs[2].annotations,undefined);assert.equal(docs[2].repeats,undefined);assert.equal(docs[0].runSize,9,'A run’s size counts requests');
+  assert.deepEqual(r.latest().runs.map(run=>[run.number,run.repeats]),[[1,3]]);assert.equal(r.latest().repeats,3);
+  assert(r.all(n=>n.type==='span'&&String(n.props.className).includes('partial')).some(n=>r.text(n)==='1 of 3 annotations'),'A text with fewer annotations than planned says so');
+  assert(r.all(n=>n.props?.role==='alert'||n.props?.role==='status').some(n=>r.text(n).includes('Stopped starting new annotations after an error.')));
+  // Remaining: the two missing annotations of the second text, then the third text; all in the same run.
+  assert(remaining(r).includes('Remaining (2)'));r.button('Remaining').props.onClick();await until(r,()=>r.latest()?.docs[2].status==='done');
+  docs=r.latest().docs;
+  assert.equal(r.calls.length,10);assert.deepEqual(docs.map(doc=>[doc.status,doc.runNo,doc.annotations.map(a=>a.status).join()]),Array(3).fill(['done',1,'done,done,done']));assert.equal(r.latest().runs.length,1);
+  assert.deepEqual(docs[1].annotations.map(a=>a.score),['POSITIVE','POSITIVE','NEGATIVE']);assert.equal(docs[1].score,'POSITIVE');assert(near(docs[1].consistency.score,2/3));assert.equal(docs[1].tokens,30);
+  assert.deepEqual(docs[1].history.map(attempt=>[attempt.status,attempt.replicate,attempt.error,attempt.runNo,attempt.repeats,attempt.model]),[['error',2,'The request failed.',1,3,providers.defaultModel('openai')]],'The failed annotation is kept as a failed attempt');
+  assert.notEqual(docs[1].annotations[1].runId,docs[1].annotations[0].runId,'An annotation filled in later names its own click');assert.equal(docs[1].annotations[1].runId,docs[1].runId);assert.equal(docs[1].history[0].runId,docs[1].annotations[0].runId);
+  assert.deepEqual([docs[2].score,docs[2].consistency.score],['NEGATIVE',1]);assert(remaining(r).includes('Remaining (0)'));
+  assert(!r.all(n=>n.type==='span'&&String(n.props.className).includes('partial')).length);
+  // Another number is another run's setting; with one, nothing of the setting is stored.
+  select().onChange({target:{value:'2'}});await r.flush();assert.equal(r.latest().repeats,2);assert(remaining(r).includes('Remaining (0)'),'Results made with these settings exist, whatever the number');assert(r.text(r.button('All (')).includes('All (3)'));
+  r.button('All (').props.onClick();await until(r,()=>r.latest()?.docs.every(doc=>doc.status==='done'&&doc.runNo===2));
+  docs=r.latest().docs;
+  assert.equal(r.calls.length,16);assert.deepEqual(r.latest().runs.map(run=>[run.number,run.repeats]),[[1,3],[2,2]]);assert(docs.every(doc=>doc.annotations.length===2&&doc.repeats===2&&doc.earlier.length===1&&doc.earlier[0].annotations.length===3&&doc.earlier[0].repeats===3));
+  select().onChange({target:{value:'1'}});await r.flush();assert.equal(r.latest().repeats,undefined);assert(!r.text(r.button('Processing options')).includes('annotations per text'));
+
+  // As a batch: one file per text, sent as many times as it has annotations to make; results come back per request.
+  const jobs=[];let returned=()=>[];
+  const b=harness({...stored(),processing:'batch'},async()=>{},async(url,options)=>{
+   assert.equal(url,'/api/batch');const action=options.body.get('action');
+   if(action==='submit'){jobs.push({ids:JSON.parse(options.body.get('ids')),copies:options.body.get('copies'),files:options.body.getAll('files').map(file=>file.name)});return Response.json({id:'batch_'+jobs.length});}
+   if(action==='check')return Response.json({terminal:true,state:'completed',completed:1,total:1});
+   return Response.json({terminal:true,state:'completed',results:returned(jobs.at(-1).ids)});
+  });
+  await research(b);
+  await b.button('Remaining').props.onClick();await b.flush();
+  assert.deepEqual([jobs[0].copies,jobs[0].ids.length,jobs[0].files.join()],['[3,3,3]',9,'text-0.txt,text-1.txt,text-2.txt']);assert.deepEqual([b.latest().batchJob.repeats,b.latest().batchJob.ns,b.latest().batchJob.id],[3,undefined,'batch_1']);
+  assert(b.latest().docs.every(doc=>doc.status==='queued'&&doc.repeats===3&&doc.annotations.length===0&&doc.runSize===9));
+  // Request 4 (the second text's second annotation) is not returned, and request 7 (the third text's second) failed.
+  returned=ids=>ids.flatMap((id,i)=>i===4?[]:i===7?[{id,error:'Expired'}]:[{id,score:['POSITIVE','NEGATIVE','POSITIVE','POSITIVE','','NEGATIVE','NEGATIVE','','NEGATIVE'][i],explanation:'Reply '+i,tokens:5,usage:{input_tokens:4,output_tokens:1},responseId:'b'+i}]);
+  await b.button('Check status').props.onClick();await b.flush();await b.button('Collect results').props.onClick();await b.flush();
+  docs=b.latest().docs;
+  assert.equal(b.latest().batchJob,null);assert.deepEqual(docs.map(doc=>[doc.status,doc.score,doc.tokens,doc.processing,doc.batchId]),[['done','POSITIVE',15,'batch','batch_1'],['done','NEGATIVE | POSITIVE',10,'batch','batch_1'],['done','NEGATIVE',10,'batch','batch_1']]);
+  assert.deepEqual(docs[1].annotations.map(a=>[a.n,a.status,a.error,a.batchId]),[[1,'done',undefined,'batch_1'],[2,'error','No result was returned for this document. Check the provider’s batch report before retrying.','batch_1'],[3,'done',undefined,'batch_1']]);
+  assert.deepEqual(docs[2].annotations.map(a=>[a.status,a.error]),[['done',undefined],['error','Expired'],['done',undefined]]);assert.equal(docs[1].consistency.score,0,'A tied vote');assert.equal(docs[0].explanation,'Reply 0');assert.equal(docs[0].annotations[1].responseId,'b1');
+  // Remaining submits only what is missing: one request for each of the two texts.
+  assert(remaining(b).includes('Remaining (2)'));await b.button('Remaining').props.onClick();await b.flush();
+  assert.deepEqual([jobs[1].copies,jobs[1].ids.length,jobs[1].files.join()],['[1,1]',2,'text-1.txt,text-2.txt']);assert.deepEqual(b.latest().batchJob.ns,[[2],[2]]);
+  assert.deepEqual(b.latest().docs.map(doc=>[doc.status,doc.annotations.length]),[['done',3],['queued',3],['queued',3]],'A text waiting for its missing annotations keeps those it has');
+  returned=ids=>ids.map((id,i)=>({id,score:'POSITIVE',explanation:'Later '+i,tokens:5,responseId:'c'+i}));
+  await b.button('Check status').props.onClick();await b.flush();await b.button('Collect results').props.onClick();await b.flush();
+  docs=b.latest().docs;
+  assert.deepEqual(docs.map(doc=>[doc.status,doc.score,doc.runNo,doc.annotations.map(a=>a.status).join(),doc.annotations[1].batchId]),[['done','POSITIVE',1,'done,done,done','batch_1'],['done','POSITIVE',1,'done,done,done','batch_2'],['done','NEGATIVE',1,'done,done,done','batch_2']]);
+  assert.deepEqual(docs[1].history.map(attempt=>[attempt.replicate,attempt.batchId,attempt.status]),[[2,'batch_1','error']]);assert.deepEqual(docs[2].history.map(attempt=>[attempt.replicate,attempt.error]),[[2,'Expired']]);
+  assert.equal(b.latest().runs.length,1);assert(remaining(b).includes('Remaining (0)'));
+  // A batch that is not accepted leaves a text with the annotations it had, and a text without any waiting.
+  const refused=harness({...stored(),processing:'batch',docs:[{...docs[0],annotations:docs[0].annotations.slice(0,2),file:new File(['Text 0'],'text-0.txt')},documents()[1]],runs:b.latest().runs},async()=>{},async()=>Response.json({error:'The provider did not accept the batch.',uncertain:false},{status:400}));
+  await research(refused);await refused.button('Remaining').props.onClick();await refused.flush();
+  assert.equal(refused.latest().batchJob,null);assert.deepEqual(refused.latest().docs.map(doc=>[doc.status,doc.annotations?.length]),[['done',2],['pending',undefined]]);
+ }
+
  // The mode is remembered in this browser. Keys are remembered only when asked, and only for research mode.
  const storage=fakeStorage();globalThis.window={localStorage:storage};
  const first=start();await first.flush();

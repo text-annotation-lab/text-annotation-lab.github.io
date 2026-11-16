@@ -6,6 +6,9 @@ const {studentEstimate}=load('lib/student-estimate.ts'),{PROVIDERS}=load('lib/pr
  const file=new File(['A real uploaded text. '.repeat(500)],'real.txt');
  const rows=[{id:'1',file,status:'pending'}],c={provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'Return sentiment and explain in two sentences.',rows};
  const first=await studentEstimate(c);assert.equal(first.count,1);assert(first.input.low>2000);await studentEstimate({...c,prompt:c.prompt+' Use JSON.'});assert.equal(reads,1,'Reopening or editing prompts reuses extracted file counts');
+ // Research mode, several annotations per text: a waiting text counts once for each request it gets.
+ const thrice=await studentEstimate({...c,times:()=>3});assert.equal(thrice.count,3);assert.equal(thrice.input.low,first.input.low*3);assert.equal(reads,1);
+ const made=await studentEstimate({...c,rows:[...rows,{status:'done',provider:c.provider,model:c.model,effort:c.effort,prompt:c.prompt,annotations:[{n:1,status:'done',usage:{input_tokens:4000,output_tokens:200}},{n:2,status:'done',usage:{input_tokens:4100,output_tokens:210}},{n:3,status:'error'}]}]});assert.equal(made.samples,2,'Each usable annotation is a sample of what a request uses');
  const pdf=await studentEstimate({...c,rows:[{file:new File(['%PDF-fixture'],'paper.pdf'),status:'pending'}]});assert(pdf.notes.some(n=>n.includes('page-image')));assert(pdf.input.high>6000);
  const sample={status:'done',provider:c.provider,model:c.model,effort:c.effort,prompt:c.prompt,usage:{input_tokens:4000,output_tokens:200,output_tokens_details:{reasoning_tokens:100}}};
  assert.equal((await studentEstimate({...c,rows:[...rows,sample]})).samples,1);assert.equal((await studentEstimate({...c,rows:[...rows,{...sample,prompt:'Different rubric'}]})).samples,0);

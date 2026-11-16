@@ -7,6 +7,7 @@ import {Button} from '@/components/ui/button';
 import {columnValues,columnIndex,type Column} from '@/lib/research/columns';
 import {DEFAULT_VIEW,fieldLabel,valueOf,viewNarrowed,type View} from '@/lib/research/view';
 import type {Row,RunSummary} from '@/lib/research/runs';
+import {annotationsOf,repeatsOf} from '@/lib/research/repeats';
 import {modelLabel} from '@/lib/providers';
 
 export type MenuItem={label:string;onSelect:()=>void;disabled?:boolean;danger?:boolean};
@@ -53,19 +54,31 @@ export function ResearchFilters({view,onChange,columns,rows,runs,fields,field,sh
 }
 
 const when=(time:unknown)=>{const date=new Date(String(time||''));return Number.isNaN(date.getTime())?'':date.toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});};
-// Labels, metadata, and earlier results of the selected text or subject.
+// The answers of one result, or of one of a result's annotations (which answers under its result's fields).
+function Answers({of,fields}:{of:Row|Record<string,any>;fields?:string[]}){
+ const read={...of,answerFields:fields} as Row;
+ return <>
+  <dl className="research-cells">{(fields?.length?fields:['']).map((name:string)=><div key={name}><dt>{fieldLabel(name)}</dt><dd>{valueOf(read,name)||'—'}</dd></div>)}</dl>
+  {of.explanation&&!Object.values(of.answers||{}).includes(of.explanation)&&<p>{of.explanation}</p>}
+ </>;
+}
+// Labels, metadata, the annotations behind a combined result, and earlier results of the selected text or subject.
 export function ResearchDetail({row,columns}:{row:Row;columns:Column[]}){
  const cells=columns.map((column,i)=>({column,value:row.cells?.[i]??''})).filter(cell=>cell.value);
- const earlier=[...(row.earlier||[])].reverse();
- if(!cells.length&&!earlier.length)return null;
+ const earlier=[...(row.earlier||[])].reverse(),made=row.status==='pending'?[]:annotationsOf(row);
+ if(!cells.length&&!earlier.length&&!made.length)return null;
  return <div className="research-detail">
   {cells.length>0&&<dl className="research-cells">{cells.map(({column,value})=><div key={column.name}><dt>{column.name}{column.role==='label'&&<span className="research-tag">human label</span>}</dt><dd>{value}</dd></div>)}</dl>}
+  {made.length>0&&<details className="research-earlier"><summary>Annotations of this text ({made.filter(a=>a.status==='done').length} of {repeatsOf(row)})</summary>
+   <p className="hint">The answers above are the combined ones: the value most annotations gave, the median of a scale, the mean of a number. The explanation is that of the annotation closest to them.</p>
+   {made.map(a=><div key={a.n} className="research-earlier-entry">
+    <p><strong>Annotation {a.n}</strong>{when(a.time)&&` · ${when(a.time)}`}{typeof a.tokens==='number'&&` · ${a.tokens.toLocaleString('en-US')} tokens`}{a.status==='error'&&' · failed'}</p>
+    {a.status==='error'?<><p className="research-muted">{String(a.error||'No result.')}</p>{a.rawResponse&&<details><summary>View returned response</summary><pre>{String(a.rawResponse)}</pre></details>}</>:<Answers of={a} fields={row.answerFields}/>}
+   </div>)}
+  </details>}
   {earlier.length>0&&<details className="research-earlier"><summary>Earlier results ({earlier.length})</summary>{earlier.map((entry,i)=><div key={i} className="research-earlier-entry">
-   <p><strong>Run #{entry.runNo}</strong> · {modelLabel(String(entry.model||''))}{when(entry.time)&&` · ${when(entry.time)}`}{entry.status==='error'&&' · failed'}</p>
-   {entry.status==='error'?<p className="research-muted">{String(entry.error||'No result.')}</p>:<>
-    <dl className="research-cells">{(entry.answerFields?.length?entry.answerFields:['']).map((name:string)=><div key={name}><dt>{fieldLabel(name)}</dt><dd>{valueOf(entry,name)||'—'}</dd></div>)}</dl>
-    {entry.explanation&&!Object.values(entry.answers||{}).includes(entry.explanation)&&<p>{entry.explanation}</p>}
-   </>}
+   <p><strong>Run #{entry.runNo}</strong> · {modelLabel(String(entry.model||''))}{when(entry.time)&&` · ${when(entry.time)}`}{annotationsOf(entry).length>0&&` · ${annotationsOf(entry).filter(a=>a.status==='done').length} of ${repeatsOf(entry)} annotations, combined`}{entry.status==='error'&&' · failed'}</p>
+   {entry.status==='error'?<p className="research-muted">{String(entry.error||'No result.')}</p>:<Answers of={entry} fields={entry.answerFields}/>}
   </div>)}</details>}
  </div>;
 }

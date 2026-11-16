@@ -2,6 +2,7 @@
 // uploaded texts or the Model knowledge subjects, read the same way.
 import {recordedCost} from '../cost-estimate/run-cost';
 import {rowForRun,runSummaries,setupOf,sameSetup,type Row,type RunRecord,type RunSummary} from './runs';
+import {requestsOf} from './repeats';
 import type {Column} from './columns';
 import {fieldsOf,valueOf} from './view';
 import {sampleNote,type SampleRecord} from './sample';
@@ -21,8 +22,9 @@ export function runLines(dataset:Dataset):RunLine[]{
    // A text waiting in a batch already carries the settings it was sent with.
    if(result.status==='queued'||result.status==='running'){started++;if(result.requestSettings?.cache)cached++;}
    if(result.status!=='done'&&result.status!=='error')continue;
-   costCount++;started++;const charge=recordedCost(result as any);
-   if(charge){cost+=charge.amount;costKnown++;}
+   started++;
+   // A result made of several annotations cost what its annotations cost.
+   for(const request of requestsOf(result)){costCount++;const charge=recordedCost(request.result as any);if(charge){cost+=charge.amount;costKnown++;}}
    if(result.webSearch)webSearch=true;
    if(result.requestSettings?.cache)cached++;
    // A run without a record of its own (Model knowledge) may hold results made with different settings.

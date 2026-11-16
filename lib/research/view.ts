@@ -6,6 +6,7 @@ import {fieldSpec,PLAIN_FIELD,type AnswerSettings} from '../answer-types';
 import {jsonAnswers,jsonKeyOrder,jsonValue} from '../json-reply';
 import {normalizeLabel} from './normalize';
 import {rowForRun,type Row} from './runs';
+import {requestsOf} from './repeats';
 import {cellOf,columnIndex,type Column} from './columns';
 
 export type View={run:'latest'|number;query:string;show:string;column:string;value:string;compare:string;field:string};
@@ -41,11 +42,22 @@ export function pickField(fields:string[],chosen:string,like=''):string{
  const named=fields.find(f=>f&&f.toLowerCase()===like.trim().toLowerCase());
  return named??fields.find(f=>f.toLowerCase()!=='explanation')??fields[0]??SCORE_FIELD;
 }
-export type CompareSource={kind:'run';run:number}|{kind:'column';name:string};
-export const sourceKey=(source:CompareSource)=>source.kind==='run'?'run:'+source.run:'col:'+source.name;
+// rep: one annotation of a run that makes several per text (its number), instead of the run's combined answers.
+export type CompareSource={kind:'run';run:number;rep?:number}|{kind:'column';name:string};
+export const sourceKey=(source:CompareSource)=>source.kind==='run'?'run:'+source.run+(source.rep?'#'+source.rep:''):'col:'+source.name;
 export function parseSource(key:string):CompareSource|undefined{
- if(key.startsWith('run:')){const run=Number(key.slice(4));return Number.isInteger(run)&&run>0?{kind:'run',run}:undefined;}
+ if(key.startsWith('run:')){
+  const [run,rep]=key.slice(4).split('#').map(Number),whole=(n:number)=>Number.isInteger(n)&&n>0;
+  return whole(run)&&(rep===undefined||whole(rep))?{kind:'run',run,...(rep?{rep}:{})}:undefined;
+ }
  return key.startsWith('col:')&&key.length>4?{kind:'column',name:key.slice(4)}:undefined;
+}
+// What a run source reads for a text: the run's result or, with `rep`, that annotation of it read as a result
+// of its own (absent when the result has no such annotation).
+export function sourceResult<T extends Row>(row:T,source:{run:number;rep?:number}):T{
+ const result=rowForRun(row,source.run);
+ if(!source.rep||result.status!=='done')return result;
+ return requestsOf(result).find(request=>request.replicate===source.rep)?.result??{...result,status:'absent'} as T;
 }
 // `yesNo`: a yes / no field, where 1 and 0, y and n, and ja and nej also read as yes and no.
 export const sameLabel=(a:string,b:string,yesNo=false)=>normalizeLabel(a,yesNo)===normalizeLabel(b,yesNo);
@@ -57,7 +69,7 @@ export function researchRows<T extends Row>(docs:T[],columns:Column[],view:View)
  const filterIndex=view.column&&view.value?columnIndex(columns,view.column):-1;
  const compareIndex=source?.kind==='column'?columnIndex(columns,source.name):-1;
  const base=view.run==='latest'?docs:docs.map(doc=>rowForRun(doc,view.run as number)).filter(row=>row.status!=='absent');
- const fields=fieldsOf(source?.kind==='run'?[...base,...docs.map(doc=>rowForRun(doc,source.run))]:base);
+ const fields=fieldsOf(source?.kind==='run'?[...base,...docs.map(doc=>sourceResult(doc,source))]:base);
  const field=pickField(fieldsOf(base).length?fieldsOf(base):fields,view.field,source?.kind==='column'?source.name:'');
  const rows:ShownRow<T>[]=[];
  for(const row of base){
@@ -68,7 +80,7 @@ export function researchRows<T extends Row>(docs:T[],columns:Column[],view:View)
    const own=row.status==='done'?valueOf(row,field):'';
    let other='',yesNo=isYesNo(row,field);
    if(source.kind==='column')other=cellOf(row,compareIndex);
-   else{const earlier=rowForRun(row,source.run),theirs=pickField(fieldsOf([earlier]),field);other=earlier.status==='done'?valueOf(earlier,theirs):'';yesNo=yesNo||isYesNo(earlier,theirs);}
+   else{const earlier=sourceResult(row,source),theirs=pickField(fieldsOf([earlier]),field);other=earlier.status==='done'?valueOf(earlier,theirs):'';yesNo=yesNo||isYesNo(earlier,theirs);}
    shown={...row,compared:{own,other,match:own&&other?sameLabel(own,other,yesNo):null}};
   }
   if(view.show==='pending'&&row.status!=='pending')continue;
