@@ -3,6 +3,10 @@ import {budgetedClaude,plainOpenAI} from './request-settings';
 export const GEMINI_ENABLED = true;
 export const OPENROUTER_STARTER_MODELS = ['openai/gpt-6-luna','anthropic/claude-haiku-5.5','google/gemini-3.1-flash-lite'];
 export type Provider = 'openai' | 'gemini' | 'anthropic' | 'openrouter';
+// Batches go from the visitor's browser straight to the provider. Anthropic's batch endpoints refuse requests from
+// web pages (their CORS check answers "Disallowed CORS origin" for every origin, checked November 17, 2026), while
+// its Messages endpoint accepts them; OpenRouter has no batch service. Empty: batches work here.
+export function batchUnavailable(provider:Provider):string{return provider==='openrouter'?'Batch processing is not available through OpenRouter.':provider==='anthropic'?'Anthropic does not accept batches sent from a web page, so Claude models use Instant processing here.':'';}
 // Stable order by standard text input/output rates, checked November 15, 2026.
 // Equal rates retain an explicit order; capability does not determine price order.
 export const PROVIDERS = {

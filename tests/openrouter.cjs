@@ -9,6 +9,9 @@ function req({provider='openrouter',model=providers.defaultModel(provider),apiKe
 function bReq(apiKey=key,requestOrigin=origin){return new Request(origin+'/api/openrouter-balance',{method:'POST',headers:{origin:requestOrigin,authorization:'Bearer '+apiKey}});}
 const good=(extra={})=>({id:'test-response',choices:[{finish_reason:'stop',message:{content:JSON.stringify({score:'YES',explanation:'Synthetic evidence.'})}}],usage:{prompt_tokens:100,completion_tokens:50,total_tokens:150,completion_tokens_details:{reasoning_tokens:20}},...extra});
 (async()=>{
+ // Batches only where the provider accepts them from a web page (Anthropic's batch endpoints refuse every origin).
+ assert.equal(providers.batchUnavailable('openai'),'');assert.equal(providers.batchUnavailable('gemini'),'');assert.match(providers.batchUnavailable('anthropic'),/web page/);assert.match(providers.batchUnavailable('openrouter'),/OpenRouter/);
+ for(const file of ['app/page.tsx','components/model-knowledge.tsx'])assert(!/provider==='openrouter'\}>Batch|disabled=\{[^}]*provider==='openrouter'\} onClick=\{\(\)=>setProcessing\('batch'\)/.test(fs.readFileSync(file,'utf8')),file+': batch is offered by batchUnavailable');
  const checkKey=load('app/api/check-key/route.ts').POST;
  const checkRequest=(provider,apiKey,source=origin)=>new Request(origin+'/api/check-key',{method:'POST',headers:{
   origin:source,authorization:'Bearer '+apiKey,'X-Lab-Provider':provider,
