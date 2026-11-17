@@ -26,9 +26,11 @@ export async function annotateGemini(file:File,prompt:string,model:string,effort
  const candidate=out.candidates?.[0];
  const noted:Record<string,unknown>=record?{modelReported:replyCode(out.modelVersion),stopReason:replyCode(out.promptFeedback?.blockReason||candidate?.finishReason)}:{};
  if(record&&request?.summary){const summary=reasoningSummary('gemini',out);if(summary)noted.reasoningSummary=summary;}
- if(out.promptFeedback?.blockReason||candidate?.finishReason!=='STOP')return reply({...noted,error:incompleteAnnotation('gemini',out.promptFeedback?.blockReason||candidate?.finishReason)},422);
- const raw=(candidate.content?.parts||[]).filter((p:any)=>!p.thought&&typeof p.text==='string').map((p:any)=>p.text).join('');
+ const raw=(candidate?.content?.parts||[]).filter((p:any)=>!p.thought&&typeof p.text==='string').map((p:any)=>p.text).join('');
  if(record)noted.output=replyText(raw);
+ // A reply that is cut off or blocked still used (and was billed for) tokens: it keeps them, its response ID, and
+ // (research mode) the text it returned, though it counts as failed.
+ if(out.promptFeedback?.blockReason||candidate?.finishReason!=='STOP')return reply({...noted,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId,error:incompleteAnnotation('gemini',out.promptFeedback?.blockReason||candidate?.finishReason)},422);
  if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...noted,...plain,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId}):reply({...noted,error:EMPTY_REPLY},422);}
  let result;try{result=JSON.parse(raw);}catch{return reply({...noted,error:'Gemini did not return a valid annotation. Review the response in Google AI Studio before retrying.'},422);}
  const read=readReply(result,answerFields,settings);

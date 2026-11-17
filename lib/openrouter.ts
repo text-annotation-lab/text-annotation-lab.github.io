@@ -36,7 +36,8 @@ export async function annotateOpenRouter(file:File,prompt:string,model:string,ef
   const choice=out?.choices?.[0];
   if(record&&request?.summary){const summary=reasoningSummary('openrouter',out);if(summary)accounting.reasoningSummary=summary;}
   if(choice?.message?.refusal)return reply({...accounting,error:incompleteAnnotation('openrouter','refusal')},422);
-  if(choice?.finish_reason!=='stop')return reply({...accounting,error:incompleteAnnotation('openrouter',choice?.finish_reason)},422);
+  // A cut-off reply keeps (research mode) the text it returned, though it counts as failed.
+  if(choice?.finish_reason!=='stop')return reply({...accounting,...(record&&typeof choice?.message?.content==='string'?{output:replyText(choice.message.content)}:{}),error:incompleteAnnotation('openrouter',choice?.finish_reason)},422);
   const raw=choice.message?.content;let result;
   if(record)accounting.output=replyText(raw);
   if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...accounting,...plain,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}):reply({...accounting,error:EMPTY_REPLY},422);}

@@ -56,11 +56,16 @@ export function columnValues(rows:{cells?:string[]}[],index:number,limit=200):st
 // source of chunked texts applies to all of its chunks.
 // more: the later rows that named a text an earlier row had already matched (by text). named: the texts a row
 // named that matched more than one of them, which the row leaves alone.
-export function matchRows(docs:CellRow[],keys:string[]):{rowOf:Map<string,number>;unmatched:number[];ambiguous:number[];repeated:number[];more:Map<string,number[]>;named:Set<string>}{
- const exact=new Map<string,CellRow[]>(),loose=new Map<string,CellRow[]>(),sources=new Map<string,CellRow[]>();
+// A row also matches a text by its doc_id (the exports' name for it; `ids`, from docIds over the study's texts in
+// their order, removed ones included). A key that is one text's doc_id and another's file name matches both, so
+// it is ambiguous rather than given to either (alpha.md exported as alpha_2 beside a file alpha_2.txt).
+export function matchRows(docs:CellRow[],keys:string[],ids?:Map<string,string>):{rowOf:Map<string,number>;unmatched:number[];ambiguous:number[];repeated:number[];more:Map<string,number[]>;named:Set<string>}{
+ const exact=new Map<string,CellRow[]>(),loose=new Map<string,CellRow[]>(),sources=new Map<string,CellRow[]>(),byId=new Map<string,CellRow[]>();
  const push=(map:Map<string,CellRow[]>,key:string,doc:CellRow)=>{if(!key)return;const list=map.get(key);if(list)list.push(doc);else map.set(key,[doc]);};
+ const idOf=ids??docIds({kind:'texts',rows:docs});
  for(const doc of docs){
   push(exact,fold(doc.name),doc);push(loose,fold(stem(tidy(doc.name))),doc);
+  const id=idOf.get(String(doc.id));if(id)push(byId,fold(id),doc);
   if(doc.sourceName){push(sources,fold(doc.sourceName),doc);push(sources,fold(stem(tidy(doc.sourceName))),doc);}
  }
  const rowOf=new Map<string,number>(),unmatched:number[]=[],ambiguous:number[]=[],repeated:number[]=[],more=new Map<string,number[]>(),named=new Set<string>();
@@ -69,6 +74,8 @@ export function matchRows(docs:CellRow[],keys:string[]):{rowOf:Map<string,number
   // Paths in a manifest ("texts/1961-Kennedy.txt") match by their file name.
   const base=key.split(/[\\/]/).pop()||key;
   let found=exact.get(key)||exact.get(base)||loose.get(fold(stem(key)))||loose.get(fold(stem(base)));
+  const byDocId=byId.get(key)||byId.get(base);
+  if(byDocId)found=[...new Set([...(found||[]),...byDocId])];
   let chunks=false;
   if(!found){found=sources.get(key)||sources.get(base)||sources.get(fold(stem(base)));chunks=Boolean(found);}
   if(!found){unmatched.push(row);return;}
@@ -79,10 +86,10 @@ export function matchRows(docs:CellRow[],keys:string[]):{rowOf:Map<string,number
  return {rowOf,unmatched,ambiguous,repeated,more,named};
 }
 // The column that names the texts: the one whose values match the most texts.
-export function guessKeyColumn(docs:CellRow[],sheet:Sheet):number{
+export function guessKeyColumn(docs:CellRow[],sheet:Sheet,ids?:Map<string,string>):number{
  let best=0,bestCount=-1;
  sheet.header.forEach((_,index)=>{
-  const count=matchRows(docs,sheet.rows.slice(0,2000).map(row=>row[index]||'')).rowOf.size;
+  const count=matchRows(docs,sheet.rows.slice(0,2000).map(row=>row[index]||''),ids).rowOf.size;
   if(count>bestCount){best=index;bestCount=count;}
  });
  return best;
@@ -109,7 +116,7 @@ export function guessRole(name:string,fields:string[]=[]):Role{
 // replaced: the chosen columns that already hold values. removed: per such column, the earlier values that
 // go (blank here, or not listed). unlisted: the ids of the texts not listed that hold a value in one of them.
 export type SheetResult<T>={docs:T[];columns:Column[];matched:number;unmatched:string[];ambiguous:string[];repeated:string[];conflicts:string[];changed:number;added:string[];replaced:string[];removed:Map<string,number>;unlisted:string[]};
-export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sheet,keyIndex:number,roles:Role[],options:{clearUnlisted?:boolean}={}):SheetResult<T>{
+export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sheet,keyIndex:number,roles:Role[],options:{clearUnlisted?:boolean;ids?:Map<string,string>}={}):SheetResult<T>{
  const next=columns.map(c=>({...c})),targets:{from:number;to:number}[]=[],added:string[]=[];
  sheet.header.forEach((header,from)=>{
   const role=roles[from];if(!role||from===keyIndex||!validColumnName(header))return;
@@ -117,7 +124,7 @@ export function applySheet<T extends CellRow>(docs:T[],columns:Column[],sheet:Sh
   if(to<0){next.push({name:tidy(header),role});to=next.length-1;added.push(tidy(header));}else next[to].role=role;
   targets.push({from,to});
  });
- const keys=sheet.rows.map(row=>row[keyIndex]||''),match=matchRows(docs,keys);
+ const keys=sheet.rows.map(row=>row[keyIndex]||''),match=matchRows(docs,keys,options.ids);
  // The values each listed text gets: every row that names it, merged.
  const values=new Map<string,string[]>(),conflicts:string[]=[],repeated:string[]=[];
  for(const [id,first] of match.rowOf){

@@ -29,3 +29,18 @@ export function insertNotes(prompt:string,columns:Column[],unit:'text'|'subject'
  if(stray.length)notes.push(`Sent as written: ${list(stray)}.`);
  return notes;
 }
+// "Retry failed" sends a run's requests again with the values that run sent, not the study's values of today (a
+// metadata column may have been edited since). They are read from what the text kept of that run: its earliest
+// failed attempt, its result, or one of its annotations, whichever recorded them first. undefined: none recorded
+// (a run made before values were kept), and today's values are filled in.
+export function sentInserts(row:{[key:string]:any},run:number,count:number):string[]|undefined{
+ const fits=(value:unknown):value is string[]=>Array.isArray(value)&&value.length===count&&value.every(v=>typeof v==='string');
+ const ofRun=(record:any)=>record&&typeof record==='object'&&record.runNo===run;
+ const records:any[]=[];
+ for(const result of [row,...(Array.isArray(row.earlier)?row.earlier:[])]){
+  if(!result||typeof result!=='object')continue;
+  for(const attempt of Array.isArray(result.history)?result.history:[])if(ofRun(attempt)||ofRun(result)&&attempt?.runNo===undefined)records.push(attempt,...(Array.isArray(attempt?.annotations)?attempt.annotations:[]));
+  if(ofRun(result))records.push(result,...(Array.isArray(result.annotations)?result.annotations:[]));
+ }
+ return records.map(record=>record?.inserts).find(fits);
+}

@@ -159,11 +159,14 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
  {const source=fs.readFileSync(path.join(root,'app/api/batch/route.ts'),'utf8');assert(source.includes("checkBatch(provider,key,id,action==='collect',f.get('plain')==='true',record==='true',summary==='true',format)"));}
 
  // --- The list of requests -----------------------------------------------------------------------------
- const frameA={url:'https://a.test',body:'{"a":1}'},frameB={url:'https://a.test',body:'{"b":2}'};
+ const frameA={url:'https://api.openai.com/v1/responses',body:'{"a":1}'},frameB={url:'https://api.openai.com/v1/responses',body:'{"b":2}'};
  const first=records.recordRequest(undefined,frameA);assert.deepEqual(first,{list:[{id:'q1',...frameA}],id:'q1'});
  const again=records.recordRequest(first.list,frameA);assert.equal(again.id,'q1');assert.equal(again.list,first.list,'A request already kept leaves the list as it is');
  const second=records.recordRequest(first.list,frameB);assert.equal(second.id,'q2');assert.equal(first.list.length,1,'The list itself is never changed');
  assert.equal(records.recordRequest([{id:'q7',...frameA}],frameB).id,'q8');
+ // A recorded request with an address that is not a provider's own (an edited backup) is not kept.
+ assert.deepEqual(records.cleanRequests([{id:'q1',url:'http://127.0.0.1:8000/v1/responses',body:'{}'},{id:'q2',url:'https://api.anthropic.com/v1/messages',body:'{}'},{id:'q3',url:'https://generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent',body:'{}'},{id:'q4',url:'https://openrouter.ai/api/v1/chat/completions',body:'{}'},{id:'q5',url:'https://api.openai.com.evil.test/v1/responses',body:'{}'}]).map(r=>r.id),['q2','q3','q4']);
+ assert.equal(records.officialUrl('https://api.anthropic.com/v1/messages','openai'),false);
  assert.equal(records.cleanRequests(undefined),undefined);assert.equal(records.cleanRequests([]),undefined);
  assert.deepEqual(records.cleanRequests([{id:'q1',...frameA,extra:1},{id:'q1',...frameB},{id:'x',...frameA},{id:'q2',url:5,body:'{}'},null]),[{id:'q1',...frameA}]);
  assert.equal(records.usedRequests(second.list,[{requestId:'q1'},{earlier:[{requestId:'q2'}]}]),second.list);

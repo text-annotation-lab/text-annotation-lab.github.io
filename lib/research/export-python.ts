@@ -125,6 +125,9 @@ KEYS = {{KEYS}}
 # the earlier format).
 RATIONALE = {{RATIONALE}}
 
+# Whether a reply must carry a non-empty explanation (as the original run required).
+EXPLANATION_REQUIRED = {{EXPLANATION_REQUIRED}}
+
 # The values the answer format allows for a field (a field not listed: any text).
 ALLOWED = {{ALLOWED}}
 
@@ -317,6 +320,8 @@ def parse_answer(text):
         allowed = ALLOWED.get(name)
         if allowed and value.strip().lower() not in [a.lower() for a in allowed]:
             return {}, "The answer for " + name + " is not one of the allowed values"
+    if EXPLANATION_REQUIRED and not explanation.strip() and not any(name.lower() == "explanation" and value.strip() for name, value in values.items()):
+        return {}, "The reply is missing its explanation"
     if "explanation" not in [name.lower() for name in values]:
         values["explanation"] = explanation
     return values, ""
@@ -476,7 +481,7 @@ export function scriptValues(input:ScriptInput):Record<string,string>{
   PROVIDER:JSON.stringify(input.provider),URL:JSON.stringify(frame.url),
   REQUEST:input.text?pyLiteral(JSON.parse(input.text.body)):'None',REQUEST_PDF:input.pdf?pyLiteral(JSON.parse(input.pdf.body)):'None',
   INSERTS:pyLiteral(Object.fromEntries(input.inserts||[])),
-  FIELDS:pyLiteral(input.plain?[]:input.fields),KEYS:keys?pyLiteral(keys):'None',RATIONALE:named&&input.settings?.rationale!==false&&!input.fields.some(isExplanationField)?JSON.stringify(RATIONALE_KEY):'None',ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields,keys)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
+  FIELDS:pyLiteral(input.plain?[]:input.fields),KEYS:keys?pyLiteral(keys):'None',RATIONALE:named&&input.settings?.rationale!==false&&!input.fields.some(isExplanationField)?JSON.stringify(RATIONALE_KEY):'None',EXPLANATION_REQUIRED:!input.plain&&input.settings?.rationale!==false&&(!named||!input.fields.some(isExplanationField))?'True':'False',ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields,keys)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
   TIMEOUT:String(input.provider==='gemini'&&isGemini4(model)?900:180),
  };
 }

@@ -30,10 +30,12 @@ export async function annotateAnthropic(file:File,prompt:string,model:string,eff
   const out=await r.json() as {id?:string;model?:string;stop_reason?:string;content?:{type:string;text?:string;thinking?:string}[];usage?:{input_tokens?:number;output_tokens?:number;cache_creation_input_tokens?:number;cache_read_input_tokens?:number}};
   const noted:Record<string,unknown>=record?{modelReported:replyCode(out.model),stopReason:replyCode(out.stop_reason)}:{};
   if(record&&request?.summary){const summary=reasoningSummary('anthropic',out);if(summary)noted.reasoningSummary=summary;}
-  if(out.stop_reason!=='end_turn')return reply({...noted,error:incompleteAnnotation('anthropic',out.stop_reason)},422);
   const raw=(out.content||[]).filter(p=>p.type==='text').map(p=>p.text||'').join('');
   if(record)noted.output=replyText(raw);
   const u=out.usage,tokens=u?(u.input_tokens||0)+(u.output_tokens||0)+(u.cache_creation_input_tokens||0)+(u.cache_read_input_tokens||0):undefined;
+  // A reply that is cut off or refused still used (and was billed for) tokens: it keeps them, its response ID, and
+  // (research mode) the text it returned, though it counts as failed.
+  if(out.stop_reason!=='end_turn')return reply({...noted,tokens,usage:u,responseId:out.id,error:incompleteAnnotation('anthropic',out.stop_reason)},422);
   if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...noted,...plain,tokens,usage:u,responseId:out.id}):reply({...noted,error:EMPTY_REPLY},422);}
   let result;try{result=JSON.parse(raw);}catch{return reply({...noted,error:'Claude did not return a valid annotation. Check your usage before retrying.'},422);}
   const read=readReply(result,answerFields,settings);

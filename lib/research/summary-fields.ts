@@ -23,10 +23,11 @@ export function runItems(rows:Row[],columns:Column[],run:number):RunItem[]{
 }
 
 const sameSet=(xs:string[],ys:string[])=>new Set(xs).size===ys.length&&xs.every(x=>ys.includes(x));
-// A typed answer field (not free text), with its allowed values and the way the run wrote them.
+// A typed answer field (not free text), with its allowed values and the way the run wrote them. Two values that
+// read alike ("01" and "1") are one value, with one bar, as everywhere the Lab compares labels.
 function typedField(key:string,spec:FieldSpec):ComparableField{
  const written=spec.type==='category'||spec.type==='ordinal'?allowedValues(spec):[];
- const allowed=spec.type==='boolean'?['false','true']:written.map(value=>normalizeLabel(value)).filter(Boolean);
+ const allowed=spec.type==='boolean'?['false','true']:[...new Set(written.map(value=>normalizeLabel(value)).filter(Boolean))];
  const names=new Map<string,string>();for(const value of written){const k=normalizeLabel(value);if(k&&!names.has(k))names.set(k,value);}
  return {key,label:fieldLabel(key),level:spec.type==='ordinal'?'ordinal':spec.type==='number'?'interval':'nominal',allowed,names,
   // Categories that are exactly yes and no are a yes / no field too.

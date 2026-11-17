@@ -103,8 +103,11 @@ export async function POST(request:Request){
  if(!out)return finish(json({error:'OpenAI returned an unreadable response. Check OpenAI Platform usage before retrying; the request may have completed.'},502));
  const noted:Record<string,unknown>=record?{modelReported:replyCode(out.model),stopReason:replyCode([out.status,out.incomplete_details?.reason].filter(part=>typeof part==='string'&&part).join(': '))}:{};
  if(record&&sent?.summary){const summary=reasoningSummary('openai',out);if(summary)noted.reasoningSummary=summary;}
- if(out.status!=='completed')return finish(json({...noted,error:incompleteAnnotation('openai',out.incomplete_details?.reason)},422));
- const parts=(out.output||[]).flatMap((x:any)=>x.content||[]);if(parts.some((x:any)=>x.type==='refusal'))return finish(json({...noted,...(record?{stopReason:'refusal'}:{}),error:incompleteAnnotation('openai','refusal')},422));const raw=parts.filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join('');
+ // A reply that is cut off or refused still used (and was billed for) tokens: it keeps them, its response ID, and
+ // (research mode) the text it returned, though it counts as failed.
+ const billed={tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id},partial=()=>record?{output:replyText((out.output||[]).flatMap((x:any)=>x.content||[]).filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join(''))}:{};
+ if(out.status!=='completed')return finish(json({...noted,...billed,...partial(),error:incompleteAnnotation('openai',out.incomplete_details?.reason)},422));
+ const parts=(out.output||[]).flatMap((x:any)=>x.content||[]);if(parts.some((x:any)=>x.type==='refusal'))return finish(json({...noted,...billed,...(record?{stopReason:'refusal'}:{}),error:incompleteAnnotation('openai','refusal')},422));const raw=parts.filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join('');
  if(record)noted.output=replyText(raw);
  if(answerSettings?.plain){const plain=plainAnswer(raw);return finish(plain?json({...noted,...plain,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}):json({...noted,error:EMPTY_REPLY},422));}
  let result;try{result=JSON.parse(raw);}catch{return finish(json({...noted,error:'No valid annotation returned. Check OpenAI Logs for a refusal or incomplete output.'},422));}
