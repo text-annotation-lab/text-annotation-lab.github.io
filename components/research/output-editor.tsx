@@ -92,6 +92,7 @@ export function OutputEditor({names,settings,onChange,disabled,scale,onScaleChan
       {takesValues(draft.type)&&<input aria-label="Allowed values" placeholder={draft.type==='ordinal'?'Allowed values, e.g., 0, 1, 2':'Allowed values, e.g., positive, neutral, negative'} value={draft.values} disabled={disabled} onChange={event=>edit(index,{values:event.target.value})}/>}
      </div>
      {notWhole&&<p className="hint research-field-problem" role="status">Ordinal values must be whole numbers; other values are not sent.</p>}
+     {draft.type==='ordinal'&&!draft.values.trim()&&<p className="hint" role="status">No scale points yet: the model may answer any whole number, and agreement reads the scale from the answers. List the points, for example 1, 2, 3, 4, 5.</p>}
      <input aria-label="Field description" placeholder="Description for the model (optional)" maxLength={2000} value={draft.description} disabled={disabled} onChange={event=>edit(index,{description:event.target.value})}/>
      {problem&&<p className="hint research-field-problem" role="status">{problem}</p>}
     </div>;
