@@ -305,6 +305,13 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  const pack=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:true});
  const corpus=readCsv(await read(pack,'data/corpus.csv'));
  assert.deepEqual(corpus[0],['doc_id','text','n_characters','Year','tone_human','Outlet name','meta_text','file'],'No source: no request named the file, and it only repeats the doc_id');
+ // Every label and metadata column unchecked: the corpus keeps the metadata columns the placeholders read (with the
+ // values the run sent), and never the column of human labels, though the prompt names it.
+ const unchecked=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:false,columns:[]});
+ const bare=readCsv(await read(unchecked,'data/corpus.csv'));
+ assert.deepEqual(bare[0],['doc_id','text','n_characters','Year','Outlet name','meta_text','file'],'No column of human labels in corpus.csv');
+ assert.equal(bare[2][3],'1890','Text 2: the year the run sent');
+ assert(!(await read(unchecked,'results/results.csv')).includes('tone_human'),'Nor in results.csv');
  // The logs: each request as it was sent, with the values kept with its result.
  const logged=jsonLines(await read(pack,'logs/requests.jsonl'));assert.equal(logged.length,4);
  for(const [i,text] of E_TEXTS.entries())assert.equal(JSON.stringify(logged[i].request),JSON.stringify(frames.fillRequest(textFrame.body,{filename:rows[i].name,text,inserts:inserts.insertMap(E_PROMPT,rows[i].inserts)})),'Logged as sent: text '+(i+1));
@@ -316,11 +323,11 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  const asSent=await read(pack,'prompt/prompt_as_sent.txt');assert(asSent.startsWith(E_PROMPT.replace('\n','\r\n'))&&!asSent.includes('<<INSERT:')&&!asSent.includes('<text>')&&!asSent.includes('DOCUMENT'),'The prompt as sent shows the placeholders where each request had the values');
  assert((await read(pack,'metadata.json')).includes('<<INSERT:meta.year>>'),'The recorded request bodies keep their marks');
  const readme=await read(pack,'README.md');
- for(const part of ['| `prompt/prompt.txt` | The annotation prompt as written. Its placeholders were filled in for each text: `{{id}}` with the text’s doc_id; `{{meta.year}}`, `{{meta.Outlet name}}`, `{{meta.text}}`, and `{{meta.gone}}` with its values in those metadata columns; `{{meta.tone_human}}` was filled in empty for every text (it names no metadata column, or an empty one) |','(marks stand for the document and for the values of the prompt’s placeholders)','; the placeholders stand where each request had the values','The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent (the logs hold the requests as they were sent).'])assert(readme.includes(part),'README: '+part);
+ for(const part of ['| `prompt/prompt.txt` | The annotation prompt as written. Its placeholders were filled in for each text: `{{id}}` with the text’s doc_id; `{{meta.year}}`, `{{meta.Outlet name}}`, `{{meta.text}}`, and `{{meta.gone}}` with its values in those metadata columns; `{{meta.tone_human}}` was filled in empty for every text (it names no metadata column, or an empty one) |','(marks stand for the document and for the values of the prompt’s placeholders)','; the placeholders stand where each request had the values','The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent (the logs hold the requests as they were sent).'])assert(readme.includes(part),'README: '+part);
  assert(!readme.includes('the prompt was completed with'),'No draft methods text in the README');
  // Without the texts, the README names the columns a corpus of one's own needs.
  const lean=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:false,explanations:false,logs:false});
- assert((await read(lean,'README.md')).includes('and the columns the prompt’s placeholders take their values from (doc_id, Year, Outlet name, meta_text). The script fills in the prompt’s placeholders from the corpus file, so a value changed there since the run gives another request than the run sent. '));
+ assert((await read(lean,'README.md')).includes('and the columns the prompt’s placeholders take their values from (doc_id, Year, Outlet name, meta_text). The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent. '));
  // A study without placeholders says nothing of them.
  const bareSetup={...setup,prompt:'Rate the tone from 1 to 5.'},bareFrame=records.recordRequest(undefined,frames.requestFrame(bareSetup,false));
  const bareStudy={name:'Plain',lab:study.lab,requests:bareFrame.list,dataset:{...dataset,rows:rows.slice(0,3).map(row=>{const {inserts:_,...rest}=row;return {...rest,...bareSetup,requestId:bareFrame.id,responseFormat:formatsLib.annotationFormatRecord(E_FIELDS,bareSetup.prompt,false,E_SETTINGS)};}),runs:[{...bareSetup,number:1,startedAt:'2026-11-16T10:00:00.000Z'}]}};
@@ -357,13 +364,17 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
    for(const file of pack.files){const target=path.join(folder,file.path);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,file.data instanceof Blob?Buffer.from(await file.data.arrayBuffer()):file.data);}
    const home=path.join(pack.name,'scripts'),sent=await run([path.join(home,'annotate.py'),path.join(pack.name,'data','corpus.csv'),'--base-url',base,'--out','out.csv','--log','out.jsonl'],{ANTHROPIC_API_KEY:KEY});
    assert.equal(sent.code,0,sent.stderr);assert.equal(received.length,4);
-   // Byte for byte the request the Lab would send for the corpus as it is now.
-   const now=i=>inserts.insertMap(E_PROMPT,research.insertValues(E_NAMES,rows[i],E_COLUMNS,columnsLib.stem(rows[i].name)));
+   // Byte for byte the request the run sent: the corpus holds the values the run sent (text 2's year as it was
+   // then), and a column the study no longer has is filled in empty.
+   const now=i=>{const values=[...rows[i].inserts];values[4]='';return inserts.insertMap(E_PROMPT,values);};
    for(const [i,text] of E_TEXTS.entries())assert.equal(received[i],JSON.stringify(frames.fillRequest(textFrame.body,{filename:rows[i].name,text,inserts:now(i)})),'The script’s request for text '+(i+1));
    assert.equal(received[3],JSON.stringify(frames.fillRequest(pdfFrame.body,{filename:'report.pdf',file:Buffer.from(await E_PDF.arrayBuffer()).toString('base64'),inserts:now(3)})),'The script’s request for the PDF');
    // Where nothing changed since the run, that is the request the run sent; a column the study no longer has is filled in empty.
    assert.equal(received[2].split('was here 3').length,1);assert.equal(received[2],JSON.stringify(logged[2].request).replace('was here 3',''),'Text 3: the logged request, but for the removed column');
-   assert(received[1].includes('1980\\r\\nor 1981')&&!received[1].includes('1890'),'Text 2: the corrected value');
+   // The script reads a reply as the Lab does: a blank explanation fails.
+   const parsed=await run(['-c','import importlib.util,json,sys;s=importlib.util.spec_from_file_location("a",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(json.dumps([m.parse_answer(t)[1] for t in sys.argv[2:]]))',path.join(folder,home,'annotate.py'),'{"explanation":"","score":"","answers":{"f0":"4"}}','{"explanation":"  ","score":"","answers":{"f0":"4"}}','{"explanation":"Because.","score":"","answers":{"f0":"4"}}']);
+   assert.equal(parsed.code,0,parsed.stderr);assert.deepEqual(JSON.parse(parsed.stdout),['The reply is missing its explanation','The reply is missing its explanation','']);
+   assert(received[1].includes('1890')&&!received[1].includes('1980\\r\\nor 1981'),'Text 2: the value the run sent, not the corrected one');
    // Every provider's request, with and without the cache mark, from a corpus with awkward values.
    const TEXT='A text with “quotes”, a "double quote", a back\\slash,\r\nline breaks, and the marks <<DOCUMENT_TEXT>> and <<INSERT:id>> themselves.';
    fs.writeFileSync(path.join(folder,'report.pdf'),Buffer.from(await E_PDF.arrayBuffer()));

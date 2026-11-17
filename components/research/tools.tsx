@@ -5,11 +5,12 @@
 import {useEffect,useMemo,useState,type ReactNode} from 'react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
-import {applySheet,columnIndex,columnValues,guessKeyColumn,guessRole,markColumn,matchRows,removeColumn,resultsFileColumns,setRole,validColumnName,type Column,type Role,type Sheet} from '@/lib/research/columns';
+import {applySheet,columnIndex,columnValues,docIds,guessKeyColumn,guessRole,markColumn,matchRows,removeColumn,resultsFileColumns,setRole,validColumnName,type Column,type Role,type Sheet} from '@/lib/research/columns';
 import {copiedAnswers} from '@/lib/research/label-guard';
 import {SPREADSHEET_ACCEPT,parseSpreadsheet} from '@/lib/research/parse-table';
 import {allocationNote,drawStratifiedSample,orderStrata,recordSample,sampleRecord,type SampleRecord} from '@/lib/research/sample';
 import type {Row} from '@/lib/research/runs';
+import {withRemoved} from '@/lib/research/removed';
 import {PasteTextDialog,TableImportDialog,type AddTexts} from './import-texts';
 
 // removed: the deleted texts kept for their runs, when a change reaches them too (a label sheet).
@@ -53,26 +54,28 @@ function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,on
  const [sheet,setSheet]=useState<Sheet>(),[fileName,setFileName]=useState(''),[error,setError]=useState(''),[reading,setReading]=useState(false);
  const [keyIndex,setKeyIndex]=useState(0),[roles,setRoles]=useState<Role[]>([]),[clearUnlisted,setClearUnlisted]=useState(false);
  const all=useMemo(()=>removed.length?[...rows,...removed]:rows,[rows,removed]);
- function use(parsed:Sheet,name:string){
-  const key=guessKeyColumn(rows,parsed);
+ // Each text's doc_id as the exports give it, so a sheet keyed by doc_id finds the text it names.
+ const ids=useMemo(()=>docIds({kind:unit==='subject'?'knowledge':'texts',rows:withRemoved(rows,removed)}),[rows,removed,unit]);
+ function adopt(parsed:Sheet,name:string){
+  const key=guessKeyColumn(rows,parsed,ids);
   setSheet(parsed);setFileName(name);setKeyIndex(key);
   setRoles(parsed.header.map((header,i)=>i===key||!validColumnName(header)?'':columnIndex(columns,header)>=0?columns[columnIndex(columns,header)].role:guessRole(header,fields)));
  }
- useEffect(()=>{if(initial)use(initial.sheet,initial.fileName);},[]);
+ useEffect(()=>{if(initial)adopt(initial.sheet,initial.fileName);},[]);
  async function choose(file:File|undefined){
   if(!file)return;
   setReading(true);setError('');
   try{
    const parsed=await parseSpreadsheet(file);
    if(!parsed.header.length||!parsed.rows.length)throw new Error('This file has no rows below its header row.');
-   use(parsed,file.name);
+   adopt(parsed,file.name);
   }catch(problem){setSheet(undefined);setError(problem instanceof Error?problem.message:'This file could not be read.');}
   finally{setReading(false);}
  }
- const match=useMemo(()=>sheet?matchRows(all,sheet.rows.map(row=>row[keyIndex]||'')):undefined,[sheet,keyIndex,all]);
+ const match=useMemo(()=>sheet?matchRows(all,sheet.rows.map(row=>row[keyIndex]||''),ids):undefined,[sheet,keyIndex,all,ids]);
  const chosen=roles.filter((role,i)=>role&&i!==keyIndex).length;
  // What adding the sheet would do, shown before it is added.
- const plan=useMemo(()=>sheet&&chosen?applySheet(all,columns,sheet,keyIndex,roles,{clearUnlisted}):undefined,[sheet,all,columns,keyIndex,roles,clearUnlisted,chosen]);
+ const plan=useMemo(()=>sheet&&chosen?applySheet(all,columns,sheet,keyIndex,roles,{clearUnlisted,ids}):undefined,[sheet,all,columns,keyIndex,roles,clearUnlisted,chosen,ids]);
  // The Lab's own results files hold the model's answers, which are not human labels.
  const exported=useMemo(()=>sheet?resultsFileColumns(sheet.header):[],[sheet]);
  // A lean results table (the supplementary repository's): a run's answers beside the texts' own columns.
@@ -88,7 +91,7 @@ function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,on
  return <Dialog open onOpenChange={open=>{if(!open)onClose();}}>
   <DialogContent className="research-dialog research-wide">
    <DialogTitle>Add labels or metadata from a spreadsheet</DialogTitle>
-   <DialogDescription>Choose a CSV or Excel file with one row per {unit}. One column names the {unit}s{unit==='text'?' (the file name, with or without its extension)':''}; the others can be added as human labels, to compare with the model’s answers, or as metadata such as year or author.</DialogDescription>
+   <DialogDescription>Choose a CSV or Excel file with one row per {unit}. One column names the {unit}s{unit==='text'?' (the file name, with or without its extension, or the doc_id from the exports)':''}; the others can be added as human labels, to compare with the model’s answers, or as metadata such as year or author.</DialogDescription>
    <label className="research-file"><span>{fileName||'Choose a spreadsheet'}</span><input type="file" accept={SPREADSHEET_ACCEPT} aria-label="Choose a spreadsheet" onChange={event=>{void choose(event.target.files?.[0]);event.target.value='';}}/></label>
    {reading&&<p className="hint" role="status">Reading the spreadsheet…</p>}
    {error&&<p className="message" role="alert">{error}</p>}

@@ -7,9 +7,10 @@ import {grownScale,isMissingLabel,isTie,ratingRange,type Level} from './metrics'
 
 const isNum=(s:string)=>s.trim()!==''&&!Number.isNaN(Number(s));
 export function comparableValues(pairs:[string,string][],level:Level,allowed:string[]=[],options:{scaleSeen?:boolean;range?:[number,number];known?:string[]}={}):(value:string)=>boolean{
- // A tied majority vote ("a | b") is left out first, as in `agreement`.
- const fits=valueFits(pairs.filter(([x,y])=>!isTie(x)&&!isTie(y)),level,allowed,options);
- return v=>!isTie(v)&&fits(v);
+ // A tied majority vote ("a | b") is left out first, as in `agreement`; a category so named is no tie.
+ const tied=(v:string)=>isTie(v)&&!allowed.includes(v);
+ const fits=valueFits(pairs.filter(([x,y])=>!tied(x)&&!tied(y)),level,allowed,options);
+ return v=>!tied(v)&&fits(v);
 }
 function valueFits(pairs:[string,string][],level:Level,allowed:string[],{scaleSeen=false,range,known}:{scaleSeen?:boolean;range?:[number,number];known?:string[]}):(value:string)=>boolean{
  const numericCodebook=!scaleSeen&&allowed.length>0&&allowed.every(isNum),allowedNums=allowed.filter(isNum).map(Number);

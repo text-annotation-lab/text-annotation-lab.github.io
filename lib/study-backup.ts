@@ -106,14 +106,15 @@ export async function readWorkingBackup(name:string,revisions:(number|undefined)
   tx.onabort=tx.onerror=()=>{db.close();reject(Error('Could not read the complete study.'));};
  });
 }
-// Import never changes the working copy or any existing snapshot. Catalog and
+// Import never changes the working copy or any existing snapshot. A copy of a copy is named after the original
+// ("Study (imported 2)", not "Study (imported) (imported)"); provenance keeps the backup's own name. Catalog and
 // both new workspaces commit atomically. Batch references remain for recovery;
 // restored running requests are handled by the existing interrupted-request UI.
 export async function importStudyBackup(data:StudyBackupData):Promise<{study:Study;studies:Study[]}>{
  const db=await database();return new Promise((resolve,reject)=>{
   const tx=db.transaction('workspace','readwrite'),store=tx.objectStore('workspace');let result:{study:Study;studies:Study[]};
   const r=store.get('named-studies-v1');r.onsuccess=()=>{
-   const existing:Study[]=r.result||[];let suffix=1,name=data.name.slice(0,60)+' (imported)';while(existing.some(s=>s.name.toLowerCase()===name.toLowerCase()))name=data.name.slice(0,60)+` (imported ${++suffix})`;
+   const existing:Study[]=r.result||[];const base=data.name.replace(/( \(imported(?: \d+)?\))+$/,'').slice(0,60)||data.name.slice(0,60);let suffix=1,name=base+' (imported)';while(existing.some(s=>s.name.toLowerCase()===name.toLowerCase()))name=base+` (imported ${++suffix})`;
    const study={id:newId(),name,savedAt:new Date().toISOString()},provenance={importedAt:study.savedAt,backupCreatedAt:data.createdAt,originalName:data.name,previous:data.provenance||data.texts?.provenance};
    store.put({...data.texts,provenance,revision:1,snapshot:true},studyWorkspaceKey(study.id));store.put({...data.knowledge,provenance,revision:1,snapshot:true},studyWorkspaceKey(study.id,true));
    result={study,studies:[...existing,study]};store.put(result.studies,'named-studies-v1');

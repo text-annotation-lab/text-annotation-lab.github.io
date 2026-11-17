@@ -47,7 +47,7 @@ import {cleanRequestSettings,sentRequestSettings,samplingSummary,type RequestSet
 import {requestFrame,LAYOUT} from '@/lib/request-frame';
 import {cleanRequests,recordRequest,usedRequests,replyNotes,NOT_RECORDED,type RecordedRequest,type Recorded} from '@/lib/research/requests';
 import {promptInserts,fixedLength,insertMap,placesText} from '@/lib/prompt-inserts';
-import {insertValues,insertNotes} from '@/lib/research/inserts';
+import {insertValues,insertNotes,sentInserts} from '@/lib/research/inserts';
 import {LAB_VERSION} from '@/lib/version';
 import {tabLock} from '@/lib/research/tab-lock';
 import {readResearchMode,writeResearchMode,keepSiteData,readSavedKeys,writeSavedKeys,forgetSavedKeys,sessionKeys,keepSessionKeys,type Keyring} from '@/lib/research/mode';
@@ -353,7 +353,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  const studyIds=()=>{const study={kind:'texts',rows:withRemoved(latest.current,removedNow.current)};return (d:Doc)=>docIdOf(study,d);};
  // Research mode: what a result about to be made records of its request: the request itself (kept once in the
  // list) and the build of the Lab. The standard Lab records nothing.
- function recorder(batch:boolean,use=useNow){
+ function recorder(batch:boolean,use=useNow,valuesOf?:(d:Doc)=>string[]){
   const made=new Map<boolean,Recorded>(),idOf=studyIds();
   return (d:Doc):Recorded=>{
    if(!research)return {};
@@ -364,7 +364,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
     noted={...NOT_RECORDED,requestId:kept.id,lab:LAB_VERSION};made.set(pdf,noted);
    }
    // The values this text gives the prompt's placeholders are kept with its result.
-   return use.insertNames.length?{...noted,inserts:insertValues(use.insertNames,d,columns,idOf(d))}:noted;
+   return use.insertNames.length?{...noted,inserts:valuesOf?valuesOf(d):insertValues(use.insertNames,d,columns,idOf(d))}:noted;
   };
  }
  // `only` limits the run to some texts (research mode); without it every ready text is annotated.
@@ -393,7 +393,9 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   let runNo:number|undefined;
   if(retryOf)runNo=retryOf.number;
   else if(eligible.length){const begun=beginRun(latest.current,runsNow.current,setupNow,newRun,runStartedAt,new Set((all?eligible:eligible.slice(0,1)).map(r=>r.id))),begunRuns=research?addScope(begun.runs,begun.number,scope||(all?'':`One text: ${eligible[0].name}`)):begun.runs;latest.current=begun.docs;runsNow.current=begunRuns;setDocs(begun.docs);setRuns(begunRuns);runNo=begun.number;}
-  let claimed=0,failed=false;const recorded=recorder(false,retryOf?.use);
+  // The values for the prompt's placeholders: in a retry, those the run sent (sentInserts), else today's.
+  const valuesOf=(d:Doc)=>(retryOf&&sentInserts(d,retryOf.number,insertNames.length))||insertValues(insertNames,d,columns,idOf(d));
+  let claimed=0,failed=false;const recorded=recorder(false,retryOf?.use,valuesOf);
   // Research mode: a failed text is marked and the run carries on; it stops only when its first requests all
   // failed in a way every request would meet. answered, failures: the requests that came back, and those that failed.
   const early=research?earlyStopper():undefined;let answered=0,failures=0;
@@ -447,7 +449,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      // back: a reply came back (a request that did not get as far as a reply may have had no connection).
      let shared:string|undefined,back=false;
      try{
-      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(insertValues(insertNames,d,columns,idOf(d))));if(layout!==LAYOUT)form.set('layout','earlier');else if(placed)form.set('placeText','true');
+      const form=new FormData();form.set('provider',provider);form.set('file',d.file);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('model',model);form.set('effort',effort);if(research)form.set('record','true');if(insertNames.length)form.set('inserts',JSON.stringify(valuesOf(d)));if(layout!==LAYOUT)form.set('layout','earlier');else if(placed)form.set('placeText','true');
       const sent=await sendAnnotation(()=>fetch('/api/annotate',{method:'POST',headers:{Authorization:`Bearer ${key.trim()}`},body:form}),place);
       // The run stopped while this text waited out a rate limit: it was not annotated and waits again as before.
       if(!sent){if(n)close(d.id);else{latest.current=latest.current.map(x=>x.id===d.id?failedBefore.get(d.id)||d:x);setDocs(latest.current);}return;}

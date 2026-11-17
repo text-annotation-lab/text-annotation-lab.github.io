@@ -555,8 +555,10 @@ export function agreement(
   const leftOut: Agreement['leftOut'] = { n: 0, values: [] };
   // A tied majority vote (several annotations per text, "a | b") is no answer the model gave: such a pair is left
   // out before anything else and reported on its own (Jens, 2026-11-17).
-  const tiedPairs = pairs.filter(([x, y]) => isTie(x) || isTie(y));
-  if (tiedPairs.length) pairs = pairs.filter(([x, y]) => !isTie(x) && !isTie(y));
+  // (A category of the field whose name holds " | " is no tie.)
+  const tied = (v: string) => isTie(v) && !allowed.includes(v);
+  const tiedPairs = pairs.filter(([x, y]) => tied(x) || tied(y));
+  if (tiedPairs.length) pairs = pairs.filter(([x, y]) => !tied(x) && !tied(y));
   let outsideAnswers: Agreement['outsideAnswers'];
   const numericCodebook = !scaleSeen && allowed.length > 0 && allowed.every(isNum);
   const allowedNums = allowed.filter(isNum).map(Number);
@@ -691,7 +693,7 @@ export function agreement(
   });
   if (tiedPairs.length) {
     leftOut.ties = tiedPairs.length;
-    leftOut.tiedValues = [...new Set(tiedPairs.flat().filter(isTie))].slice(0, 5);
+    leftOut.tiedValues = [...new Set(tiedPairs.flat().filter(tied))].slice(0, 5);
     leftOut.n += tiedPairs.length;
   }
   return {

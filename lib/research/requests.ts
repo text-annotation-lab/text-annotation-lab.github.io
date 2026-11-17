@@ -16,7 +16,11 @@ export type Recorded={requestId?:string;modelReported?:string;stopReason?:string
 export const RECORDED_KEYS=['requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts'] as const;
 type Referring={requestId?:string;annotations?:unknown;earlier?:{[key:string]:any}[];history?:{[key:string]:any}[]};
 
-const valid=(r:any):r is RecordedRequest=>Boolean(r)&&typeof r==='object'&&typeof r.id==='string'&&/^q[1-9]\d{0,8}$/.test(r.id)&&typeof r.url==='string'&&r.url.length<=1000&&typeof r.body==='string'&&r.body.length<=1000000;
+// The addresses the Lab sends annotation requests to (requestUrl, lib/request-frame.ts). A recorded request with any
+// other address (an edited backup, say) is not kept, so no exported script can send a key and texts elsewhere.
+const OFFICIAL:Record<string,RegExp>={openai:/^https:\/\/api\.openai\.com\/v1\/responses$/,anthropic:/^https:\/\/api\.anthropic\.com\/v1\/messages$/,gemini:/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/[A-Za-z0-9._-]+:generateContent$/,openrouter:/^https:\/\/openrouter\.ai\/api\/v1\/chat\/completions$/};
+export const officialUrl=(url:string,provider?:string)=>provider?Boolean(OFFICIAL[provider]?.test(url)):Object.values(OFFICIAL).some(pattern=>pattern.test(url));
+const valid=(r:any):r is RecordedRequest=>Boolean(r)&&typeof r==='object'&&typeof r.id==='string'&&/^q[1-9]\d{0,8}$/.test(r.id)&&typeof r.url==='string'&&r.url.length<=1000&&officialUrl(r.url)&&typeof r.body==='string'&&r.body.length<=1000000;
 // The list as read from browser storage or a study backup (absent when empty).
 export function cleanRequests(value:unknown):RecordedRequest[]|undefined{
  if(!Array.isArray(value))return undefined;
