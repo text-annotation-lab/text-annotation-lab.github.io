@@ -2,6 +2,7 @@
 import {cacheSupport} from './request-settings';
 import {textTokens,tokens} from './cost-estimate/engine';
 import {priceFor,type Provider} from './cost-estimate/pricing';
+import {batchUnavailable} from './providers';
 const percent=(share:number)=>`${+(share*100).toFixed(1)}%`;
 // available: the option can be switched for this model. prompt: the prompt as a request sends it. fixed: where
 // the prompt has placeholders that are filled in for each text, the length of the part before the first one,
@@ -13,7 +14,7 @@ export function cacheNote(provider:Provider,model:string,prompt:string,fixed?:nu
  if(support.kind==='automatic')return {available:false,text:`${support.vendor==='openai'?'OpenAI':support.vendor==='anthropic'?'Anthropic':'Gemini'} caches repeated prompts by itself${min?`, from ${min} tokens on this model`:''}. There is nothing to switch on or off.`};
  const own=system?.trim()?system:'',shared=fixed===undefined?prompt:prompt.slice(0,fixed);
  if(prompt.trim()&&!shared.trim()&&!own)return {available:false,text:'The prompt begins with a placeholder, so no part of it is the same for every text. There is nothing to cache.'};
- const price=priceFor(provider,model),batch=provider!=='openrouter';
+ const price=priceFor(provider,model),batch=!batchUnavailable(provider);
  const life=support.vendor==='anthropic'?`5 minutes${batch?' (1 hour in a batch)':''}`:'30 minutes';
  const read=price?.cacheRead===undefined?'at a lower price':`at ${percent(price.cacheRead)} of the input price`;
  const stored=`${percent(support.write!-1)} extra${batch&&support.batchWrite!==support.write?` (${percent(support.batchWrite!-1)} in a batch)`:''}`;
