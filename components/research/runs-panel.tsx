@@ -254,7 +254,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
      {reportError&&<p className="message" role="alert">{reportError}</p>}
      <h4>Disagreements ({differing.length.toLocaleString('en-US')})</h4>
      {differing.length?<><div className="research-table-scroll"><table className="research-table"><thead><tr><th>{unit==='text'?'Document':'Subject'}</th><th>{sourceLabel(a)}</th><th>{sourceLabel(b)}</th></tr></thead><tbody>{differing.slice(0,showAll?2000:25).map(d=><tr key={d.id}><td>{dataset.kind==='texts'&&!gone.has(d.id)?<button type="button" className="docbutton" onClick={()=>onOpenText(d.id)}>{d.name}</button>:d.name}{gone.has(d.id)&&<span className="research-tag" title="Deleted from the study; kept for the runs that used it">deleted</span>}</td><td><span className="answer-cell">{d.a}</span></td><td><span className="answer-cell">{d.b}</span></td></tr>)}</tbody></table></div>{differing.length>25&&<button type="button" className="textbutton" onClick={()=>setShowAll(v=>!v)}>{showAll?'Show fewer':`Show all ${Math.min(differing.length,2000).toLocaleString('en-US')}`}</button>}</>:<p className="hint">The two sources give the same value for every compared {unit}.</p>}
-    </>:<p className="research-empty">No {unit} has a value in both {sourceLabel(a)} and {sourceLabel(b)} yet.</p>)}
+    </>:<p className="research-empty">{stats.leftOut.n?`No ${unit} could be compared. ${leftOutNote(stats,unit,pairing.leftOut)}`:`No ${unit} has a value in both ${sourceLabel(a)} and ${sourceLabel(b)} yet.`}</p>)}
    </>}
   </section>
  </div>;

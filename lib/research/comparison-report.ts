@@ -11,7 +11,7 @@ import {comparableFields,intervalsHere,textsOfRun,type Intervals} from './export
 import {hashOf,promptHashes,runFacts,type Table} from './export-tables';
 import {defaultOutputLimit} from '../request-settings';
 import {buildWorkbook,type Sheet} from './export-workbook';
-import {BOOTSTRAP_RESAMPLES,type Agreement,type CiStat} from './metrics';
+import {BOOTSTRAP_RESAMPLES,isTie,type Agreement,type CiStat} from './metrics';
 import {rowForRun,runState,type Row} from './runs';
 import {fieldLabel,valueOf} from './view';
 import {scaleText} from './score-scale';
@@ -81,7 +81,7 @@ function nonZeroSentence(s:Stats,unit:string):string{
 }
 
 // Categories in the Review sheet, in the order the sheet is sorted by.
-const RANK:Record<string,number>={'opposite direction':0,'2+ points':1,differ:1,'between 1 and 2 points':2,'1 point':2,'less than 1 point':2,agree:3,'agree (non-zero)':3,'agree (zero)':4,'not on the scale':5,'not a number':5,'not a category':5};
+const RANK:Record<string,number>={'tie (no majority)':5,'opposite direction':0,'2+ points':1,differ:1,'between 1 and 2 points':2,'1 point':2,'less than 1 point':2,agree:3,'agree (non-zero)':3,'agree (zero)':4,'not on the scale':5,'not a number':5,'not a category':5};
 
 // The sheets of the report (also used by the tests, which read them without Excel).
 export async function comparisonSheets(dataset:Dataset,first:number,second:number,options:ReportOptions):Promise<Sheet[]>{
@@ -149,7 +149,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
    // By the size of the difference, as in the Summary. Combined answers from an even number of annotations can be
    // half points: 0.5 is “less than 1 point”, 1.5 “between 1 and 2 points”.
    const size=diff===null?null:Math.abs(diff);
-   const category=leftOut?(!onNumbers?'not a category':isNum(x)&&isNum(y)?'not on the scale':'not a number')
+   const category=leftOut&&(isTie(x)||isTie(y))?'tie (no majority)':leftOut?(!onNumbers?'not a category':isNum(x)&&isNum(y)?'not on the scale':'not a number')
     :x===y?(numeric?(Number(x)===0?'agree (zero)':'agree (non-zero)'):'agree')
     :opposite?'opposite direction'
     :size===null?'differ'
@@ -224,7 +224,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
   {note:'Mean difference: second minus first (positive: the second run scores higher on average). Mean absolute difference: the average distance, whatever the direction.'},
   {note:`_ci_low and _ci_high: 95% intervals. Shares (exact agreement, within the tolerance, 2 or more points, opposite direction): Wilson score intervals. Coefficients and differences: bootstrap intervals (${count(BOOTSTRAP_RESAMPLES)} resamples of ${many}, fixed seed, so the same data gives the same interval). Fewer than 10 compared ${many}: no intervals.`},
   {note:`Review sheet: every compared score, opposite directions first, then the largest differences. Each score is in one category there, so opposite-direction rows are not also listed as “2+ points” (the Summary’s share of 2 or more points includes them). To draw at random within a category (for example 30 opposite-direction cases), sort by category and then by “random,” and take the first rows; the numbers never change, so the draw can be repeated. The judgment and note columns are for your own labels.`},
-  ...(review.some(r=>RANK[String(r.cells.category)]===5)?[{note:'Review sheet, last rows: values left out of the statistics (“not a number,” such as NA; “not on the scale”; or “not a category,” such as a 0.5 median against a yes / no field), as the runs gave them.'}]:[]),
+  ...(review.some(r=>RANK[String(r.cells.category)]===5)?[{note:'Review sheet, last rows: values left out of the statistics (“tie (no majority),” where a text’s annotations tied; “not a number,” such as NA; “not on the scale”; or “not a category,” such as a 0.5 median against a yes / no field), as the runs gave them.'}]:[]),
   ...(groupBy?[{note:`“By ${groupBy}” sheet: the same figures per value of ${groupBy}; exploratory, as small groups give wide intervals.`}]:[]),
   ...(!fields.length?[{note:'The two runs have no answer field in common that can be compared (free text and explanations are not compared).'}]:[]),
  ];

@@ -32,7 +32,7 @@ export interface Agreement {
    * labels near it (see `agreement`); `range` is the scale's lowest and highest value. With codebook categories
    * that aren't numbers: a label that isn't one of them (nor a tie of them).
    */
-  leftOut: { n: number; values: string[]; range?: [number, number] };
+  leftOut: { n: number; values: string[]; range?: [number, number]; ties?: number; tiedValues?: string[] };
   /**
    * Plain-text scores: texts kept although a label lies outside the range of the model's answers (`range`), because it
    * is near that range or another label on the scale (e.g. a −3 when the model answered −2…3), or because the answers
@@ -527,6 +527,8 @@ export function grownScale([lo, hi]: [number, number], values: number[]): [numbe
  * scale (not `scaleSeen`) with a `range`: `allowed` was widened to take in plain-text answers beyond the codebook
  * (`combineFields`), and `range` is the codebook's own lowest and highest point, which set the midpoint.
  */
+/** A tied majority vote of several annotations of a text, which reads "a | b" (repeats.ts). */
+export const isTie = (v: string) => v.includes(' | ');
 export function agreement(
   a: string[],
   b: string[],
@@ -551,6 +553,10 @@ export function agreement(
   // "NA" or "N/A" that isn't itself a category is always left out (and reported), even where most labels are such
   // markers.
   const leftOut: Agreement['leftOut'] = { n: 0, values: [] };
+  // A tied majority vote (several annotations per text, "a | b") is no answer the model gave: such a pair is left
+  // out before anything else and reported on its own (Jens, 2026-11-17).
+  const tiedPairs = pairs.filter(([x, y]) => isTie(x) || isTie(y));
+  if (tiedPairs.length) pairs = pairs.filter(([x, y]) => !isTie(x) && !isTie(y));
   let outsideAnswers: Agreement['outsideAnswers'];
   const numericCodebook = !scaleSeen && allowed.length > 0 && allowed.every(isNum);
   const allowedNums = allowed.filter(isNum).map(Number);
@@ -683,6 +689,11 @@ export function agreement(
         }
       : {}),
   });
+  if (tiedPairs.length) {
+    leftOut.ties = tiedPairs.length;
+    leftOut.tiedValues = [...new Set(tiedPairs.flat().filter(isTie))].slice(0, 5);
+    leftOut.n += tiedPairs.length;
+  }
   return {
     n: pairs.length,
     level: alphaLevel,
