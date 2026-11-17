@@ -355,7 +355,7 @@ export function ResultsPanel({
           )}
           <p className="hint" style={{ marginTop: 14 }}>
             Each {w.one} counts once{replicates > 1 ? ', with its combined value (the median on a scale, the mean for numbers, the majority for categories), as in the Results table' : ''}. Failed{' '}
-            {w.many} and {w.many} without an answer are not counted. Intervals are 95% (t for means, Wilson for shares), from 10 {w.many}.
+            {w.many} and {w.many} without an answer are not counted. Intervals are 95% (t for means, Wilson for shares) and are shown once there are 10 {w.many} or more.
             {summaries.some((x) => x.bins.some((b) => b.key === TIE_KEY && b.n)) &&
               ` Shares of yes and of the most common category leave out the ${w.many} whose annotations had no majority (ties); the bars show them.`}
           </p>

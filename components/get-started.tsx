@@ -45,7 +45,7 @@ export function GetStarted() {
       </li>
       <li><h3>Annotate the full corpus and save your results</h3>
         <p>Once you’re satisfied with the pilot, use the same final prompt, model, and reasoning settings for every text. Add the remaining documents, open <strong>Costs</strong> for an estimate, and choose <strong>Run all</strong>.</p>
-        <p>Download the results as an Excel workbook for analysis. To reopen the study on another computer, choose <strong>Download study backup</strong> in <strong>Studies</strong>.</p>
+        <p>Download the results as an Excel workbook for analysis. To reopen the study on another computer, open <strong>Studies</strong> and choose <strong>More options → Download backup</strong>.</p>
       </li>
     </ol>
 

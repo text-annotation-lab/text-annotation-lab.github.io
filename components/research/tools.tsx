@@ -128,7 +128,7 @@ function SampleDialog({rows,columns,samples,unit,onApply,onClose}:Props&{onClose
   if(!markedAs||!draw.ids.length)return;
   const marked=markColumn(rows,columns,new Set(draw.ids),markedAs.column,markedAs.value,true);
   const record=sampleRecord({...options,markedAs},draw,new Date().toISOString().slice(0,10));
-  onApply(marked.docs,marked.columns,recordSample(samples,record),`${plural(draw.ids.length,unit)} marked ${markedAs.column} = ${markedAs.value} (seed ${record.seed}). The draw is recorded with the study and listed under Export.`,{column:markedAs.column,value:markedAs.value});
+  onApply(marked.docs,marked.columns,recordSample(samples,record),`${plural(draw.ids.length,unit)} marked ${markedAs.column} = ${markedAs.value} (seed ${record.seed}). The draw is recorded with the study and in its exports.`,{column:markedAs.column,value:markedAs.value});
   onClose();
  }
  return <Dialog open onOpenChange={open=>{if(!open)onClose();}}>
