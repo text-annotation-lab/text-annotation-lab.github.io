@@ -32,10 +32,11 @@ export function queueRetries<T extends RetryRecord>(records:T[],id?:string,noted
  });
 }
 export function retryMessage(count:number){return `Queue ${count} failed item${count===1?'':'s'} for retry? Retries use the current prompt, provider, model, reasoning, and processing options when you start them. Previous attempts remain in the backup and Excel history; successful results stay unchanged. Check provider usage first: an interrupted or unreadable request may already have completed and been charged. This only queues retries; it does not send requests.`;}
-export function queueSummary(records:RetryRecord[],unit='text',insufficient=0){
+// collected: false while a batch that has ended waits to be collected, so its texts are not called in progress.
+export function queueSummary(records:RetryRecord[],unit='text',insufficient=0,collected=true){
  if(!records.length)return '';
  const count=(status:string)=>records.filter(r=>r.status===status).length;
  const ready=count('pending'),done=count('done'),active=count('running')+count('queued'),failed=count('error');
  if(ready===records.length)return `${ready} ${unit}${ready===1?'':'s'} ready`;
- return [`${done} of ${records.length} complete`,active?`${active} in progress`:'',failed?`${failed} need${failed===1?'s':''} attention`:'',insufficient?`${insufficient} insufficient knowledge`:''].filter(Boolean).join(' · ');
+ return [`${done} of ${records.length} complete`,active?`${active} ${collected?'in progress':'ready to collect'}`:'',failed?`${failed} need${failed===1?'s':''} attention`:'',insufficient?`${insufficient} insufficient knowledge`:''].filter(Boolean).join(' · ');
 }
