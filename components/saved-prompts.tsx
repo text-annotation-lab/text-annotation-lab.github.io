@@ -26,7 +26,7 @@ export function SavedPrompts({disabled,prompt,answerFields,answerSettings,system
   {naming&&<div className="saved-prompt-actions"><input aria-label="Prompt name" placeholder="Name this prompt" maxLength={80} value={name} disabled={locked} onChange={event=>setName(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();void save();}}}/><Button type="button" variant="outline" disabled={locked||!name.trim()} onClick={()=>void save()}>Save</Button><button type="button" className="textbutton" disabled={locked} onClick={()=>setNaming(false)}>Cancel</button></div>}
   {chosen&&<div className="saved-prompt-actions"><Button type="button" variant="outline" disabled={locked} onClick={()=>{
    const differs=prompt!==chosen.prompt||JSON.stringify(answerFields)!==JSON.stringify(chosen.answerFields)||JSON.stringify(answerSettings||null)!==JSON.stringify(chosen.answerSettings||null)||system!==undefined&&system.trim()!==(chosen.system??'').trim();
-   if(differs&&(prompt.trim()||answerFields.length)&&!confirm('Replace your current prompt and answer fields with this saved prompt?'))return;
+   if(differs&&(prompt.trim()||answerFields.length)&&!confirm(system!==undefined?'Replace your current prompt, system prompt, and answer fields with this saved prompt?':'Replace your current prompt and answer fields with this saved prompt?'))return;
    onUse(chosen.prompt,[...chosen.answerFields],chosen.answerSettings,chosen.system);setMessage('Prompt loaded.');
   }}>Use prompt</Button><button type="button" className="textbutton" disabled={locked} onClick={()=>void remove()}>Delete</button></div>}
   {message&&<p role="status">{message}</p>}
