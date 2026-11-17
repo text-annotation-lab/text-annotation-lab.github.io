@@ -3,10 +3,15 @@
 // texts the figures count, as the same author's separate research tool does (a coder's “NA”, a 9 next to a −3 to 3
 // scale, or a value that is not one of a field's categories is left out). It repeats the rule `agreement` applies
 // to the same arguments; tests/scale-combine.cjs checks that the two keep the same pairs.
-import {grownScale,isMissingLabel,ratingRange,type Level} from './metrics';
+import {grownScale,isMissingLabel,isTie,ratingRange,type Level} from './metrics';
 
 const isNum=(s:string)=>s.trim()!==''&&!Number.isNaN(Number(s));
-export function comparableValues(pairs:[string,string][],level:Level,allowed:string[]=[],{scaleSeen=false,range,known}:{scaleSeen?:boolean;range?:[number,number];known?:string[]}={}):(value:string)=>boolean{
+export function comparableValues(pairs:[string,string][],level:Level,allowed:string[]=[],options:{scaleSeen?:boolean;range?:[number,number];known?:string[]}={}):(value:string)=>boolean{
+ // A tied majority vote ("a | b") is left out first, as in `agreement`.
+ const fits=valueFits(pairs.filter(([x,y])=>!isTie(x)&&!isTie(y)),level,allowed,options);
+ return v=>!isTie(v)&&fits(v);
+}
+function valueFits(pairs:[string,string][],level:Level,allowed:string[],{scaleSeen=false,range,known}:{scaleSeen?:boolean;range?:[number,number];known?:string[]}):(value:string)=>boolean{
  const numericCodebook=!scaleSeen&&allowed.length>0&&allowed.every(isNum),allowedNums=allowed.filter(isNum).map(Number);
  const seed:[number,number]|null=!scaleSeen?null:range??(allowedNums.length?[Math.min(...allowedNums),Math.max(...allowedNums)]:null);
  let fits:((v:string)=>boolean)|null=null,onNumbers=false;

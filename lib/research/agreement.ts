@@ -271,9 +271,11 @@ export function disagreements(p:Pairing):Disagreement[]{
 // What was left out of the comparison, in words (empty when nothing was).
 export function leftOutNote(stats:Agreement,unit='text',kind:Pairing['leftOut']='marker'):string{
  if(!stats.leftOut.n)return '';
- const values=stats.leftOut.values.map(v=>`“${v}”`).join(', ')+(stats.leftOut.values.length===5?', …':'');
+ const quoted=(list:string[])=>list.map(v=>`“${v}”`).join(', ')+(list.length===5?', …':'');
+ const ties=stats.leftOut.ties||0,other=stats.leftOut.n-ties;
  const why=stats.leftOut.range?`not a number on the scale ${stats.leftOut.range[0]} to ${stats.leftOut.range[1]}`:kind==='value'?'not one of the field’s allowed values':kind==='number'?'not a number':'a missing-value marker';
- return `${stats.leftOut.n} ${unit}${stats.leftOut.n===1?' was':'s were'} left out because a value was ${why}: ${values}.`;
+ return [ties?`${ties} ${unit}${ties===1?' was':'s were'} left out because the annotations tied, with no majority: ${quoted(stats.leftOut.tiedValues||[])}.`:'',
+  other?`${other} ${unit}${other===1?' was':'s were'} left out because a value was ${why}: ${quoted(stats.leftOut.values)}.`:''].filter(Boolean).join(' ');
 }
 // The comparison as a table for a CSV file.
 export function agreementTable(title:{a:string;b:string;field:string;dataset:string;basis?:string},stats:Agreement,ci:Agreement['ci']|undefined,unit='text'):(string|number)[][]{
