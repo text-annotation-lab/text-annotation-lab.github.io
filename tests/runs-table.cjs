@@ -168,6 +168,35 @@ assert.equal(runs.runRequestSettings([{id:'a',status:'done',...setup,runNo:1}],1
  assert(text(krow).includes('failed'));
 }
 
+// A run waiting in a batch: its row checks the batch (or collects the results once it has ended), as the batch box
+// in the Workspace does, and shows what the check said. Nothing is checked unless the button is pressed.
+{
+ const at='2026-11-18T10:00:00Z',queued=['a','b'].map(id=>({id,name:id+'.txt',status:'queued',...setup,runNo:1,runId:'lab_1',time:at,startedAt:at,processing:'batch'}));
+ const dataset={kind:'texts',rows:queued,runs:[{...setup,number:1,startedAt:at}],columns:[],samples:[]};
+ const checks=[];const base={datasets:[dataset],studyName:'S',locked:true,onShowRun(){},onDeleteRun(){},onOpenText(){},onRenameRun(){},onRetryRun(){}};
+ const row=props=>nodes(mount(panel.RunsPanel,props).tree()).filter(n=>n.type==='tr')[1];
+ const names=props=>nodes(row(props)).filter(n=>n.type==='button').map(text);
+ assert.deepEqual(names(base),['Settings','Show in Workspace','Delete'],'No batch on record: no button');
+ const batch={run:1,ready:false,busy:false,disabled:false,onCheck:()=>checks.push('check')};
+ assert.deepEqual(names({...base,batch}),['Check status','Settings','Show in Workspace','Delete']);
+ assert.equal(checks.length,0,'Nothing is checked on its own');
+ const button=props=>nodes(row(props)).find(n=>n.type==='button'&&/status|Collect|Contacting/.test(text(n)));
+ assert.equal(button({...base,batch}).props.disabled,false,'The workspace is locked while a batch waits, but the check stays open');
+ button({...base,batch}).props.onClick();assert.deepEqual(checks,['check']);
+ assert(text(row({...base,batch})).includes('batch · submitted'));
+ assert.equal(text(button({...base,batch:{...batch,ready:true}})),'Collect results');
+ assert(text(row({...base,batch:{...batch,ready:true}})).includes('batch · ready to collect'));
+ assert.equal(text(button({...base,batch:{...batch,busy:true,disabled:true}})),'Contacting provider…');
+ assert(button({...base,batch:{...batch,busy:true,disabled:true}}).props.disabled);
+ assert.deepEqual(names({...base,batch:{...batch,run:2}}),['Settings','Show in Workspace','Delete'],'Only the batch’s own run');
+ const said=props=>nodes(mount(panel.RunsPanel,props).tree()).filter(n=>n.props?.role==='status').map(text);
+ assert.deepEqual(said({...base,batch,batchNote:'The batch is still processing.'}),['The batch is still processing.']);
+ assert.deepEqual(said(base),[]);
+ const page=fs.readFileSync(path.join(root,'app/page.tsx'),'utf8');
+ assert(page.includes("onCheck:()=>{setBatchNoteInRuns(true);void manageBatch(batchJob.state==='ready'?'collect':'check');}"),'The row uses the batch box’s own check and collect');
+ assert(page.includes("batch={runsBatch} batchNote={batchNoteInRuns&&notice||undefined}"));
+}
+
 // The page: the run buttons name what they cover, a label is saved with the study, and "Retry failed" is
 // offered only in research mode (Runs & agreement exists only there).
 {
