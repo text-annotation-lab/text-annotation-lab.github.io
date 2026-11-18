@@ -36,8 +36,11 @@ export async function extractText(file: File): Promise<string> {
   const raw = await decodeText(file);
   if (/\.html?$/i.test(file.name)) {
     const {convert}=await import('html-to-text');
+    // The converter's own limit (16,777,216 characters) would cut a larger page without a word; the upload limit
+    // (20 MB) is the limit.
     return convert(raw, {
       wordwrap: false,
+      limits: { maxInputLength: 21 * 1024 * 1024 },
       selectors: [
         { selector: 'a', options: { ignoreHref: true } },
         { selector: 'img', format: 'skip' },

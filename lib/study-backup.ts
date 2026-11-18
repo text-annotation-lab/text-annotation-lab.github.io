@@ -50,6 +50,8 @@ export async function encodeStudyBackup(data:StudyBackupData){
   if(depth>30)throw Error('This study has data nested too deeply to export.');
   if(value instanceof Blob){
    if(seen.has(value))return {$file:seen.get(value)};
+   // Import takes a file of up to 20 MB, so a backup with a larger one would not open again: say which it is.
+   if(value.size>20*1024*1024)throw Error(`“${value instanceof File?value.name:'A retained file'}” is larger than 20 MB, so a backup holding it could not be imported again. Split or remove it, then download the backup.`);
    total+=value.size;if(total>150*1024*1024)throw Error('This backup exceeds 150 MB of retained files. Export smaller studies separately.');
    const id=`file-${assets.length+1}`;seen.set(value,id);const bytes=new Uint8Array(await value.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
    assets.push({id,name:value instanceof File?value.name:'retained-source',type:value.type,lastModified:value instanceof File?value.lastModified:0,bytes:value.size,base64:btoa(binary)});return {$file:id};

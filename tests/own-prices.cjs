@@ -142,7 +142,7 @@ const STORE='text-annotation-lab:own-prices';
  for(const text of ['Price per million input tokens ($)','Price per million output tokens ($)','placeholder="Unknown"','Used only for the cost estimate before a run.','Use the Lab’s price','Remove your price'])assert(options.includes(text),text);
  assert(panel.includes('Uses your own price for this model:'));
  // No other code knows the prices: not the study, its backups, the exports, or the recorded cost of a run.
- const sources=[];(function walk(dir){for(const entry of fs.readdirSync(path.join(root,dir),{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory()){if(!['node_modules','dist','.git','tests','public'].includes(entry.name))walk(file);}else if(/\.(ts|tsx)$/.test(entry.name))sources.push(file);}})('.');
+ const sources=[];(function walk(dir){for(const entry of fs.readdirSync(path.join(root,dir),{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory()){if(!['node_modules','dist','.git','tests','public'].includes(entry.name))walk(file);}else if(/\.(ts|tsx)$/.test(entry.name))sources.push(file.split(path.sep).join('/'));}})('.');
  assert(sources.length>60);
  assert.deepEqual(sources.filter(file=>/own-prices|text-annotation-lab:own-prices/.test(read(file))).sort(),['app/page.tsx','components/model-knowledge.tsx','components/research/request-options.tsx','lib/cost-estimate/pricing.ts','lib/own-prices.ts','lib/student-estimate.ts']);
  assert.deepEqual(sources.filter(file=>/\bownRates\b/.test(read(file))).sort(),['lib/cost-estimate/pricing.ts','lib/student-estimate.ts']);

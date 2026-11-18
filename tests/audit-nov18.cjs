@@ -77,5 +77,39 @@ const source=file=>fs.readFileSync(path.join(root,file),'utf8');
  assert.match(page,/const recovering=storageConflict\|\|knowledgeSaveState==='conflict'\|\|saveFailed\|\|knowledgeSaveState==='error'/);
  assert.match(page,/Keys saved in research mode are remembered in this browser\./);
  assert.match(page,/Saved studies are not affected\./);
- console.log('PASS: November 18 audit: chart segments, ties, comparable settings, scale per study, review order, assessment status, Excel pieces, backup after a failed save, saved-key line, section links, Clear workspace scope.');
+
+ // #17. Table text: UTF-16 with its byte-order mark is read; Windows-1252 is refused with a way out; an Excel ID shown
+ // as 0001 stays 0001.
+ const parse=load('lib/research/parse-table.ts'),imports=load('lib/research/import-texts.ts');
+ const utf16=Buffer.concat([Buffer.from([0xff,0xfe]),Buffer.from('id\ttext\r\n1\tcafé\r\n','utf16le')]);
+ let sheet=await parse.parseSpreadsheet(new File([utf16],'excel.txt'));
+ assert.deepEqual(sheet,{header:['id','text'],rows:[['1','café']]});
+ await assert.rejects(parse.parseSpreadsheet(new File([Buffer.from([0x69,0x64,0x2c,0x74,0x65,0x78,0x74,0x0a,0x31,0x2c,0x63,0x61,0x66,0xe9,0x0a])],'danish.csv')),/not saved as UTF-8.*CSV UTF-8/);
+ await assert.rejects(imports.parseCorpusTable(new File([Buffer.from([0x5b,0x7b,0x22,0x74,0x22,0x3a,0x22,0xe9,0x22,0x7d,0x5d])],'x.json')),/not saved as UTF-8/);
+ const ExcelJS=req('exceljs'),book=new ExcelJS.Workbook(),ws=book.addWorksheet('S');ws.addRow(['id','text']);const row=ws.addRow([1,'hello']);row.getCell(1).numFmt='0000';
+ sheet=await parse.parseSpreadsheet(new File([await book.xlsx.writeBuffer()],'ids.xlsx'));
+ assert.deepEqual(sheet.rows,[['0001','hello']]);
+ // #18. Three coders survive, whatever the headers; JSON keys that differ only in case too.
+ sheet=parse.parseDelimited('id,text,Coder,Coder,Coder (2)\n1,hi,a,b,c\n');
+ assert.deepEqual(sheet.header,['id','text','Coder','Coder (3)','Coder (2)']);assert.deepEqual(sheet.rows[0],['1','hi','a','b','c']);
+ sheet=await imports.parseCorpusTable(new File([JSON.stringify([{id:'1',text:'t',a:'x',A:'y','A (2)':'z'}])],'k.json'));
+ assert.equal(new Set(sheet.header.map(h=>h.toLowerCase())).size,5);assert.deepEqual(sheet.rows[0],['1','t','x','y','z']);
+ // #19. An unclosed quotation mark is refused with its line; a closed multiline value still works.
+ assert.throws(()=>parse.parseDelimited('id,text\n1,"open quote\n2,next row\n3,third\n'),/line 2 is never closed/);
+ assert.deepEqual(parse.parseDelimited('id,text\n1,"two\nlines"\n2,next\n').rows,[['1','two\nlines'],['2','next']]);
+ // #20. 150,000 short rows are read; the key column of a sheet is guessed once, not once per row.
+ const big='id,text\n'+Array.from({length:150000},(_,i)=>i+',x').join('\n');
+ assert.equal(parse.parseDelimited(big).rows.length,150000);
+ assert.match(source('components/research/import-texts.tsx'),/const key=guessKeyColumn\(rows,sheet\);return matchRows\(rows,sheet\.rows\.map\(row=>row\[key\]\|\|''\)\)/);
+ // #21. An HTML page larger than the converter's default limit keeps its last paragraph.
+ const {extractText}=load('lib/extract-text.ts');
+ const html='<p>FIRST</p><!--'+'x'.repeat(16777216)+'--><p>LAST</p>';
+ const converted=await extractText(new File([html],'long.html'));
+ assert.match(converted,/FIRST/);assert.match(converted,/LAST/);
+ // #8. A pasted or table text over 20 MB is refused before it is added, and a backup names an oversized file.
+ await assert.rejects(imports.fitIntoStudy([{name:'huge.txt',text:'é'.repeat(10*1024*1024+1),values:[]}],[]),err=>err instanceof imports.TooLong&&/huge\.txt.*20 MB/.test(err.message));
+ assert.equal((await imports.fitIntoStudy([{name:'fine.txt',text:'a'.repeat(1000),values:[]}],[])).texts.length,1);
+ const backup=load('lib/study-backup.ts');
+ await assert.rejects(backup.encodeStudyBackup({name:'S',createdAt:new Date().toISOString(),texts:{docs:[{id:'1',name:'big.txt',file:new File([new Uint8Array(20*1024*1024+1)],'big.txt')}]},knowledge:{}}),/big\.txt.*larger than 20 MB/);
+ console.log('PASS: November 18 audit: chart segments, ties, comparable settings, scale per study, review order, assessment status, Excel pieces, backup after a failed save, saved-key line, section links, Clear workspace scope; table encodings, Excel IDs, duplicate headers, unclosed quotes, large tables, long HTML, texts over 20 MB.');
 })().catch(error=>{console.error(error);process.exit(1);});

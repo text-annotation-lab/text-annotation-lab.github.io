@@ -1,7 +1,7 @@
 // Texts from a table (one row per text) or from pasted text, for research
 // mode's import dialogs. Each text becomes a plain-text document named after
 // its ID, so labels in a spreadsheet can be matched to it by that ID later.
-import {parseSpreadsheet} from './parse-table';
+import {parseSpreadsheet,readTableText,uniqueHeader} from './parse-table';
 import {stem,validColumnName,type NewText,type Sheet} from './columns';
 
 export const CORPUS_TABLE_ACCEPT='.csv,.tsv,.xlsx,.json,.jsonl';
@@ -24,19 +24,14 @@ function recordsToSheet(records:unknown[]):Sheet{
   if(row.some(Boolean))rows.push(row);
  }
  // Blank keys and keys that differ only in case are named as a spreadsheet's columns are.
- const seen=new Map<string,number>();
- const header=keys.map((key,i)=>{
-  const base=tidy(key)||'Column '+(i+1),n=(seen.get(base.toLowerCase())||0)+1;
-  seen.set(base.toLowerCase(),n);
-  return n>1?`${base} (${n})`:base;
- });
+ const header=uniqueHeader(keys.map((key,i)=>tidy(key)||'Column '+(i+1)));
  return {header,rows:rows.map(row=>Array.from({length:header.length},(_,i)=>row[i]??''))};
 }
 export async function parseCorpusTable(file:File):Promise<Sheet>{
  if(file.size>MAX_TABLE_MEGABYTES*1024*1024)throw new Error(`Choose a table of up to ${MAX_TABLE_MEGABYTES} MB.`);
  if(/\.jsonl$/i.test(file.name)){
   const records:unknown[]=[];
-  (await file.text()).replace(/^﻿/,'').split(/\r?\n/).forEach((line,i)=>{
+  (await readTableText(file)).replace(/^﻿/,'').split(/\r?\n/).forEach((line,i)=>{
    if(!line.trim())return;
    try{records.push(JSON.parse(line));}catch{throw new Error(`Line ${i+1} is not valid JSON. A JSON Lines file holds one object per line.`);}
   });
@@ -44,7 +39,7 @@ export async function parseCorpusTable(file:File):Promise<Sheet>{
  }
  if(/\.json$/i.test(file.name)){
   let data:any;
-  try{data=JSON.parse((await file.text()).replace(/^﻿/,''));}catch{throw new Error('This file is not valid JSON.');}
+  const text=await readTableText(file);try{data=JSON.parse(text.replace(/^﻿/,''));}catch{throw new Error('This file is not valid JSON.');}
   const records=Array.isArray(data)?data:Array.isArray(data?.data)?data.data:null;
   if(!records)throw new Error('Expected a JSON array of objects, one per text.');
   return recordsToSheet(records);
@@ -123,7 +118,12 @@ export const countWords=(text:string)=>(text.match(/\S+/g)||[]).length;
 // deleted from the study but kept for the runs that used them; one of them
 // added again (the same name and the same text) is brought back (`back`).
 type Held={id?:string;name:string;file?:Blob;removedAt?:string};
+// A text over the Lab's 20 MB limit for one document (a backup could not hold it, and no model reads that much).
+export const MAX_TEXT_BYTES=20*1024*1024;
+export class TooLong extends Error{}
 export async function fitIntoStudy(texts:NewText[],existing:Held[],removed:Held[]=[]):Promise<{texts:NewText[];already:number;renamed:number;back:number}>{
+ const encoder=new TextEncoder(),long=texts.filter(text=>encoder.encode(text.text).length>MAX_TEXT_BYTES);
+ if(long.length)throw new TooLong(`${long.length===1?`The text “${long[0].name}” is`:`${long.length} texts (the first: “${long[0].name}”) are`} larger than 20 MB, the limit for one document. Split ${long.length===1?'it':'them'} into smaller texts, then add the ${long.length===1?'text':'texts'} again. Nothing was added.`);
  const held=new Map<string,Held[]>();
  for(const doc of [...existing,...removed.map(doc=>({...doc,removedAt:doc.removedAt||'removed'}))]){const key=fold(doc.name),list=held.get(key);if(list)list.push(doc);else held.set(key,[doc]);}
  // A new name avoids the names in the study and the names of the other new texts.
