@@ -911,7 +911,7 @@ function Detail({ s, w, replicates, downloads }: { s: FieldSummary; w: Words; re
               />
             ) : s.mean !== null ? (
               <>
-                <Tile k="Mean" v={num(s.mean)} sub={s.ci ? <CiLines ci={s.ci} f={(x) => num(x)} /> : 'no interval below 10'} />
+                <Tile k="Mean" v={num(s.mean)} sub={s.ci ? <CiLines ci={s.ci} f={(x) => num(x)} /> : undefined} />
                 <Tile k="Median" v={s.median === null ? '—' : scaleLabel(s.median)} sub={s.min !== null && s.max !== null ? `range ${scaleLabel(s.min)} to ${scaleLabel(s.max)}` : undefined} />
                 <Tile k="Standard deviation" v={num(s.sd)} />
                 {s.sides && (

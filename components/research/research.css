@@ -179,7 +179,7 @@
 .research-compare{display:inline-block;max-width:220px;padding:2px 8px;border-radius:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
 .research-compare.match{background:#e6f5ed;color:#1f6740}
 .research-compare.differ{background:#fff0ed;color:#a33f2b}
-.research-key-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0;font-size:14px;line-height:1.5}
+.research-key-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0;font-size:14px;line-height:1.5}.research-key-line .provider-key-status{margin-top:0}
 .research-key-line .key-set{color:#267348}
 .research-key-line .key-missing{color:#a5501f}
 
@@ -524,3 +524,5 @@
 .sum-notice { font-size: 14px; line-height: 1.5; color: #6b4a12; background: #fff8e8; border: 1px solid #f0dcae; border-radius: 8px; padding: 10px 14px; }
 .sum-empty strong { display: block; color: var(--ink); }
 @media (max-width: 720px) { .sum-time-caption { margin-left: -38px; } }
+/* Phones: the research table (check box, document, status, answer, run) fits the screen without scrolling sideways. */
+@media(max-width:600px){.results:has(.research-check-cell) :is(th,td){padding-left:4px;padding-right:4px}.results:has(.research-check-cell) .status{font-size:11px;padding-left:5px;padding-right:5px}}
