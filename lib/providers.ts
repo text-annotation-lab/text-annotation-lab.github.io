@@ -10,7 +10,7 @@ export function batchUnavailable(provider:Provider):string{return provider==='op
 // Stable order by standard text input/output rates, checked November 15, 2026.
 // Equal rates retain an explicit order; capability does not determine price order.
 export const PROVIDERS = {
- openrouter: {label:'OpenRouter',models:['openai/gpt-6-luna','anthropic/claude-haiku-5.5','google/gemini-3.1-flash-lite','openai/gpt-6.1-sol','anthropic/claude-sonnet-5.5','google/gemini-4-hydrogen'],efforts:['low','medium','high'],keyUrl:'https://openrouter.ai/settings/keys'},
+ openrouter: {label:'OpenRouter',models:['openai/gpt-6-luna','anthropic/claude-haiku-5.5','google/gemini-3.1-flash-lite','openai/gpt-6.2-sol','anthropic/claude-sonnet-5.5','google/gemini-4-hydrogen','openai/gpt-6.2-astra','anthropic/claude-fable-5.2','google/gemini-4-carbon'],efforts:['low','medium','high'],keyUrl:'https://openrouter.ai/settings/keys'},
  openai: {label:'OpenAI (ChatGPT)',models:['gpt-6-luna','gpt-5.6-luna','gpt-6.1-terra','gpt-6.1-sol','gpt-6-sol','gpt-5.6-terra','gpt-5.6-sol','gpt-6-astra'],efforts:['low','medium','high'],keyUrl:'https://platform.openai.com/api-keys'},
  gemini: {label:'Google (Gemini)',models:['gemini-2.5-flash-lite','gemini-3.1-flash-lite','gemini-3.5-flash-lite','gemini-3.8-flash','gemini-3.6-flash','gemini-4-hydrogen','gemini-4-argon','gemini-4-carbon','gemini-3.1-pro-preview'],efforts:['minimal','low','medium','high'],keyUrl:'https://aistudio.google.com/api-keys'},
  anthropic: {label:'Anthropic (Claude)',models:['claude-haiku-5-5','claude-haiku-4-5-20251001','claude-sonnet-5-5','claude-opus-5-5','claude-fable-5-2'],efforts:['low','medium','high','xhigh','max'],keyUrl:'https://platform.claude.com/settings/keys'}
@@ -92,7 +92,7 @@ export function effortChoices(provider:Provider,model:string,known?:string[],cur
 }
 
 export function modelLabel(model:string):string{
- if(model.includes('/')){const [vendor,id]=model.split('/');if(vendor!=='google'&&vendor!=='anthropic'&&vendor!=='openai')return model;return (vendor==='google'?'Google · ':vendor==='anthropic'?'Anthropic · ':'OpenAI · ')+modelLabel(id.replace(/claude-(haiku|sonnet)-(\d+)\.(\d+)/,'claude-$1-$2-$3'));}
+ if(model.includes('/')){const [vendor,id]=model.split('/');if(vendor!=='google'&&vendor!=='anthropic'&&vendor!=='openai')return model;return (vendor==='google'?'Google · ':vendor==='anthropic'?'Anthropic · ':'OpenAI · ')+modelLabel(id.replace(/claude-(haiku|sonnet|opus|fable)-(\d+)\.(\d+)/,'claude-$1-$2-$3'));}
  const labels:Record<string,string>={'gemini-4-carbon':'Gemini 4 Carbon','gemini-4-argon':'Gemini 4 Argon','gemini-4-hydrogen':'Gemini 4 Hydrogen','gemini-3.6-flash':'Gemini 3.6 Flash','gemini-3.5-flash-lite':'Gemini 3.5 Flash-Lite','gemini-3.1-flash-lite':'Gemini 3.1 Flash-Lite','gemini-3.8-flash':'Gemini 3.8 Flash','gemini-3.5-flash':'Gemini 3.5 Flash','gemini-3.1-pro-preview':'Gemini 3.1 Pro (preview)','gemini-2.5-flash-lite':'Gemini 2.5 Flash-Lite','gemini-2.5-flash':'Gemini 2.5 Flash','gemini-2.5-pro':'Gemini 2.5 Pro'};
  if(model.startsWith('gpt-'))return model.replace(/^gpt-/,'GPT-').replace(/-(luna|terra|sol|astra)$/,(_,name:string)=>' '+name[0].toUpperCase()+name.slice(1));
  if(model==='claude-haiku-4-5-20251001')return 'Claude Haiku 4.5';

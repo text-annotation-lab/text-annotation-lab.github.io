@@ -1,4 +1,4 @@
-import {priceFor,type OwnPrice,type Provider,type Price,PRICE_DATE,SOURCES} from './pricing';
+import {priceFor,type OwnPrice,type Provider,type Price,PRICE_DATE,OPENROUTER_PRICE_DATE,SOURCES} from './pricing';
 import {cacheSupport} from '../request-settings';
 export type Range={low:number;high:number};
 export type Input={tokens:Range;pdf?:boolean;requestTokens?:number};
@@ -64,7 +64,7 @@ export function estimate(c:EstimateConfig,inputs:Input[],samples:Sample[]=[]):Es
  const price=c.rates||priceFor(c.provider,c.model,c.date),assumption=outputAssumption(c),notes:string[]=[];
  const valid=samples.filter(s=>finite(s.output)&&s.output<=1000000).slice(-40);
  const answer=calibrated(valid.flatMap(s=>finite(s.visible)?[s.visible]:[]),assumption.tokens);
- const result:Estimate={count:inputs.length,total:zero(),input:zero(),visible:zero(),reasoning:zero(),inputCost:zero(),visibleCost:zero(),reasoningCost:zero(),searchCost:zero(),notes,samples:valid.length,outputAssumption:assumption.label,priceDate:c.provider==='openrouter'?'2026-10-31':PRICE_DATE,source:SOURCES[c.provider]};
+ const result:Estimate={count:inputs.length,total:zero(),input:zero(),visible:zero(),reasoning:zero(),inputCost:zero(),visibleCost:zero(),reasoningCost:zero(),searchCost:zero(),notes,samples:valid.length,outputAssumption:assumption.label,priceDate:c.provider==='openrouter'?OPENROUTER_PRICE_DATE:PRICE_DATE,source:SOURCES[c.provider]};
  if(!price){result.unknown='No verified price is available for this model. Choose a model with listed rates.';return result;}
  if(!inputs.length){result.unknown='Add texts or items to the queue to estimate their cost.';return result;}
  if(!c.prompt.trim()){result.unknown='Add your annotation instructions to estimate output length.';return result;}
