@@ -155,7 +155,7 @@ assert.equal(runs.runRequestSettings([{id:'a',status:'done',...setup,runNo:1}],1
  const dialog=nodes(view.tree()).find(n=>typeof n.type==='function'&&n.type.name==='RunSettings');assert(dialog,'The settings window opens');
  current=instance();const settings=dialog.type(dialog.props);
  const words=text(settings);
- for(const part of ['Run #1 settings · Pilot','OpenAI (ChatGPT) / gpt-6-luna','Prompt caching','Annotations per text','the model’s own','12,000 (the Lab’s own limit)','All texts (2)','1 request sent again','Classify tone','https://api.openai.com/v1/responses','It was kept when the run was made.','No API key is part of it.'])assert(words.includes(part),part);
+ for(const part of ['Run #1 settings · Pilot','OpenAI (ChatGPT) / gpt-6-luna','Prompt caching','Annotations per text','the model’s own','16,000 (the Lab’s own limit)','All texts (2)','1 request sent again','Classify tone','https://api.openai.com/v1/responses','It was kept when the run was made.','No API key is part of it.'])assert(words.includes(part),part);
  assert(text(settings).includes('"instructions": "Classify tone"'),'The shared request body is shown as JSON');
  // Model knowledge: the same columns but the label and the scope; failed subjects are retried in Model knowledge.
  const kview=mount(panel.RunsPanel,props);kview.tree();

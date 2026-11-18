@@ -59,7 +59,7 @@ export const marksCache=(provider:string,model:string,request?:RequestSettings)=
 
 // The most output tokens the Lab allows a reply when no other limit is set (reasoning included). Gemini 4
 // models think at length and get more room.
-export const defaultOutputLimit=(provider:string,model:string)=>provider==='gemini'&&model.startsWith('gemini-4-')?32768:12000;
+export const defaultOutputLimit=(provider:string,model:string)=>provider==='gemini'&&model.startsWith('gemini-4-')?32768:16000;
 // A model with a fixed reasoning budget (Claude Haiku 4.5 and earlier) needs a limit above that budget.
 export const outputFloor=(provider:string,model:string,effort?:string)=>provider==='anthropic'&&budgetedClaude(model)&&/^\d+$/.test(effort||'')?Number(effort)+1:MIN_OUTPUT_TOKENS;
 // Whether a model takes a temperature. Claude models from Opus 4.7 on reject one, and a Claude model that

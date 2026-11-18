@@ -138,7 +138,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  page().onValueChange('runs');await h.flush();assert.equal(page().value,'runs');
  const kept=JSON.stringify(h.latest().docs.map(({file,...doc})=>doc));
  toggle().onChange(false);await h.flush();
- assert.equal(page().value,'workspace');assert.deepEqual(tabs(),STUDENT_TABS);assert.deepEqual(parts(),[]);assert.equal(h.all(n=>n.type==='DetailSteps').length,0);assert.equal(h.find(n=>n.props?.id==='annotation-detail').props.onKeyDown,undefined);assert.equal(h.all(n=>n.props?.revision).length,1,'The standard Lab keeps its cost calculator under the run buttons');assert.equal(JSON.parse(h.find(n=>n.props?.revision).props.revision).at(-1),0);assert.deepEqual(heads(),['Document','Status','Score / category']);
+ assert.equal(page().value,'workspace');assert.deepEqual(tabs(),STUDENT_TABS);assert.deepEqual(parts(),[]);assert.equal(h.all(n=>n.type==='DetailSteps').length,1,'Previous and Next in both modes');assert.equal(typeof h.find(n=>n.props?.id==='annotation-detail').props.onKeyDown,'function');assert.equal(h.all(n=>n.type==='ResearchDetail').length,0);assert.equal(h.all(n=>n.props?.revision).length,1,'The standard Lab keeps its cost calculator under the run buttons');assert.equal(JSON.parse(h.find(n=>n.props?.revision).props.revision).at(-1),0);assert.deepEqual(heads(),['Document','Status','Score / category']);
  assert.equal(JSON.stringify(h.latest().docs.map(({file,...doc})=>doc)),kept);assert.deepEqual(h.latest().columns,[{name:'tone_human',role:'label'}],'Labels wait for the next visit to research mode');
  // No key is ever part of what is saved.
  assert(!JSON.stringify(h.writes.map(write=>({...write,docs:write.docs?.map(({file,...doc})=>doc)}))).includes('sk-workflow-test'));assert(h.writes.every(write=>!Object.hasOwn(write,'key')&&!Object.hasOwn(write,'keyring')));
@@ -236,18 +236,18 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   // The waits are real time here: a quarter of a second after the provider's own.
   const until=async(h,ready)=>{for(let n=0;n<200&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
   const controls=h=>({select:()=>h.find(n=>n.props?.id==='annotation-concurrency').props,choices:()=>h.find(n=>n.props?.id==='annotation-concurrency').props.children.map(option=>option.props.value),summary:()=>h.text(h.button('Processing options')),help:()=>h.text(h.find(n=>n.props?.id==='parallel-help')),statuses:()=>h.latest().docs.map(doc=>doc.status)});
-  // The standard Lab: 1, 2, and 4; a study set to more runs one at a time, and a rate limit stops the run as before.
+  // The standard Lab: 1, 2, and 4; a study set to more runs one at a time, and a rate limit is waited out as in research mode.
   let replies=[limited];
   const plain=harness(study(),async()=>{},async()=>(replies.shift()||fine)());await plain.flush();await plain.configure();
   let c=controls(plain);plain.button('Processing options').props.onClick();await plain.flush();
   assert.deepEqual(c.choices(),[1,2,4]);assert.equal(c.select().value,1);assert(c.summary().includes('Instant · one at a time'));assert.throws(()=>c.help(),'No fixed line under the setting');{const info=plain.find(n=>n.props?.topic==='parallel').props.text;assert(info[0].startsWith('Run all can annotate several texts at once.'));assert(!info[0].includes('128'));}
-  await plain.button('Run all').props.onClick();await plain.flush();
-  assert.equal(plain.calls.length,1,'The standard Lab does not send a refused request again');assert.deepEqual(c.statuses(),['error','pending','pending']);assert.equal(plain.latest().docs[0].concurrency,1);
+  plain.button('Run all').props.onClick();await plain.flush();await until(plain,()=>c.statuses().every(status=>status==='done'));
+  assert.equal(plain.calls.length,4,'The refused request is sent again after the wait');assert.equal(plain.latest().docs[0].concurrency,1);
   assert.equal(plain.latest().concurrency,128,'The study keeps its own setting');
   // Research mode: up to 128, and the study's setting applies.
   plain.find(n=>n.type==='ModeSwitch').props.onChange(true);await plain.flush();
   assert.deepEqual(c.choices(),[1,2,4,8,16,32,64,128]);assert.equal(c.select().value,128);assert(c.summary().includes('Instant · 128 at a time'));
-  assert.throws(()=>c.help(),'Research mode has no fixed line under the setting');assert.equal(plain.find(n=>n.props?.topic==='parallel').type,'SettingInfo','What it does is behind its ⓘ');assert.equal(plain.find(n=>n.props?.topic==='parallel').props.text,undefined,'with research mode’s text');
+  assert.throws(()=>c.help(),'Research mode has no fixed line under the setting');assert.throws(()=>plain.find(n=>n.props?.topic==='parallel'),'nor an ⓘ: researchers know what parallel requests are');
   c.select().onChange({target:{value:'16'}});await plain.flush();assert.equal(plain.latest().concurrency,16);assert.equal(c.select().value,16);
   c.select().onChange({target:{value:'100'}});await plain.flush();assert.equal(plain.latest().concurrency,1,'Only the offered numbers are taken');
   c.select().onChange({target:{value:'64'}});await plain.flush();
@@ -343,11 +343,11 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   const next=harness(five(),async()=>{},async()=>refusal());
   await research(next);next.button('Annotate next').props.onClick();await until(next,()=>statuses(next)[0]==='error');await until(next,ended(next));
   assert.equal(next.calls.length,1);assert(notices(next).includes('The request failed. “Remaining” sends it again.'));
-  // The standard Lab stops at the first failure, whatever the reply carries.
+  // The standard Lab does the same: it stops once the first three requests all failed the same way.
   const first=harness(five(),async()=>{},async()=>refusal());await first.flush();first.find(n=>n.props?.id==='key').props.onChange({target:{value:'sk-first'}});await first.flush();
   await first.button('Run all').props.onClick();await first.flush();
-  assert.equal(first.calls.length,1);assert.deepEqual(statuses(first),['error','pending','pending','pending','pending']);assert(!('shared' in first.latest().docs[0]));
-  assert(notices(first).includes('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.'));
+  assert.equal(first.calls.length,3);assert.deepEqual(statuses(first),['error','error','error','pending','pending']);assert(!('shared' in first.latest().docs[0]));
+  assert(notices(first).some(text=>text.startsWith('Stopped: the first 3 requests all failed the same way')));
  }
 
  // The runs table: the run buttons name what each start covered, a run can be named, and "Retry failed" sends the

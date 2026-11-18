@@ -78,7 +78,7 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   let sends=0;const paced=harness(three(),async()=>++sends===1?limited():Response.json({score:'ONE',explanation:'Fine',modelReported:'gpt-6-luna-2026-10-01',stopReason:'completed',output:'{"score":"ONE"}'}));paced.props.research=true;await paced.flush();
   paced.button('Processing options').props.onClick();await paced.flush();
   assert.equal(select(paced).value,128);assert.deepEqual(select(paced).children.map(option=>option.props.value),[1,2,4,8,16,32,64,128]);assert(paced.text(paced.button('Processing options')).includes('Instant · 128 at a time'));
-  assert.throws(()=>help(paced),'Research mode has no fixed line under the setting');assert(paced.find(n=>n.props?.topic==='parallel'),'What it does is behind its ⓘ');
+  assert.throws(()=>help(paced),'Research mode has no fixed line under the setting');assert.throws(()=>paced.find(n=>n.props?.topic==='parallel'),'nor an ⓘ: researchers know what parallel requests are');
   paced.button('Run all').props.onClick();await paced.flush();assert.deepEqual(paced.latest().items.map(item=>item.status),['running','done','done']);
   await until(paced,()=>paced.latest().items.every(item=>item.status==='done'));
   assert.equal(paced.requests.length,4);assert(paced.latest().items.every(item=>item.concurrency===128&&item.error===undefined));
@@ -91,10 +91,12 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   // A web search already made is not made, and charged, again.
   const searched=harness({...three(),webSearch:true,items:subjects.slice(0,1)},async()=>limited({research:{text:'Notes',sources:[],queries:[],searchedAt:'2026-11-16'},webUsed:true}));searched.props.research=true;await searched.flush();
   await searched.button('Run all').props.onClick();await searched.flush();assert.equal(searched.requests.length,1);assert.equal(searched.latest().items[0].status,'error');
-  // The standard Lab: 1, 2, and 4; the study's higher number runs one at a time, and nothing is sent again.
-  const standard=harness(three(),async()=>limited());await standard.flush();standard.button('Processing options').props.onClick();await standard.flush();
-  assert.equal(select(standard).value,1);assert.deepEqual(select(standard).children.map(option=>option.props.value),[1,2,4]);assert(help(standard).startsWith('Run all can annotate several subjects at once.'));
-  await standard.button('Run all').props.onClick();await standard.flush();assert.equal(standard.requests.length,1);assert.deepEqual(standard.latest().items.map(item=>item.status),['error','pending','pending']);assert.equal(standard.latest().concurrency,128);
+  // The standard Lab: 1, 2, and 4, with what it does behind an ⓘ; the study's higher number runs one at a time, and
+  // a rate limit is waited out as in research mode.
+  let standardSends=0;const standard=harness(three(),async()=>++standardSends===1?limited():Response.json({score:'ONE',explanation:'Fine'}));await standard.flush();standard.button('Processing options').props.onClick();await standard.flush();
+  assert.equal(select(standard).value,1);assert.deepEqual(select(standard).children.map(option=>option.props.value),[1,2,4]);assert.throws(()=>help(standard));assert(standard.find(n=>n.props?.topic==='parallel').props.text[0].startsWith('Run all can annotate several subjects at once.'));
+  standard.button('Run all').props.onClick();await standard.flush();await until(standard,()=>standard.latest().items.every(item=>item.status==='done'));
+  assert.equal(standard.requests.length,4);assert(standard.latest().items.every(item=>item.concurrency===1));assert.equal(standard.latest().concurrency,128);
   // The standard Lab keeps no record of a request.
   assert.equal(standard.requests[0].options.body.get('record'),null);assert.equal(standard.latest().requests,undefined);assert(standard.latest().items.every(item=>['requestId','modelReported','stopReason','output','lab'].every(key=>!(key in item))));
   // When a subject fails, research mode marks it and carries on. A failure every request would meet (the reply
@@ -124,12 +126,13 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   // "Annotate next" sends one request and says that it failed.
   const next=harness(five(),async()=>refusal());next.props.research=true;await next.flush();
   await next.button('Annotate next').props.onClick();await next.flush();assert.equal(next.requests.length,1);said(next,'The request failed. “Queue failed items for retry” makes it ready to run again.');
-  // The standard Lab stops at the first failure, whatever the reply carries.
+  // The standard Lab does the same: it stops once the first three requests all failed the same way. Its details of a
+  // subject have Previous and Next too, without the technical details of research mode.
   const first=harness(five(),async()=>refusal());await first.flush();
   await first.button('Run all').props.onClick();await first.flush();
-  assert.equal(first.requests.length,1);assert.deepEqual(first.latest().items.map(item=>item.status),['error','pending','pending','pending','pending']);assert(!('shared' in first.latest().items[0]));
-  first.button('Subject 0').props.onClick();await first.flush();assert.throws(()=>first.find(n=>n.type==='DetailSteps'));assert.throws(()=>first.find(n=>n.type==='ResearchDetail'));assert.equal(first.find(n=>n.props?.id==='knowledge-detail').props.onKeyDown,undefined);
-  said(first,'Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.');
+  assert.equal(first.requests.length,3);assert.deepEqual(first.latest().items.map(item=>item.status),['error','error','error','pending','pending']);assert(!('shared' in first.latest().items[0]));
+  first.button('Subject 0').props.onClick();await first.flush();assert.deepEqual([first.find(n=>n.type==='DetailSteps').props.index,first.find(n=>n.type==='DetailSteps').props.total],[0,5]);assert.throws(()=>first.find(n=>n.type==='ResearchDetail'));assert.equal(typeof first.find(n=>n.props?.id==='knowledge-detail').props.onKeyDown,'function');
+  said(first,'Stopped: the first 3 requests all failed the same way, which points to the settings or the account rather than the subjects. Requests under way will finish, and completed results are kept. See the error of a failed subject before running again.');
  }
  // Research mode, annotations per subject: each subject is sent several times and its answers are combined;
  // Run all makes the missing ones. Web search makes one annotation per subject. The standard Lab makes one.
@@ -214,9 +217,11 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   await refused.button('Submit batch').props.onClick();await refused.flush();
   assert.equal(refused.latest().batchJob,null);assert.deepEqual(refused.latest().items.map(item=>[item.status,item.annotations?.length]),[['done',2],['pending',undefined]]);
  }
- // An error prevents new starts while already active results are still collected.
+ // A failed subject is marked and the run carries on; results already under way are collected.
  const errorReleases=[];const parallelError=harness({prompt:'Classify',concurrency:2,items:subjects},()=>new Promise(resolve=>errorReleases.push(resolve)));await parallelError.flush();const errorRun=parallelError.button('Run all').props.onClick();await parallelError.flush();assert.equal(parallelError.requests.length,2);
- errorReleases[0](Response.json({error:'Quota'},{status:429}));await parallelError.flush();assert.equal(parallelError.requests.length,2);assert.equal(parallelError.find(n=>n.type==='setup').props.locked,true);errorReleases[1](Response.json({score:'KEPT',explanation:'Completed in flight'}));await errorRun;await parallelError.flush();assert.equal(parallelError.latest().items[0].status,'error');assert.equal(parallelError.latest().items[1].score,'KEPT');assert.equal(parallelError.requests.length,2);
+ errorReleases[0](Response.json({error:'Quota'},{status:429}));await parallelError.flush();assert.equal(parallelError.requests.length,3);assert.equal(parallelError.find(n=>n.type==='setup').props.locked,true);
+ for(let i=1;i<subjects.length;i++){errorReleases[i](Response.json({score:i===1?'KEPT':'ONE',explanation:'Completed'}));await parallelError.flush();}
+ await errorRun;await parallelError.flush();assert.equal(parallelError.latest().items[0].status,'error');assert.equal(parallelError.latest().items[1].score,'KEPT');assert.equal(parallelError.requests.length,subjects.length);assert(parallelError.latest().items.slice(1).every(item=>item.status==='done'));
  const ExcelJS=require('exceljs'),buffer=await load('lib/export-results.ts').createResultsWorkbook([{name:'Subject',fields:[...fields,{heading:'Code',value:'001'},{heading:'Formula',value:'=1+1'}],status:'done',score:'INSUFFICIENT_KNOWLEDGE',explanation:'Unknown',prompt:'Classify',provider:'openai',model:'gpt-6-luna',effort:'medium'}],{workspace:'model-knowledge',prompt:'Classify',model:'gpt-6-luna',effort:'medium'});const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(buffer);const results=workbook.getWorksheet('Results');assert.equal(results.getCell('A1').value,'Title');assert.equal(results.getCell('D2').value,'001');assert.equal(results.getCell('E2').value,'=1+1');assert.equal(results.getCell('E2').type,ExcelJS.ValueType.String);assert.equal(results.getCell('F2').value,'INSUFFICIENT_KNOWLEDGE');const rows=[];workbook.getWorksheet('Study settings').eachRow(row=>rows.push(row.values));assert(rows.some(row=>row.includes(knowledge.KNOWLEDGE_INSTRUCTIONS)));
  // The settings sheet contains the recorded study, not general teaching material.
  const settingsSheet=workbook.getWorksheet('Study settings');

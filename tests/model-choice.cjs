@@ -68,7 +68,7 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
  const doc={filename:'a.txt',text:'A document.'},body=(provider,model,effort,extra={})=>frame.providerBody({provider,model,effort,prompt:'P',schemaPrompt:'P',answerFields:[],...extra},doc);
  // OpenAI: "default" sends no reasoning setting; an earlier model takes no cache mode.
  let sent=body('openai','gpt-5.5','default');
- assert(!('reasoning' in sent));assert(!('prompt_cache_options' in sent));assert.equal(sent.instructions,undefined);assert.equal(sent.input[0].content[0].text,'P\n\n<text>\nA document.\n</text>');assert.equal(sent.model,'gpt-5.5');assert.equal(sent.max_output_tokens,12000);
+ assert(!('reasoning' in sent));assert(!('prompt_cache_options' in sent));assert.equal(sent.instructions,undefined);assert.equal(sent.input[0].content[0].text,'P\n\n<text>\nA document.\n</text>');assert.equal(sent.model,'gpt-5.5');assert.equal(sent.max_output_tokens,16000);
  sent=body('openai','gpt-5.5','high');assert.deepEqual(sent.reasoning,{effort:'high'});
  sent=body('openai','gpt-5.5','default',{request:{summary:true}});assert.deepEqual(sent.reasoning,{summary:'auto'},'A summary can be asked for without naming an effort');
  sent=body('openai','gpt-4.1','default',{request:{summary:true,temperature:0.2,cache:true}});assert(!('reasoning' in sent),'No summary from a model without reasoning');assert.equal(sent.temperature,0.2);assert.equal(sent.input[0].content.length,1,'No cache mark for a model that caches by itself');assert(!JSON.stringify(sent).includes('prompt_cache_breakpoint'));assert(!('prompt_cache_options' in sent));

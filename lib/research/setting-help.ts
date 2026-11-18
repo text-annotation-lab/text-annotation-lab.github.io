@@ -1,5 +1,7 @@
-// Research mode: what each setting does. The settings column shows these behind an ⓘ beside the setting, and the
-// research About page lists them all under “Settings explained”, from this one list. What depends on the current
+// What each setting does. The research About page lists them all under “Settings explained”, from this one list.
+// An ⓘ beside a setting shows its text only where the Lab's own behavior is not obvious; settings researchers know
+// from the providers' APIs (temperature, output limit, reasoning summary, OpenAI's logs, system prompt, parallel
+// requests) have none in research mode. What depends on the current
 // input (a prompt's length for caching, a limit of the chosen model, a warning) stays beside the setting itself.
 import {PRICE_DATE} from '@/lib/cost-estimate/pricing';
 import {PLAIN_FIELD} from '@/lib/answer-types';

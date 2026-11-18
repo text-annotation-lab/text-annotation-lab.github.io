@@ -10,7 +10,7 @@ const settings=load('lib/providers.ts');
 for(const model of settings.PROVIDERS.gemini.models){
  const effort=settings.defaultEffort('gemini',model);assert(settings.reasoningOptions('gemini',model).includes(effort));
  r=await route.POST(request('gemini',model,new File(['sample'],'test.txt'),effort));assert.equal(r.status,200,model);
- const config=JSON.parse(calls.at(-1).options.body).generationConfig;assert.equal(config.maxOutputTokens,model.startsWith('gemini-4-')?32768:12000);assert.equal(config.responseMimeType,'application/json');
+ const config=JSON.parse(calls.at(-1).options.body).generationConfig;assert.equal(config.maxOutputTokens,model.startsWith('gemini-4-')?32768:16000);assert.equal(config.responseMimeType,'application/json');
  if(model.startsWith('gemini-2.5-')){assert.equal(config.thinkingConfig.thinkingBudget,effort==='off'?0:-1);assert.equal(config.thinkingConfig.thinkingLevel,undefined);}else{assert.equal(config.thinkingConfig.thinkingLevel,effort.toUpperCase());assert.equal(config.thinkingConfig.thinkingBudget,undefined);}
 }
 assert.equal(settings.modelAccessLabel('gemini','gemini-3.1-flash-lite'),'Free API tier');
