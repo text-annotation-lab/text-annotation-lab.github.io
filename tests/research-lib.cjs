@@ -155,7 +155,7 @@ assert.equal(second.eligible,32);assert(second.ids.every(id=>!drawn.ids.includes
 assert.equal(sample.drawStratifiedSample(pool,sampleColumns,{...options,exclude:{column:'party',value:'r'},strata:[]}).eligible,30);
 assert.equal(sample.drawStratifiedSample(pool,sampleColumns,{...options,size:500,strata:[]}).ids.length,40,'Never more than there are');
 const record=sample.sampleRecord(options,drawn,'2026-11-15');
-assert.equal(sample.sampleNote(record),'Sample sample = validation (2026-11-15): 8 of 40 texts drawn at random within party strata (proportional allocation, at least one per stratum); seed 7 (sampling method 1).');
+assert.equal(sample.sampleNote(record),'Sample sample = validation (2026-11-15): 8 of 40 texts drawn at random within party strata (proportional allocation, at least one per stratum); seed 7 (sampling method 2).');
 assert.equal(sample.recordSample([record],{...record,seed:9}).length,1);assert.equal(sample.recordSample([record],{...record,value:'test'}).length,2);
 assert.deepEqual(sample.cleanSamples([record,{column:'',value:'x'},null,'x']),[record]);
 
@@ -213,7 +213,7 @@ assert.equal(agree.autoLevel(numbers),'ordinal');assert.deepEqual(agree.disagree
  const open=pair(typedRows('ordinal',[],['1','2','3'],['1','2','2']));assert.deepEqual([open.scaleSeen,open.range,open.level],[true,[1,3],'ordinal']);
  // Model knowledge may abstain: the abstention is left out, and the field stays a scale.
  const abstained=pair(typedRows('ordinal',['1','2','3'],['1','INSUFFICIENT_KNOWLEDGE','3','2'],['1','2','3','2']));
- assert.equal(abstained.numeric,true);const abstainStats=stat(abstained);assert.equal(abstainStats.n,3);assert.equal(abstainStats.level,'ordinal');assert.deepEqual(abstainStats.leftOut.values,['insufficient_knowledge']);
+ assert.equal(abstained.numeric,true);const abstainStats=stat(abstained);assert.equal(abstainStats.n,3);assert.equal(abstainStats.level,'ordinal');assert.deepEqual([abstainStats.leftOut.values,abstainStats.leftOut.abstained],[[],{both:0,one:1}]);assert.equal(agree.leftOutNote(abstainStats,'text','marker'),'1 text was left out because one model answered INSUFFICIENT_KNOWLEDGE; agreement is computed on the texts both judged.');
  // Categories: a label that is none of the field's values is left out and named as such.
  const cats=pair(typedRows('category',['positive','neutral','negative'],['positive','neutral','negative','positive'],['Positive','neutral','mixed','negative']));
  assert.deepEqual([cats.numeric,cats.level,cats.leftOut],[false,'nominal','value']);assert.deepEqual(cats.allowed,['positive','neutral','negative']);assert.equal(cats.basis,'Categories: the field’s 3 allowed values.');

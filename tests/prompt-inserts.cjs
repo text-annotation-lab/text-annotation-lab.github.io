@@ -305,12 +305,14 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  const pack=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:true});
  const corpus=readCsv(await read(pack,'data/corpus.csv'));
  assert.deepEqual(corpus[0],['doc_id','text','n_characters','Year','tone_human','Outlet name','meta_text','file'],'No source: no request named the file, and it only repeats the doc_id');
- // Every label and metadata column unchecked: the corpus keeps the metadata columns the placeholders read (with the
- // values the run sent), and never the column of human labels, though the prompt names it.
+ // Every label and metadata column unchecked: corpus.csv leaves them all out, even those the placeholders read, and
+ // the README names the ones the script needs. Year alone checked: it comes with the values the run sent.
  const unchecked=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:false,columns:[]});
  const bare=readCsv(await read(unchecked,'data/corpus.csv'));
- assert.deepEqual(bare[0],['doc_id','text','n_characters','Year','Outlet name','meta_text','file'],'No column of human labels in corpus.csv');
- assert.equal(bare[2][3],'1890','Text 2: the year the run sent');
+ assert.deepEqual(bare[0],['doc_id','text','n_characters','file'],'A left-out column stays out of corpus.csv');
+ assert.match(await read(unchecked,'README.md'),/leaves out the columns `Year`, `Outlet name`, and `meta_text`, which the prompt’s placeholders take their values from; add them to the file to run the script/);
+ const yearOnly=readCsv(await read(await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:true,explanations:true,logs:false,columns:['Year']}),'data/corpus.csv'));
+ assert.deepEqual(yearOnly[0],['doc_id','text','n_characters','Year','file']);assert.equal(yearOnly[2][3],'1890','Text 2: the year the run sent');
  assert(!(await read(unchecked,'results/results.csv')).includes('tone_human'),'Nor in results.csv');
  // The logs: each request as it was sent, with the values kept with its result.
  const logged=jsonLines(await read(pack,'logs/requests.jsonl'));assert.equal(logged.length,4);

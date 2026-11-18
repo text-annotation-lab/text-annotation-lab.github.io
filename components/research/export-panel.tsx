@@ -42,11 +42,12 @@ const painted=()=>new Promise<void>(resolve=>{
  const done=()=>{clearTimeout(timer);resolve();},timer=setTimeout(done,100);
  requestAnimationFrame(()=>setTimeout(done,0));
 });
-async function build(kind:Kind,data:Dataset['kind'],label:string,choices:Choices,work:(progress:(step:string)=>Promise<void>)=>Promise<void>){
+// work: makes and downloads the file; what it returns is said on the page after the download (what the file lacks).
+async function build(kind:Kind,data:Dataset['kind'],label:string,choices:Choices,work:(progress:(step:string)=>Promise<void>)=>Promise<string|void>){
  if(building.job)return;
  const step=async(text:string)=>{show({job:{kind,data,step:text,choices},error:''});await painted();};
  await step('Preparing');
- try{await work(step);show({job:null,error:''});}
+ try{const note=await work(step);show({job:null,error:note?`The ${label} was downloaded, but not in full. ${note}`:''});}
  catch(error){show({job:null,error:`The ${label} could not be made${error instanceof Error&&error.message?`: ${error.message.replace(/\.$/,'')}`:''}. Your results are still here; please try again.`});}
 }
 
@@ -88,6 +89,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
  const repository=()=>build('research',dataset.kind,'research repository',choices,async progress=>{
   const {buildResearchRepository,zipPackage}=await import('@/lib/research/export-packages'),pack=await buildResearchRepository(context(progress),{logs:researchLogs});
   downloadBytes(pack.name+'.zip',await zipPackage(pack,progress) as BlobPart,'application/zip');
+  return pack.warning;
  });
  const supplementary=()=>run&&build('supplementary',dataset.kind,'supplementary repository',choices,async progress=>{
   const {buildSupplementary,zipPackage}=await import('@/lib/research/export-packages'),pack=await buildSupplementary(context(progress),run.number,{...options,columns:shownColumns});
@@ -124,19 +126,19 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
     <h3>Research repository</h3>
     <p className="hint">Everything, for your own archive: every run and prompt version, the {unit}s, all results, the requests and replies, and a backup of the study that can be imported again.</p>
     {option(researchLogs,setResearchLogs,'Include request and response logs')}
-    <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!dataset.rows.length} onClick={()=>{void repository();}}><Download size={16}/>{here('research')?'Building…':'Download .zip'}</Button>{stepLine('research',' (a large corpus with logs can take several minutes; keep this tab open)')}</div>
+    <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!dataset.rows.length} onClick={()=>{void repository();}} aria-label="Download research repository (.zip)"><Download size={16}/>{here('research')?'Building…':'Download .zip'}</Button>{stepLine('research',' (a large corpus with logs can take several minutes; keep this tab open)')}</div>
    </section>
    <section className="research-export-card">
     <h3>Supplementary repository</h3>
     <p className="hint">What a journal or an OSF or Zenodo deposit needs for the chosen run: a record of the settings, the prompt and output schema, the results, agreement, and a Python script that sends the requests again (with a template marking every inserted value).</p>
-    {option(options.texts,texts=>setOptions(now=>({...now,texts})),`Include the ${unit}s`,knowledge?'Off by default. The results name each subject either way; this adds every subject as the requests carried it.':'Off by default: check copyright and privacy before sharing texts publicly.')}
+    {option(options.texts,texts=>setOptions(now=>({...now,texts})),`Include the ${unit}s`,knowledge?`Off by default. The results name each subject either way; this adds every subject as the requests carried it.${offered.length?' The subjects’ other fields are chosen under “Label and metadata columns” below.':''}`:'Off by default: check copyright and privacy before sharing texts publicly.')}
     {option(options.explanations,explanations=>setOptions(now=>({...now,explanations})),'Include the model’s explanations','The explanation written before the answers. An answer field of your own that holds an explanation is always included.')}
     {option(options.logs,logs=>setOptions(now=>({...now,logs})),'Include request and response logs',`These contain the ${unit}s.`)}
     {offered.length>0&&<details className="research-export-columns"><summary>Label and metadata columns: {shownColumns.length} of {offered.length} included</summary>
-     <p className="hint">In results.csv and data/corpus.csv.</p>
+     <p className="hint">In results.csv and data/corpus.csv. A column left out stays out of both, also when the prompt’s placeholders read it (the README then says the script needs it); the logs, when included, hold the requests as sent.</p>
      {offered.map(name=><label key={name} className="research-check research-export-option"><input type="checkbox" checked={shownColumns.includes(name)} disabled={busy} onChange={()=>toggleColumn(name)}/><span>{name}</span></label>)}
     </details>}
-    <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!run} onClick={()=>{void supplementary();}}><Download size={16}/>{here('supplementary')?'Building…':'Download .zip'}</Button>{stepLine('supplementary')}</div>
+    <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!run} onClick={()=>{void supplementary();}} aria-label="Download supplementary repository (.zip)"><Download size={16}/>{here('supplementary')?'Building…':'Download .zip'}</Button>{stepLine('supplementary')}</div>
    </section>
   </div>
   {backup&&<section className="research-export-backup">

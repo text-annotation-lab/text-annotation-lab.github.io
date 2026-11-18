@@ -58,7 +58,9 @@ export function columnValues(rows:{cells?:string[]}[],index:number,limit=200):st
 // named that matched more than one of them, which the row leaves alone.
 // A row also matches a text by its doc_id (the exports' name for it; `ids`, from docIds over the study's texts in
 // their order, removed ones included). A key that is one text's doc_id and another's file name matches both, so
-// it is ambiguous rather than given to either (alpha.md exported as alpha_2 beside a file alpha_2.txt).
+// it is ambiguous rather than given to either (alpha.md exported as alpha_2 beside a file alpha_2.txt). A row that
+// names a chunk wins over the row of its source document, in either order; a source name shared by two different
+// source documents is ambiguous.
 export function matchRows(docs:CellRow[],keys:string[],ids?:Map<string,string>):{rowOf:Map<string,number>;unmatched:number[];ambiguous:number[];repeated:number[];more:Map<string,number[]>;named:Set<string>}{
  const exact=new Map<string,CellRow[]>(),loose=new Map<string,CellRow[]>(),sources=new Map<string,CellRow[]>(),byId=new Map<string,CellRow[]>();
  const push=(map:Map<string,CellRow[]>,key:string,doc:CellRow)=>{if(!key)return;const list=map.get(key);if(list)list.push(doc);else map.set(key,[doc]);};
@@ -69,8 +71,9 @@ export function matchRows(docs:CellRow[],keys:string[],ids?:Map<string,string>):
   if(doc.sourceName){push(sources,fold(doc.sourceName),doc);push(sources,fold(stem(tidy(doc.sourceName))),doc);}
  }
  const rowOf=new Map<string,number>(),unmatched:number[]=[],ambiguous:number[]=[],repeated:number[]=[],more=new Map<string,number[]>(),named=new Set<string>();
- keys.forEach((raw,row)=>{
-  const key=fold(raw);if(!key)return;
+ // What each row names: texts by name or doc_id, or the chunks of a source document by the source's name.
+ const matches=keys.map(raw=>{
+  const key=fold(raw);if(!key)return undefined;
   // Paths in a manifest ("texts/1961-Kennedy.txt") match by their file name.
   const base=key.split(/[\\/]/).pop()||key;
   let found=exact.get(key)||exact.get(base)||loose.get(fold(stem(key)))||loose.get(fold(stem(base)));
@@ -78,11 +81,26 @@ export function matchRows(docs:CellRow[],keys:string[],ids?:Map<string,string>):
   if(byDocId)found=[...new Set([...(found||[]),...byDocId])];
   let chunks=false;
   if(!found){found=sources.get(key)||sources.get(base)||sources.get(fold(stem(base)));chunks=Boolean(found);}
+  return {found,chunks};
+ });
+ // Rows that name a text (or a chunk) come first, then rows that name a source document: a chunk's own row wins over
+ // its source's row, whatever their order in the sheet, and the source's row labels its other chunks.
+ const bySource=new Set<string>();
+ const take=(row:number,chunkRows:boolean)=>{
+  const match=matches[row];if(!match)return;const {found,chunks}=match;
+  if(chunks!==chunkRows)return;
   if(!found){unmatched.push(row);return;}
   if(found.length>1&&!chunks){ambiguous.push(row);for(const doc of found)named.add(doc.id);return;}
-  if(found.some(doc=>rowOf.has(doc.id))){repeated.push(row);for(const doc of found)if(rowOf.has(doc.id))more.set(doc.id,[...(more.get(doc.id)||[]),row]);return;}
-  for(const doc of found)rowOf.set(doc.id,row);
- });
+  // A source name that two different source documents share (two files called speech.txt) is ambiguous too.
+  if(chunks&&new Set(found.map(doc=>doc.sourceId??doc.sourceName)).size>1){ambiguous.push(row);for(const doc of found)named.add(doc.id);return;}
+  const open=chunks?found.filter(doc=>!rowOf.has(doc.id)||bySource.has(doc.id)):found;
+  if(chunks&&!open.length)return;
+  if(open.some(doc=>rowOf.has(doc.id))){repeated.push(row);for(const doc of open)if(rowOf.has(doc.id))more.set(doc.id,[...(more.get(doc.id)||[]),row]);return;}
+  for(const doc of open){rowOf.set(doc.id,row);if(chunks)bySource.add(doc.id);}
+ };
+ keys.forEach((_,row)=>take(row,false));
+ keys.forEach((_,row)=>take(row,true));
+ unmatched.sort((a,b)=>a-b);ambiguous.sort((a,b)=>a-b);repeated.sort((a,b)=>a-b);
  return {rowOf,unmatched,ambiguous,repeated,more,named};
 }
 // The column that names the texts: the one whose values match the most texts.

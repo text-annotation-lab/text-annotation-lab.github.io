@@ -70,6 +70,8 @@ export interface FieldSummary {
   n: number;
   /** Annotated texts with no value for this field (e.g. a plain-text answer without the key, or written as prose). */
   missing: number;
+  /** Of `missing`: Model knowledge answers INSUFFICIENT_KNOWLEDGE (no judgment, not a category). */
+  abstained?: number;
   /**
    * Numeric fields: answers left out of the chart and the figures, with up to 5 of them as written: values that aren't
    * numbers (e.g. "NA"), and on a fixed scale (a codebook's, the study's declared one, or 0…1 for flags) numbers off
@@ -295,20 +297,24 @@ export function summarizeField(field: ComparableField, items: RunItem[], categor
   const values: string[] = [];
   // (Each value as written, for the note on values left out: "NA", not "na".)
   const written: string[] = [];
-  let missing = 0;
+  let missing = 0,
+    abstained = 0;
   for (const v of items) {
     if (v.status !== 'ok' && v.status !== 'partial') continue;
     const asIs = v.value(field.key).trim();
     const raw = normalizeLabel(asIs, field.yesNo);
     // (A missing-value marker such as "NA" on a categories field is a value if the codebook has it, else a blank.)
-    if (raw === '' || (shape.kind === 'categories' && isMissingLabel(raw) && !field.allowed.includes(raw))) missing++;
+    if (asIs.toUpperCase() === 'INSUFFICIENT_KNOWLEDGE') {
+      missing++;
+      abstained++;
+    } else if (raw === '' || (shape.kind === 'categories' && isMissingLabel(raw) && !field.allowed.includes(raw))) missing++;
     else {
       values.push(raw);
       written.push(asIs);
     }
   }
 
-  const base = { key: field.key, label: field.label, missing };
+  const base = { key: field.key, label: field.label, missing, ...(abstained ? { abstained } : {}) };
   if (shape.kind === 'categories') {
     const counts = new Map<string, number>();
     for (const x of values) counts.set(x, (counts.get(x) ?? 0) + 1);

@@ -894,7 +894,7 @@ function Detail({ s, w, replicates, downloads }: { s: FieldSummary; w: Words; re
         <div className="sum-detail-body">
           {s.kind === 'categories' ? <CategoryBars s={s} w={w} /> : <Columns s={s} w={w} />}
           <div className="sum-stats">
-            <Tile k={`${w.Many} with a value`} v={fmtInt(s.n)} sub={s.missing ? `${fmtInt(s.missing)} annotated without one` : undefined} />
+            <Tile k={`${w.Many} with a value`} v={fmtInt(s.n)} sub={s.missing ? `${fmtInt(s.missing)} annotated without one${s.abstained ? ` (${fmtInt(s.abstained)} insufficient knowledge)` : ''}` : undefined} />
             {s.yes ? (
               <Tile
                 k={s.yes.word === '1' ? 'Share of 1s' : 'Share of yes'}
