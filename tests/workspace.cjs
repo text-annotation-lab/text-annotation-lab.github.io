@@ -43,10 +43,13 @@ function harness(initial,save=async()=>{},fetcher=async()=>Response.json({score:
  deferred.get('corpus').resolve();await transition.flush();assert.equal(transitionTabs().props.value,'corpus');assert.equal(transition.window.location.hash,'#corpus-billboard');
  transitionTabs().props.onValueChange('resources');await transition.flush();deferred.get('resources').reject(new Error('Offline'));await transition.flush();assert.equal(transitionTabs().props.value,'resources','Failed loads still reach the retry view');assert.equal(transitionTabs().props['aria-busy'],undefined);
  const keepSpeed=harness({provider:'openai',model:'gpt-6-luna',effort:'medium',concurrency:4,docs:[]});await keepSpeed.flush();keepSpeed.button('Processing options').props.onClick();await keepSpeed.flush();assert.equal(keepSpeed.find(n=>n.props?.id==='annotation-concurrency').props.value,4);
- // Visits and refreshes discard a stale section URL and scroll position, not the study.
+ // A link to a section opens it (an instructor's /#about, say); an unknown section opens the Workspace. The scroll
+ // position is not restored, and the study stays.
+ const unknown=harness({docs:[]},undefined,undefined,undefined,'#nowhere');await unknown.flush();
+ assert.equal(unknown.find(n=>n.type==='Tabs').props.value,'workspace');assert.equal(unknown.window.location.hash,'#workspace');
  const reopened=harness({prompt:'Keep my prompt',docs:[]},undefined,undefined,undefined,'#about');await reopened.flush();
  const reopenedTabs=()=>reopened.find(n=>n.type==='Tabs');
- assert.equal(reopenedTabs().props.value,'workspace');assert.equal(reopened.window.location.hash,'#workspace');
+ assert.equal(reopenedTabs().props.value,'about');assert.equal(reopened.window.location.hash,'#about');
  assert.equal(reopened.window.scrollY,0);assert.equal(reopened.window.history.scrollRestoration,'manual');
  assert.equal(reopened.find(n=>n.props?.id==='prompt').props.value,'Keep my prompt');
  reopenedTabs().props.onValueChange('about');await reopened.flush();reopened.window.scrollY=700;

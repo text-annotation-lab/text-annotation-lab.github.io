@@ -4,7 +4,8 @@ import {ChartNoAxesCombined} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import type {ChartSourceRow} from '@/lib/chart-model';
 
-export type ResultsChartProps={rows:ChartSourceRow[];onInspect:(id:string)=>void;subjectLabel?:string;onSaveYears?:(years:Map<string,number|null>)=>void;onSaveGroups?:(groups:Map<string,string|null>)=>void};
+// scope: which study the chart belongs to (its name), so a scale set for a field in one study is not used in another.
+export type ResultsChartProps={rows:ChartSourceRow[];scope?:string;onInspect:(id:string)=>void;subjectLabel?:string;onSaveYears?:(years:Map<string,number|null>)=>void;onSaveGroups?:(groups:Map<string,string|null>)=>void};
 export type ResultsChartDialogProps=ResultsChartProps&{open:boolean;onOpenChange:(open:boolean)=>void};
 export function ResultsChart(props:ResultsChartProps){
  const [Chart,setChart]=useState<ComponentType<ResultsChartDialogProps>|null>(null),[open,setOpen]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState('');

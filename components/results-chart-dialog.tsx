@@ -5,7 +5,7 @@ import {Button} from '@/components/ui/button';
 import type {ResultsChartDialogProps} from './results-chart';
 import {ChartReview} from './chart-review';
 import {buildUnits,chartFieldList,formatNumber,groupableFields,mean,median,mostCommon,periodLengths,settingsSummary,suggestedGroupRule,suggestedPeriodLength,suggestedRowGroup,suggestedRowYear,suggestedScale,type ChartSourceRow,type Field,type GroupRule,type Scale,type Unit} from '@/lib/chart-model';
-import {OTHER,categoryColors,crowdedDots,distributionCategories,distributionNumbers,distributionScale,downloadPng,downloadSvg,exportFigure,groupsView,runsView,scaleColor,scaleLabel,scalePoints,timeDots,timeShares,type Figure} from '@/lib/chart-figures';
+import {OTHER,REST,restLabel,categoryColors,crowdedDots,distributionCategories,distributionNumbers,distributionScale,downloadPng,downloadSvg,exportFigure,groupsView,runsView,scaleColor,scaleLabel,scalePoints,timeDots,timeShares,type Figure} from '@/lib/chart-figures';
 import './results-chart.css';
 
 type Tab='distribution'|'time'|'groups'|'runs'|'list';
@@ -50,7 +50,7 @@ function useWidth(){
  return [ref,width] as const;
 }
 
-function ChartBody({rows,subjectLabel,onInspect,onSaveYears,onSaveGroups}:{rows:ChartSourceRow[];subjectLabel:string;onInspect:(id:string)=>void;onSaveYears?:ResultsChartDialogProps['onSaveYears'];onSaveGroups?:ResultsChartDialogProps['onSaveGroups']}){
+function ChartBody({rows,scope,subjectLabel,onInspect,onSaveYears,onSaveGroups}:{rows:ChartSourceRow[];scope?:string;subjectLabel:string;onInspect:(id:string)=>void;onSaveYears?:ResultsChartDialogProps['onSaveYears'];onSaveGroups?:ResultsChartDialogProps['onSaveGroups']}){
  const noun=subjectLabel==='Subject'?'subjects':'texts',supportsRuns=rows.some(row=>row.runNumber!==undefined);
  const fields=useMemo(()=>chartFieldList(rows),[rows]);
  const [fieldKey,setFieldKey]=useState(''),field:Field|undefined=fields.find(f=>f.key===fieldKey)||fields[0];
@@ -82,7 +82,8 @@ function ChartBody({rows,subjectLabel,onInspect,onSaveYears,onSaveGroups}:{rows:
  // The scale comes from the individual results, not from averages across runs or chunks.
  const rawNumbers=units.flatMap(u=>u.numbers).filter((v):v is number=>v!==null);
  const suggested=kind==='scale'?suggestedScale(built.rows,field,rawNumbers):undefined;
- const scaleKey=`${field.label}`;
+ // A scale set by hand belongs to one study's field (and the workspace: texts or subjects).
+ const scaleKey=JSON.stringify([scope??'',subjectLabel,field.label]);
  const stored=scaleEdits[scaleKey];
  const scale=kind!=='scale'?undefined:stored&&rawNumbers.every(v=>v>=stored.min&&v<=stored.max)?stored:suggested;
  const categories=kind==='category'?(()=>{const counts=new Map<string,number>();units.forEach(u=>counts.set(u.value,(counts.get(u.value)||0)+1));const sorted=Array.from(counts).sort((a,b)=>b[1]-a[1]).map(([v])=>v);return sorted.length>8?[...sorted.slice(0,7)]:sorted;})():undefined;
@@ -99,7 +100,7 @@ function ChartBody({rows,subjectLabel,onInspect,onSaveYears,onSaveGroups}:{rows:
  // With many texts per year the dots pile up, so shares per period become the default.
  const timeView:'dots'|'periods'=kind==='category'?'periods':!scale?'dots':timeMode??(dated.length&&crowdedDots(dated,width)?'periods':'dots');
  const groupNames=Array.from(new Set(grouped.map(u=>u.group!))).sort((a,b)=>a.localeCompare(b));
- const categoryLegend=categories?[...Array.from(categoryColors(categories)).map(([label,color])=>({label,color})),...(units.some(u=>!categories.includes(u.value))?[{label:'Other',color:OTHER}]:[])]:[];
+ const categoryLegend=categories?[...Array.from(categoryColors(categories)).map(([label,color])=>({label,color})),...(units.some(u=>!categories.includes(u.value))?[{label:restLabel(categories),color:OTHER}]:[])]:[];
  try{
   if(view==='distribution'){
    if(kind==='scale'&&scale){figure=distributionScale(units,scale,o);
@@ -171,8 +172,8 @@ function ChartBody({rows,subjectLabel,onInspect,onSaveYears,onSaveGroups}:{rows:
    {fields.length>1?<label className="chart-field">Answer field <select value={field.key} onChange={event=>{setFieldKey(event.target.value);setEditingScale(false);}}>{fields.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</select></label>:<strong className="chart-field-title">{field.label}</strong>}
    <span className="chart-count"><b>{units.length}</b> {units.length===1?noun.replace(/s$/,''):noun} plotted{built.excluded?<> · {built.excluded} left out{built.abstained?` (${built.abstained} insufficient knowledge)`:''}</>:null}{view==='time'&&dated.length>0&&onSaveYears?<> · <button type="button" className="chart-link" onClick={()=>setReview('year')}>Review years</button></>:null}{view==='groups'&&groupNames.length>1&&onSaveGroups?<> · <button type="button" className="chart-link" onClick={()=>setReview('group')}>Edit groups</button></>:null}</span>
   </div>
-  {settings.count>1&&<div className="chart-notice" role="note"><p><strong>These results come from {settings.count} different settings.</strong> The prompt, model, or reasoning effort changed during the study, so the scores may not be comparable.</p><label><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/> Chart only the latest settings ({settings.latestCount} {noun})</label></div>}
-  {built.combinable&&<div className="chart-count-choice"><span>Count</span><Segmented label="How to count" value={combine?'one':'each'} onChange={v=>setCombine(v==='one')} options={built.hasChunks?[{value:'one',label:'One value per document'},{value:'each',label:'Each chunk'}]:[{value:'one',label:`One value per ${noun.replace(/s$/,'')}`},{value:'each',label:'Each run'}]}/><small>{combine?(built.hasChunks?`Chunks of the same document are combined (${kind==='scale'?'average':'most common answer'}).`:`Runs of the same ${noun.replace(/s$/,'')} are combined (${kind==='scale'?'average':'most common answer'}).`):'Every result counts on its own, so repeated texts weigh more.'}</small></div>}
+  {settings.count>1&&<div className="chart-notice" role="note"><p><strong>These results come from {settings.count} different settings.</strong> {settings.changed.length?`What changed: ${settings.changed.join(', ')}.`:''} The scores may not be comparable.</p><label><input type="checkbox" checked={latestOnly} onChange={e=>setLatestOnly(e.target.checked)}/> Chart only the latest settings ({settings.latestCount} {noun})</label></div>}
+  {built.combinable&&<div className="chart-count-choice"><span>Count</span><Segmented label="How to count" value={combine?'one':'each'} onChange={v=>setCombine(v==='one')} options={built.hasChunks?[{value:'one',label:'One value per document'},{value:'each',label:'Each chunk'}]:[{value:'one',label:`One value per ${noun.replace(/s$/,'')}`},{value:'each',label:'Each run'}]}/><small>{combine?(built.hasChunks?`Chunks of the same document are combined (${kind==='scale'?'average':'most common answer; a tie is shown as “No majority (tie)”'}).`:`Runs of the same ${noun.replace(/s$/,'')} are combined (${kind==='scale'?'average':'most common answer; a tie is shown as “No majority (tie)”'}).`):'Every result counts on its own, so repeated texts weigh more.'}</small></div>}
   {kind==='text'?<p className="chart-notice" role="note">“{field.label}” holds written answers rather than scores or categories, so it is listed rather than charted.</p>:
    <div className="chart-tabs" role="tablist" aria-label="Chart type">{tabs.map(t=><button type="button" role="tab" key={t} aria-selected={view===t} className={view===t?'on':''} onClick={()=>{setTab(t);setShowTable(false);}}>{tabLabels[t]}</button>)}</div>}
   {scale&&view!=='list'&&(editingScale&&suggested?<ScaleEditor scale={scale} suggested={suggested} onCancel={()=>setEditingScale(false)} onSave={next=>{const all={...scaleEdits};if(next.source==='custom')all[scaleKey]=next;else delete all[scaleKey];setScaleEdits(all);writeStored('lab-chart-scales',all);setEditingScale(false);}}/>:<ScaleKey scale={scale} onEdit={()=>setEditingScale(true)}/>)}
@@ -250,10 +251,10 @@ function FigureExport({figure,caption,legend,defaultTitle,onBack}:{figure:Figure
 }
 
 export {ChartBody};
-export default function ResultsChartDialog({rows,open,onOpenChange,onInspect,onSaveYears,onSaveGroups,subjectLabel='Document'}:ResultsChartDialogProps){
+export default function ResultsChartDialog({rows,scope,open,onOpenChange,onInspect,onSaveYears,onSaveGroups,subjectLabel='Document'}:ResultsChartDialogProps){
  const pending=useRef<string|null>(null),heading=useRef<HTMLHeadingElement>(null);
  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="results-chart-dialog" onOpenAutoFocus={event=>{event.preventDefault();heading.current?.focus();}} onCloseAutoFocus={event=>{if(pending.current){event.preventDefault();const id=pending.current;pending.current=null;requestAnimationFrame(()=>onInspect(id));}}}>
   <DialogTitle ref={heading} tabIndex={-1}>Results chart</DialogTitle><DialogDescription className="sr-only">Explore completed annotations as charts and open the results behind them.</DialogDescription>
-  <ChartBody rows={rows} onSaveYears={onSaveYears} onSaveGroups={onSaveGroups} subjectLabel={subjectLabel} onInspect={id=>{pending.current=id;onOpenChange(false);}}/>
+  <ChartBody rows={rows} scope={scope} onSaveYears={onSaveYears} onSaveGroups={onSaveGroups} subjectLabel={subjectLabel} onInspect={id=>{pending.current=id;onOpenChange(false);}}/>
  </DialogContent></Dialog>;
 }

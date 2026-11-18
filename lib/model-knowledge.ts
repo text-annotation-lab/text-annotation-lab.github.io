@@ -1,5 +1,6 @@
 import {newId} from './identifier';
 import {resultAnswer,type NamedAnswers} from './answer-fields';
+import {isExplanationField} from './answer-types';
 import {MAX_BATCH_ITEMS,MAX_KNOWLEDGE_INPUT_CHARS} from './batch-limits';
 export type KnowledgeMode = 'list' | 'structured';
 export type KnowledgeFields = {heading:string;value:string}[];
@@ -39,7 +40,9 @@ export type KnowledgeResearch={text:string;sources:KnowledgeSource[];queries:str
 export type KnowledgeItem=import('./answer-fields').NamedAnswers&import('./research/requests').Recorded&{cells?:string[];requestSettings?:import('./request-settings').RequestSettings;chartYear?:number|null;chartGroup?:string|null;runId?:string;runStartedAt?:string;runSize?:number;history?:import('./workflow-safety').Attempt[];startedAt?:string;id:string;subjectId?:string;runNumber?:number;name:string;fields:KnowledgeFields;status:string;score?:string;explanation?:string;error?:string;provider?:import('./providers').Provider;model?:string;effort?:string;prompt?:string;tokens?:number;usage?:any;time?:string;responseId?:string;processing?:string;concurrency?:number;batchId?:string;layout?:string;webSearch?:boolean;webUsed?:boolean;instructions?:string;research?:KnowledgeResearch;repeats?:number;annotations?:import('./research/repeats').Annotation[];consistency?:Record<string,number>};
 export function isInsufficient(score?:string){return score?.trim().toUpperCase()==='INSUFFICIENT_KNOWLEDGE';}
 export function knowledgeAssessment(row:NamedAnswers&{score?:string}){
- const values=row.answerFields?.length?row.answerFields.map(name=>resultAnswer(row,name)):[row.score||''];
+ // Judgments only: an explanation, or a field of free text, is no judgment (its text does not make a subject assessed).
+ const judged=(row.answerFields||[]).filter(name=>!isExplanationField(name)&&row.answerSettings?.fields?.find(field=>field.name===name)?.type!=='text');
+ const values=judged.length?judged.map(name=>resultAnswer(row,name)):row.answerFields?.length?row.answerFields.map(name=>resultAnswer(row,name)):[row.score||''];
  const missing=values.filter(isInsufficient).length;
  return missing===values.length?'Insufficient knowledge':missing?'Partly assessed':'Assessed';
 }

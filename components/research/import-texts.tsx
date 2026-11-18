@@ -4,7 +4,7 @@ import {useEffect,useMemo,useState} from 'react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {guessKeyColumn,matchRows,type CellRow,type NewText,type Sheet} from '@/lib/research/columns';
-import {countWords,fitIntoStudy,guessIdColumn,guessTextColumn,parseCorpusTable,pastedTexts,planTable,splitPasted} from '@/lib/research/import-texts';
+import {countWords,fitIntoStudy,guessIdColumn,guessTextColumn,parseCorpusTable,pastedTexts,planTable,splitPasted,TooLong} from '@/lib/research/import-texts';
 
 // Adds the texts to the study; false when the workspace cannot take them right now.
 export type AddTexts=(texts:NewText[],names:string[],message:string)=>boolean;
@@ -25,7 +25,7 @@ export function PasteTextDialog({rows,removed,onAdd,onClose}:{rows:Existing[];re
    const fitted=await fitIntoStudy(pastedTexts(parts,prefix),rows,removed);
    if(!fitted.texts.length){setProblem(parts.length===1?'This text is already in the study under the same name.':'These texts are already in the study under the same names.');return;}
    if(onAdd(fitted.texts,[],`${plural(fitted.texts.length,'text')} added from pasted text.${leftOut(fitted.already,fitted.renamed,fitted.back,fitted.texts.length)}`))onClose();else setProblem(BUSY);
-  }catch{setProblem('The pasted text could not be added. Try again.');}
+  }catch(reason){setProblem(reason instanceof TooLong?reason.message:'The pasted text could not be added. Try again.');}
   finally{setAdding(false);}
  }
  const close=()=>{if(adding)return;if(text.trim()&&!confirm('Close without adding what you pasted?'))return;onClose();};
@@ -59,7 +59,7 @@ export function TableImportDialog({file,rows,removed,onAdd,onClose,onUseAsLabels
  },[file]);
  const plan=useMemo(()=>sheet?planTable(sheet,textIndex,idIndex,file.name):undefined,[sheet,textIndex,idIndex,file.name]);
  // A sheet of labels or metadata for texts already here would otherwise become one junk text per row.
- const matched=useMemo(()=>sheet&&rows.length?matchRows(rows,sheet.rows.map(row=>row[guessKeyColumn(rows,sheet)]||'')).rowOf.size:0,[sheet,rows]);
+ const matched=useMemo(()=>{if(!sheet||!rows.length)return 0;const key=guessKeyColumn(rows,sheet);return matchRows(rows,sheet.rows.map(row=>row[key]||'')).rowOf.size;},[sheet,rows]);
  async function add(){
   if(!plan?.texts.length||adding)return;
   setAdding(true);setProblem('');
@@ -68,7 +68,7 @@ export function TableImportDialog({file,rows,removed,onAdd,onClose,onUseAsLabels
    if(!fitted.texts.length){setProblem('Every text in this table is already in the study.');return;}
    const columns=plan.names.length?` ${plural(plan.names.length,'column')} kept as labels or metadata.`:'';
    if(onAdd(fitted.texts,plan.names,`${plural(fitted.texts.length,'text')} added from ${file.name}.${columns}${leftOut(fitted.already,fitted.renamed,fitted.back,fitted.texts.length)}`))onClose();else setProblem(BUSY);
-  }catch{setProblem('The table could not be imported. Try again.');}
+  }catch(reason){setProblem(reason instanceof TooLong?reason.message:'The table could not be imported. Try again.');}
   finally{setAdding(false);}
  }
  const close=()=>{if(!adding)onClose();};

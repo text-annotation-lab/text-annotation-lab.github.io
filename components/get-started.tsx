@@ -41,7 +41,7 @@ export function GetStarted() {
       </li>
       <li><h3>Run a small pilot and check the results</h3>
         <p>Read the first text and decide how you would score or categorize it. Choose <strong>Annotate next</strong>, then select its row to see the model’s answer. Did it follow your instructions? Does its explanation make sense when you check it against the text? Repeat with the rest of your sample.</p>
-        <p>Revise the prompt if needed. To keep the pilot, save a version in <strong>Studies</strong>. Then use <strong>Clear results</strong> to keep the documents ready for another trial. Each new annotation can add to your spending.</p>
+        <p>Revise the prompt if needed. To keep the pilot, open <strong>Studies</strong> and choose <strong>Save study</strong> (or <strong>More options → Save a copy</strong> to keep an earlier version too). Then use <strong>Clear results</strong> to keep the documents ready for another trial. Each new annotation can add to your spending.</p>
       </li>
       <li><h3>Annotate the full corpus and save your results</h3>
         <p>Once you’re satisfied with the pilot, use the same final prompt, model, and reasoning settings for every text. Add the remaining documents, open <strong>Costs</strong> for an estimate, and choose <strong>Run all</strong>.</p>

@@ -15,8 +15,10 @@ export function ChartReview({kind,entries,noun,onApply,onCancel,rules,rule,onRul
  const heading=useId(),ruleId=useId();
  const [edits,setEdits]=useState(()=>new Map<string,string>());
  const [page,setPage]=useState(0);
- // Texts without a suggestion come first, so gaps are easy to spot.
- const values=useMemo(()=>entries.map(({unit,initial})=>({unit,value:edits.get(unit.key)??initial})).sort((a,b)=>Number(Boolean(a.value))-Number(Boolean(b.value))),[entries,edits]);
+ // Texts without a suggestion come first, so gaps are easy to spot. The order comes from the suggestions alone, so a
+ // row stays where it is while a value is typed into it.
+ const order=useMemo(()=>[...entries].sort((a,b)=>Number(Boolean(a.initial))-Number(Boolean(b.initial))),[entries]);
+ const values=useMemo(()=>order.map(({unit,initial})=>({unit,value:edits.get(unit.key)??initial})),[order,edits]);
  const valid=(value:string)=>kind==='year'?/^[1-9]\d{3}$/.test(value):value.trim().length>0&&value.trim().length<=40;
  const invalid=values.some(({value})=>value!==''&&!valid(value));
  const filled=values.filter(({value})=>valid(value)).length;
