@@ -20,7 +20,7 @@ export function SamplingLimits({sent,children}:{sent?:RequestSettings;children:R
  return <details className="research-sampling"><summary>Sampling &amp; limits{set.length?<span className="research-sampling-set"> · {set.join(' · ')}</span>:null}</summary><div className="research-sampling-body">{children}</div></details>;
 }
 
-// What research mode adds to the standard Lab: opened from “What changes?” under the switch, and shown at the top of
+// What research mode adds to the standard Lab: opened from “What changes?” under the switch, and in a closed fold-out near the end of
 // About in research mode.
 const CHANGES=[
  'API keys for each provider, kept in this browser if you choose.',

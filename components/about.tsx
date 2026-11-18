@@ -10,7 +10,6 @@ export function About({research}:{research?:boolean}){
  return <TabsContent value="about" className="reading-panel panel">
   <p className="eyebrow">BACKGROUND AND CREDITS</p>
   <h2 id="about" tabIndex={-1}>About Text Annotation Lab</h2>
-  {research&&<section className="about-research" aria-label="What research mode adds"><p><strong>What research mode adds</strong></p><ResearchChanges/></section>}
   <p>Text Annotation Lab is a teaching and research resource for AI-assisted text annotation and content analysis. {research?'Research mode shows the annotation workspace and its research tools; the teaching material is in the standard Lab.':'It brings together an annotation workspace, example corpora, teaching guidance, and methodological resources.'}</p>
   <p>The project is based in the Department of English at Aarhus University and is associated with the American Studies Center Aarhus (ASCA). It was developed for teaching and research in the department, with examples grounded in English and American Studies. Students, teachers, and researchers elsewhere are welcome to use it wherever they find it useful.</p>
   <p>The site is free to use. To run annotations, enter an API key {research?'from your own provider account':'from your instructor or your own provider account'}. Charges and usage limits apply to the account behind that key.</p>
@@ -29,6 +28,7 @@ export function About({research}:{research?:boolean}){
    <p className="reading-meta">Because the site evolves, include your access date where appropriate. Citation is appreciated and is not a condition of use.</p>
    {lastUpdated&&<p className="reading-meta">Site last updated {lastUpdated}.</p>}
   </article>
+  {research&&<details className="about-research"><summary><h3>What research mode adds</h3></summary><ResearchChanges/></details>}
   {research&&<SettingsExplained/>}
  </TabsContent>;
 }
