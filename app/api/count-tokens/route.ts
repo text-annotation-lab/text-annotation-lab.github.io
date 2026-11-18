@@ -3,6 +3,7 @@ import {readAnswerFields,readAnswerSettings} from '@/lib/answer-fields';
 import {providerError,providerJson} from '@/lib/provider-errors';
 import {PROVIDERS,validModelId,GEMINI_ENABLED,reasoningOptions,type Provider} from '@/lib/providers';
 import {buildBatchBody} from '@/lib/batch-provider';
+import {readInserts,fillInserts,placesText,fillPlaces,insertMap} from '@/lib/prompt-inserts';
 import {readRequestSettings,type RequestSettings} from '@/lib/request-settings';
 import {supportedFile} from '@/lib/extract-text';
 import {knowledgeAddition,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
@@ -33,7 +34,14 @@ export async function POST(request:Request){try{
  // Research mode's own system prompt, counted where the request sends it. It comes as JSON, as in a request, so
  // that its line breaks stay as typed.
  let settings:RequestSettings|undefined;try{settings=readRequestSettings(f.get('requestSettings'));}catch(error){return reply({error:(error as Error).message},400);}
- const body:any=await buildBatchBody(provider,file,prompt+(knowledge?knowledgeAddition(web,answerSettings):''),model,effort,knowledge,web,answerFields,answerSettings,settings?.system?{system:settings.system}:undefined);
+ // Research mode: the text's values for the prompt's placeholders, and the text where the prompt has {{text}}: the
+ // count is of the request the run sends (as app/api/annotate/route.ts builds it).
+ let inserts:string[]|undefined;try{const raw=f.get('inserts');inserts=readInserts(raw===null?null:JSON.parse(String(raw)),prompt);}catch{return reply({error:'Could not read the values for the placeholders of the prompt.'},400);}
+ const placeFlag=f.get('placeText');if(placeFlag!==null&&(placeFlag!=='true'||!placesText(prompt)))return reply({error:'Invalid setting for the place of the text.'},400);
+ const values=inserts?insertMap(prompt,inserts):undefined,filled=placeFlag?fillPlaces(prompt,(name,whole)=>values?values.get(name)??'':whole):undefined,written=filled?filled.prompt:inserts?fillInserts(prompt,inserts):prompt;
+ if(written.length>100000)return reply({error:'With the values of its placeholders filled in, the prompt is longer than 100,000 characters.'},400);
+ const added=knowledge?knowledgeAddition(web,answerSettings):'';
+ const body:any=await buildBatchBody(provider,file,written+added,model,effort,knowledge,web,answerFields,answerSettings,settings?.system?{system:settings.system}:undefined,inserts||filled?prompt+added:undefined,filled?.spots);
  let url:string,payload:any,headers:Record<string,string>={'Content-Type':'application/json'};
  if(provider==='openai'){url='https://api.openai.com/v1/responses/input_tokens';headers.Authorization=auth;payload={model, input:body.input,instructions:body.instructions,text:body.text,reasoning:body.reasoning};}
  else if(provider==='anthropic'){url='https://api.anthropic.com/v1/messages/count_tokens';headers['x-api-key']=key;headers['anthropic-version']='2023-06-01';headers['anthropic-dangerous-direct-browser-access']='true';payload={model,system:body.system,messages:body.messages,thinking:body.thinking,output_config:body.output_config};}

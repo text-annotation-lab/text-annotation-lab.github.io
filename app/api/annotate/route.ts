@@ -103,17 +103,17 @@ export async function POST(request:Request){
  if(!out)return finish(json({error:'OpenAI returned an unreadable response. Check OpenAI Platform usage before retrying; the request may have completed.'},502));
  const noted:Record<string,unknown>=record?{modelReported:replyCode(out.model),stopReason:replyCode([out.status,out.incomplete_details?.reason].filter(part=>typeof part==='string'&&part).join(': '))}:{};
  if(record&&sent?.summary){const summary=reasoningSummary('openai',out);if(summary)noted.reasoningSummary=summary;}
- // A reply that is cut off or refused still used (and was billed for) tokens: it keeps them, its response ID, and
- // (research mode) the text it returned, though it counts as failed.
+ // A reply that is cut off, refused, or unreadable still used (and was billed for) tokens: it keeps them, its
+ // response ID, and (research mode) the text it returned, though it counts as failed.
  const billed={tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id},partial=()=>record?{output:replyText((out.output||[]).flatMap((x:any)=>x.content||[]).filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join(''))}:{};
  if(out.status!=='completed')return finish(json({...noted,...billed,...partial(),error:incompleteAnnotation('openai',out.incomplete_details?.reason)},422));
  const parts=(out.output||[]).flatMap((x:any)=>x.content||[]);if(parts.some((x:any)=>x.type==='refusal'))return finish(json({...noted,...billed,...(record?{stopReason:'refusal'}:{}),error:incompleteAnnotation('openai','refusal')},422));const raw=parts.filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join('');
  if(record)noted.output=replyText(raw);
- if(answerSettings?.plain){const plain=plainAnswer(raw);return finish(plain?json({...noted,...plain,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}):json({...noted,error:EMPTY_REPLY},422));}
- let result;try{result=JSON.parse(raw);}catch{return finish(json({...noted,error:'No valid annotation returned. Check OpenAI Logs for a refusal or incomplete output.'},422));}
+ if(answerSettings?.plain){const plain=plainAnswer(raw);return finish(plain?json({...noted,...plain,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}):json({...noted,...billed,error:EMPTY_REPLY},422));}
+ let result;try{result=JSON.parse(raw);}catch{return finish(json({...noted,...billed,error:'No valid annotation returned. Check OpenAI Logs for a refusal or incomplete output.'},422));}
  const read=readReply(result,answerFields,answerSettings);
- if(!read)return finish(json({...noted,error:'Unexpected response format. Check OpenAI Logs.'},422));
- if(typeof read==='string')return finish(json({...noted,error:read},422));
+ if(!read)return finish(json({...noted,...billed,error:'Unexpected response format. Check OpenAI Logs.'},422));
+ if(typeof read==='string')return finish(json({...noted,...billed,error:read},422));
  return finish(json({...noted,rawResponse:raw,...read,tokens:out.usage?.total_tokens,usage:out.usage,responseId:out.id}));
  }catch(error){if(error instanceof KnowledgeWebError)return json({error:error.message,...(error.research?{research:error.research,webUsed:true}:{}),...(error.retryAfterMs===undefined?{}:{retryAfterMs:error.retryAfterMs}),...(error.shared?{shared:error.shared}:{})},error.status);return json({error:'Connection interrupted. Check your provider’s usage before retrying; the request may have completed.',...(research?{research,webUsed:true}:{}),...connectionFailure(error)},502);}
 }

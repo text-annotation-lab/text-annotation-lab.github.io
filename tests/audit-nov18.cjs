@@ -111,5 +111,65 @@ const source=file=>fs.readFileSync(path.join(root,file),'utf8');
  assert.equal((await imports.fitIntoStudy([{name:'fine.txt',text:'a'.repeat(1000),values:[]}],[])).texts.length,1);
  const backup=load('lib/study-backup.ts');
  await assert.rejects(backup.encodeStudyBackup({name:'S',createdAt:new Date().toISOString(),texts:{docs:[{id:'1',name:'big.txt',file:new File([new Uint8Array(20*1024*1024+1)],'big.txt')}]},knowledge:{}}),/big\.txt.*larger than 20 MB/);
- console.log('PASS: November 18 audit: chart segments, ties, comparable settings, scale per study, review order, assessment status, Excel pieces, backup after a failed save, saved-key line, section links, Clear workspace scope; table encodings, Excel IDs, duplicate headers, unclosed quotes, large tables, long HTML, texts over 20 MB.');
+
+ // #5. Six subjects with 1 of 10 annotations: 54 requests to send, so the run asks first; the question counts what
+ // the run sends (48 asks nothing). Model knowledge asks about subjects that get their missing annotations too.
+ const estimate=load('lib/student-estimate.ts');
+ const subjects=Array.from({length:6},(_,i)=>({id:'s'+i,name:'Subject '+i,status:'done',fields:[{heading:'Name',value:'Subject '+i}]}));
+ const ask=count=>estimate.runQuestion({provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'Rate the subject.',rows:subjects,samples:[],knowledge:true,times:10,count:()=>count,unit:'subject'});
+ const asked=await ask(9);assert.match(asked,/^Send 54 requests to gpt-6-luna \(6 subjects; those that have some of their 10 annotations get only the missing ones\)\?/);
+ assert.equal(await ask(8),undefined);
+ const mk=source('components/model-knowledge.tsx');
+ assert.match(mk,/const resume=resumable\(latest\.current\),rows=latest\.current\.filter\(item=>inScope\(item\)&&\(item\.status==='pending'\|\|resume\.has\(item\.id\)&&incomplete\(item\)\)\)/);
+ assert.match(mk,/item\.status==='pending'\?Math\.max\(1,times\):missingRepeats\(item\)\.length/);
+ assert.match(page,/resume\?\.has\(d\.id\)&&d\.status==='done'\?missingRepeats\(d\)\.length:Math\.max\(1,times\)/);
+ assert.match(page,/runConfirmed\(scopeRemaining\.map\(d=>d\.id\),processing==='batch',undefined,resume\)/);
+
+ // #6. The provider's count measures the request the run sends: a long metadata value and {{text}} twice. The count
+ // input and the annotation input are the same, byte for byte (OpenAI); a changed value is counted again.
+ let sentBodies=[];
+ globalThis.fetch=async(url,options)=>{sentBodies.push({url,body:JSON.parse(options.body)});return /input_tokens$/.test(url)?Response.json({input_tokens:777}):Response.json({id:'resp_1',status:'completed',model:'gpt-6-luna',output:[{content:[{type:'output_text',text:'{"score":"1","explanation":"ok"}'}]}],usage:{total_tokens:10}});};
+ const placed='Context: {{meta.note}}\nFirst copy: {{text}}\nSecond copy: {{text}}\nRate it.',note='Ünïcode note '+'x'.repeat(5000);
+ const form=(kind)=>{const f=new FormData();for(const [k,v] of Object.entries({provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:placed,inserts:JSON.stringify([note]),placeText:'true',file:new File(['The source text.'],'doc.txt')}))f.set(k,v);if(kind==='annotate')f.set('record','true');return new Request('https://lab.test/api/'+kind,{method:'POST',headers:{origin:'https://lab.test',Authorization:'Bearer sk-test'},body:f});};
+ const counted=await load('app/api/count-tokens/route.ts').POST(form('count-tokens'));assert.equal(counted.status,200,await counted.clone().text());
+ const annotated=await load('app/api/annotate/route.ts').POST(form('annotate'));assert.equal(annotated.status,200,await annotated.clone().text());
+ const [countBody,runBody]=sentBodies;
+ assert.equal(JSON.stringify(countBody.body.input),JSON.stringify(runBody.body.input));assert.equal(countBody.body.instructions,runBody.body.instructions);
+ const countText=JSON.stringify(countBody.body);assert.ok(countText.includes(note.slice(0,40)));assert.equal(countText.split('The source text.').length-1,2);
+ const rowsFor=[{id:'d1',status:'pending',name:'doc.txt',file:new File(['The source text.'],'doc.txt')}];let value=note,clientCounts=0;
+ globalThis.fetch=async(url,options)=>{clientCounts++;assert.equal(options.body.get('inserts'),JSON.stringify([value]));assert.equal(options.body.get('placeText'),'true');return Response.json({inputTokens:900});};
+ const counting={provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:placed,rows:rowsFor,apiKey:'sk-test',signal:new AbortController().signal,inserts:()=>[value],placeText:true};
+ await estimate.countStudentInputs(counting);await estimate.countStudentInputs(counting);assert.equal(clientCounts,1);
+ value='another note';await estimate.countStudentInputs(counting);assert.equal(clientCounts,2,'A changed value is counted again');
+ // The rough estimate counts the text as often as the prompt places it, and the values.
+ const plain=await estimate.studentEstimate({provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'Rate it. {{text}}',rows:[{id:'x',status:'pending',file:new File(['word '.repeat(2000)],'x.txt')}],placeText:true});
+ const twice=await estimate.studentEstimate({provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'Rate it. {{text}} {{text}}',rows:[{id:'x',status:'pending',file:new File(['word '.repeat(2000)],'x.txt')}],placeText:true,inserts:()=>['long value '.repeat(500)]});
+ assert.ok(twice.input.low>plain.input.low*1.9,`${twice.input.low} vs ${plain.input.low}`);
+
+ // #7. A batch ID of another job is refused: another number of requests, or results of another run.
+ const recover=load('lib/batch-recover.ts');
+ const job={runId:'lab_A',docIds:['a','b','c'],provider:'openai',model:'m',prompt:'p',effort:'e',createdAt:'',state:'unknown'};
+ assert.match(recover.recoveredBatchProblem(job,{id:'batch_x',terminal:false,state:'in_progress',completed:0,total:7}),/holds 7 requests, but this run sent 3/);
+ assert.match(recover.recoveredBatchProblem(job,{id:'batch_x',terminal:true,state:'completed',completed:3,total:0,results:[{id:'lab_B_0'}]}),/belong to another run/);
+ assert.equal(recover.recoveredBatchProblem(job,{id:'batch_x',terminal:true,state:'completed',completed:3,total:3,results:[{id:'lab_A_0'}]}),undefined);
+ assert.equal(recover.recoveredBatchProblem(job,{id:'batch_x',terminal:true,state:'completed',completed:0,total:3,results:[]}),undefined,'A matching batch with no results is still this run’s');
+ assert.equal(recover.batchRequestCount({...job,repeats:3,ns:[[1,2,3],[2],[1,3]]}),6);
+ assert.equal(recover.batchRequestCount(job,{items:[0,2],requests:[0,2]}),2);
+ for(const file of ['app/page.tsx','components/model-knowledge.tsx']){const code=source(file);
+  assert.match(code,/const job:BatchJob=idOverride\?\{\.\.\.batchJob,id:idOverride\.trim\(\),recovered:true\}:batchJob;/,file);
+  assert.match(code,/if\(job\.recovered\)\{const wrong=recoveredBatchProblem\(job,out\);if\(wrong\)\{if\(!idOverride\)setBatchJob\(\{\.\.\.job,id:undefined,state:'unknown',recovered:undefined\}\);throw new Error\(wrong\);\}\}/,file);
+  assert.match(code,/if\(part\.recovered\)\{const wrong=recoveredBatchProblem\(job,out,part\);/,file);}
+
+ // #16. An unreadable reply keeps the tokens, usage, and response ID the provider reported (OpenAI, Gemini, Claude).
+ globalThis.fetch=async()=>Response.json({id:'resp_9',status:'completed',model:'gpt-6-luna',output:[{content:[{type:'output_text',text:'not json'}]}],usage:{total_tokens:150}});
+ const plainForm=()=>{const f=new FormData();for(const [k,v] of Object.entries({provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'Rate.',file:new File(['t'],'t.txt')}))f.set(k,v);return new Request('https://lab.test/api/annotate',{method:'POST',headers:{origin:'https://lab.test',Authorization:'Bearer sk-test'},body:f});};
+ let failed=await load('app/api/annotate/route.ts').POST(plainForm());let out=await failed.json();
+ assert.equal(failed.status,422);assert.deepEqual([out.tokens,out.responseId,Boolean(out.error)],[150,'resp_9',true]);
+ globalThis.fetch=async()=>Response.json({responseId:'g_9',modelVersion:'gemini',candidates:[{finishReason:'STOP',content:{parts:[{text:'{"nope":1}'}]}}],usageMetadata:{totalTokenCount:150}});
+ out=await (await load('lib/gemini.ts').annotateGemini(new File(['t'],'t.txt'),'Rate.','gemini-3.1-flash-lite','minimal','key')).json();
+ assert.deepEqual([out.tokens,out.responseId,Boolean(out.error)],[150,'g_9',true]);
+ globalThis.fetch=async()=>Response.json({id:'msg_9',model:'claude',stop_reason:'end_turn',content:[{type:'text',text:'not json'}],usage:{input_tokens:100,output_tokens:50}});
+ out=await (await load('lib/anthropic.ts').annotateAnthropic(new File(['t'],'t.txt'),'Rate.','claude-haiku-5-5','medium','sk-ant-key')).json();
+ assert.deepEqual([out.tokens,out.responseId,Boolean(out.error)],[150,'msg_9',true]);
+ console.log('PASS: November 18 audit: chart segments, ties, comparable settings, scale per study, review order, assessment status, Excel pieces, backup after a failed save, saved-key line, section links, Clear workspace scope; table encodings, Excel IDs, duplicate headers, unclosed quotes, large tables, long HTML, texts over 20 MB; the cost question for resumed runs, counts of the request as sent, recovered batch IDs, billed fields on unreadable replies.');
 })().catch(error=>{console.error(error);process.exit(1);});

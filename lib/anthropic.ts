@@ -36,11 +36,11 @@ export async function annotateAnthropic(file:File,prompt:string,model:string,eff
   // A reply that is cut off or refused still used (and was billed for) tokens: it keeps them, its response ID, and
   // (research mode) the text it returned, though it counts as failed.
   if(out.stop_reason!=='end_turn')return reply({...noted,tokens,usage:u,responseId:out.id,error:incompleteAnnotation('anthropic',out.stop_reason)},422);
-  if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...noted,...plain,tokens,usage:u,responseId:out.id}):reply({...noted,error:EMPTY_REPLY},422);}
-  let result;try{result=JSON.parse(raw);}catch{return reply({...noted,error:'Claude did not return a valid annotation. Check your usage before retrying.'},422);}
+  if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...noted,...plain,tokens,usage:u,responseId:out.id}):reply({...noted,tokens,usage:u,responseId:out.id,error:EMPTY_REPLY},422);}
+  let result;try{result=JSON.parse(raw);}catch{return reply({...noted,tokens,usage:u,responseId:out.id,error:'Claude did not return a valid annotation. Check your usage before retrying.'},422);}
   const read=readReply(result,answerFields,settings);
-  if(!read)return reply({...noted,error:'Claude returned an unexpected annotation format.'},422);
-  if(typeof read==='string')return reply({...noted,error:read},422);
+  if(!read)return reply({...noted,tokens,usage:u,responseId:out.id,error:'Claude returned an unexpected annotation format.'},422);
+  if(typeof read==='string')return reply({...noted,tokens,usage:u,responseId:out.id,error:read},422);
  return reply({...noted,rawResponse:raw,...read,tokens,usage:u,responseId:out.id});
  }catch(error){return reply({error:'Anthropic connection interrupted or timed out. Check Claude Console usage before retrying; the request may have completed.',...connectionFailure(error)},502);}
 }
