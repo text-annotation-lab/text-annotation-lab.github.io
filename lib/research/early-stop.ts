@@ -40,7 +40,7 @@ export function earlyStopNotice(stop:EarlyStop,unit:'text'|'subject'):string{
  return `Stopped: the first ${stop.answered} requests all failed the same way, which points to ${stop.connection?'the connection':'the settings or the account'} rather than the ${unit}s. Requests under way will finish, and completed results are kept. See the error of a failed ${unit} before running again.`;
 }
 // What a run that carried on reports when it ends: how many of the requests that came back failed, and how they
-// are sent again (the workspace's "Remaining"; in Model knowledge, "Queue failed items for retry"; for requests
+// are sent again (research mode's "Remaining"; in the standard Lab and Model knowledge, "Queue failed items for retry"; for requests
 // that "Retry failed" sent again within their run, that button once more).
 // paused: the person paused the run, which says so itself.
 // Model knowledge with several annotations per subject: 'knowledge-missing' when the failed requests were

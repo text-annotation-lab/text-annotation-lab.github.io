@@ -86,7 +86,7 @@ export function estimate(c:EstimateConfig,inputs:Input[],samples:Sample[]=[]):Es
    const share=reasoning.high/(visible.high+reasoning.high||1);
    visible=scale(total,1-share);reasoning=scale(total,share);
   }
-  const max=c.maxTokens||12000;
+  const max=c.maxTokens||16000;
   // The output cap covers the answer plus hidden reasoning; don't budget it twice.
   for(const edge of ['low','high'] as const){const total=visible[edge]+reasoning[edge];if(total>max){const ratio=max/total;visible[edge]*=ratio;reasoning[edge]*=ratio;}}
   // Independent clipping must retain ordered component ranges.
@@ -124,7 +124,7 @@ export function estimate(c:EstimateConfig,inputs:Input[],samples:Sample[]=[]):Es
  if(valid.some(s=>s.reasoning===undefined))notes.push('Completed usage calibrates combined output. This provider does not report a separate reasoning count; the answer/reasoning split remains an assumption.');
  if(c.webSearch)notes.push('Includes a separate research call, research notes, retrieved text, and 1–3 searches per item. Search use can exceed this assumption; Google free search allowances are account-dependent.');
  if(c.provider==='gemini')notes.push('Uses paid API rates. Free-tier allowances and credits may reduce your bill.');
- if((c.maxTokens||12000)<assumption.tokens.high+reasoningAssumption(c,inputs[0].tokens).high)notes.push('The output limit constrains this estimate. It can also truncate annotations; a low cost does not guarantee a complete answer.');
+ if((c.maxTokens||16000)<assumption.tokens.high+reasoningAssumption(c,inputs[0].tokens).high)notes.push('The output limit constrains this estimate. It can also truncate annotations; a low cost does not guarantee a complete answer.');
  notes.push('Actual costs may differ. Token counts, answer length, and reasoning are approximate; retries, taxes, and account-specific rates are excluded.');
  return result;
 }

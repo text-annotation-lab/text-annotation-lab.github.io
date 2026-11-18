@@ -34,10 +34,10 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
   assert.equal(rs.defaultOutputLimit(provider,model),providers.annotationOutputLimit(provider,model),`${provider} ${model}: one limit, wherever it is read`);
   assert.equal(rs.sentRequestSettings(provider,model,{maxOutput:rs.defaultOutputLimit(provider,model)},'medium'),undefined,model+': the Lab’s own limit is the standard request');
  }
- assert.equal(rs.defaultOutputLimit('gemini','gemini-4-argon'),32768);assert.equal(rs.defaultOutputLimit('openai','gpt-6-luna'),12000);
+ assert.equal(rs.defaultOutputLimit('gemini','gemini-4-argon'),32768);assert.equal(rs.defaultOutputLimit('openai','gpt-6-luna'),16000);
  assert.equal(rs.outputFloor('anthropic','claude-haiku-4-5-20251001','8192'),8193);assert.equal(rs.outputFloor('anthropic','claude-haiku-4-5-20251001','off'),16);assert.equal(rs.outputFloor('anthropic','claude-sonnet-5-5','high'),16);
  assert.deepEqual(rs.sentRequestSettings('anthropic','claude-haiku-4-5-20251001',{maxOutput:2000},'8192'),{maxOutput:8193});assert.deepEqual(rs.sentRequestSettings('anthropic','claude-haiku-4-5-20251001',{maxOutput:2000},'1024'),{maxOutput:2000});
- assert.equal(rs.outputLimit('openai','gpt-6-luna',undefined),12000);assert.equal(rs.outputLimit('openai','gpt-6-luna',{maxOutput:500}),500);
+ assert.equal(rs.outputLimit('openai','gpt-6-luna',undefined),16000);assert.equal(rs.outputLimit('openai','gpt-6-luna',{maxOutput:500}),500);
  assert.equal(rs.requestTimeout('openai','gpt-6-luna',undefined),180000);assert.equal(rs.requestTimeout('openai','gpt-6-luna',{maxOutput:500}),180000);assert.equal(rs.requestTimeout('openai','gpt-6-luna',{maxOutput:64000}),900000,'A raised limit gets a longer wait');assert.equal(rs.requestTimeout('gemini','gemini-4-argon',undefined),900000);
  // A summary needs reasoning.
  assert.equal(rs.sentRequestSettings('anthropic','claude-haiku-4-5-20251001',{summary:true},'off'),undefined);assert.deepEqual(rs.sentRequestSettings('anthropic','claude-haiku-4-5-20251001',{summary:true},'1024'),{summary:true});
@@ -174,7 +174,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const lines=exporting.runLines(dataset);assert.deepEqual(lines.map(line=>line.summary),['on','off','in part']);assert.deepEqual(lines.map(line=>[line.temperature,line.maxOutput]),[[0.2,4000],[undefined,undefined],[undefined,undefined]]);
  const exported={name:'Settings',dataset,lab:'test'},overview=tables.runsOverview(exported,new Map()),col=name=>overview[0].indexOf(name);
  assert.deepEqual(overview[0].slice(col('effort'),col('effort')+4),['effort','temperature','max_output_tokens','caching'],'The run’s model settings together (thinking: no run has a value)');assert(!overview[0].includes('app_version'),'No build');
- assert.deepEqual(overview.slice(1).map(line=>[line[col('temperature')],line[col('max_output_tokens')]]),[[0.2,4000],['default',12000],['default',12000]]);
+ assert.deepEqual(overview.slice(1).map(line=>[line[col('temperature')],line[col('max_output_tokens')]]),[[0.2,4000],['default',16000],['default',16000]]);
  const long=tables.requestsTable(exported,undefined,new Map()),at=long[0].indexOf('reasoning_summary');
  assert.equal(long[0][at-1],'rationale');assert.equal(long[0][at+1],'parse_error');assert.deepEqual(long.slice(1).map(line=>line[at]),['Read the text, chose A.','Stopped early.','','',''],'A failed request keeps its summary');
  assert(!tables.requestsTable(exported,undefined,new Map(),{reasoning:false})[0].includes('reasoning_summary'),'Left out of the supplementary table');
@@ -191,7 +191,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert(!(await read(pack,'results/results_by_replicate.csv')).includes('reasoning_summary'),'The supplementary table of requests leaves the summaries out');
  assert.deepEqual((await read(pack,'logs/responses.jsonl')).trim().split('\n').map(line=>JSON.parse(line).response.reasoning_summary),['Read the text, chose A.','Stopped early.'],'The logs keep them');
  const usual=await build(2),usualRecord=JSON.parse(await read(usual,'metadata.json')),usualReadme=await read(usual,'README.md');
- assert.deepEqual([usualRecord.model.reasoning_summary_requested,usualRecord.model.temperature,usualRecord.model.max_output_tokens],[false,'model default',12000]);
+ assert.deepEqual([usualRecord.model.reasoning_summary_requested,usualRecord.model.temperature,usualRecord.model.max_output_tokens],[false,'model default',16000]);
  assert(usualReadme.includes('| Temperature | model default |'));
  assert(!(await read(usual,'logs/responses.jsonl')).includes('reasoning_summary'));
  assert.equal(JSON.parse(await read(await build(3),'metadata.json')).model.reasoning_summary_requested,'in part');

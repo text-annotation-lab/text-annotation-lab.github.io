@@ -128,11 +128,11 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.equal(carriedOnNotice(1,1,'knowledge'),'The request failed. “Queue failed items for retry” makes it ready to run again.');
 
  // --- Where it applies --------------------------------------------------------------------
- // Only research mode carries on: both run loops make the rule only there, and the standard Lab's stop is unchanged.
+ // Both modes carry on: both run loops make the rule in either mode, and the old stop at the first error is gone.
  for(const file of ['app/page.tsx','components/model-knowledge.tsx']){
   const source=fs.readFileSync(path.join(root,file),'utf8');
-  assert(source.includes('const early=research?earlyStopper():undefined;'),file);
-  assert.equal(source.split('Stopped starting new annotations after an error. Active requests will finish, and completed results are kept. Review the error before retrying.').length,2,file);
+  assert(source.includes('const early=earlyStopper();'),file);
+  assert(!source.includes('Stopped starting new annotations after an error.'),file);
   assert(source.includes('back=true;shared=takeShared(sent.out);'),file+': the mark is taken off the reply before anything of it is kept');
   // The Lab's own messages are never read for a mark: only an error thrown before a reply came back is.
   assert(/early\((?:d|item)\.id,back\?shared:connectionFailure\((?:e|error)\)\.shared\)/.test(source),file);

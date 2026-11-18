@@ -138,11 +138,6 @@ export function modelHint(provider:Provider,model:string):string {
  return hints[model]||'Test this model on a small, varied sample before running your study.';
 }
 
-// The same description without advice to the reader (shown in research mode).
-export function modelFacts(provider:Provider,model:string):string{
- return modelHint(provider,model).split(/(?<=[.!?])\s+/).filter(sentence=>!/^(Test|Compare|Try)\b/.test(sentence)).join(' ');
-}
-
 // Standard-request eligibility, verified against first-party pricing. This does
 // not inspect an API key or promise quota for a particular account.
 export const MODEL_ACCESS_CHECKED='November 15, 2026';
@@ -163,4 +158,4 @@ export function modelAccessHint(provider:Provider,model:string):string{
 export function isGemini4(model:string):boolean{return model.startsWith('gemini-4-');}
 // The thinkingLevel Google documents as each Gemini 4 model's default.
 export function gemini4DefaultLevel(model:string):string{return model==='gemini-4-hydrogen'?'HIGH':'MEDIUM';}
-export function annotationOutputLimit(provider:string,model:string):number{return provider==='gemini'&&isGemini4(model)?32768:12000;}
+export function annotationOutputLimit(provider:string,model:string):number{return provider==='gemini'&&isGemini4(model)?32768:16000;}

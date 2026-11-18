@@ -154,9 +154,9 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
 
  // --- Where it is --------------------------------------------------------------------------
  const page=fs.readFileSync(path.join(root,'app/page.tsx'),'utf8'),knowledgePage=fs.readFileSync(path.join(root,'components/model-knowledge.tsx'),'utf8');
- // Research mode only, in both workspaces; Previous and Next step through the rows the filters leave.
- assert(page.includes("{research&&<DetailSteps index={currentAt} total={rows.length} onStep={stepTo}/>}"));assert(page.includes("{research&&<ResearchDetail row={current} columns={columns} study={{kind:'texts',requests,versions:promptVersions}}/>}"));
- assert(knowledgePage.includes("{research&&<DetailSteps index={currentAt} total={rows.length} onStep={stepTo}/>}"));assert(knowledgePage.includes("{research&&<ResearchDetail row={current} columns={columns} study={{kind:'knowledge',requests,versions:promptVersions}}/>}"));
+ // Previous and Next in both modes and both workspaces (through the rows the filters leave); the technical details in research mode only.
+ assert(page.includes("<DetailSteps index={currentAt} total={rows.length} onStep={stepTo}/>"));assert(page.includes("{research&&<ResearchDetail row={current} columns={columns} study={{kind:'texts',requests,versions:promptVersions}}/>}"));
+ assert(knowledgePage.includes("<DetailSteps index={currentAt} total={stepIds.length} onStep={stepTo}/>"));assert(knowledgePage.includes("{research&&<ResearchDetail row={current} columns={columns} study={{kind:'knowledge',requests,versions:promptVersions}}/>}"));
  // The export's logs and the details are written by the same code.
  const packages=fs.readFileSync(path.join(root,'lib/research/export-packages.ts'),'utf8');
  assert(packages.includes('const {request,...kept}=requestRecord(sent,doc,result,pdf),{status,error,...reply}=responseRecord(result)')&&packages.includes('requests.push({...head,request,run,')&&packages.includes('response:reply,run,'));

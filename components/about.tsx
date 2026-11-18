@@ -15,7 +15,6 @@ export function About({research}:{research?:boolean}){
   <p>The project is based in the Department of English at Aarhus University and is associated with the American Studies Center Aarhus (ASCA). It was developed for teaching and research in the department, with examples grounded in English and American Studies. Students, teachers, and researchers elsewhere are welcome to use it wherever they find it useful.</p>
   <p>The site is free to use. To run annotations, enter an API key {research?'from your own provider account':'from your instructor or your own provider account'}. Charges and usage limits apply to the account behind that key.</p>
    <p>For questions or feedback, contact <a href="mailto:jkc@cc.au.dk">Jens Kjeldgaard-Christiansen</a>.</p>
-  {research&&<SettingsExplained/>}
   <article>
    <h3>People</h3>
    <p><strong><a href="https://pure.au.dk/portal/en/persons/jkc@cc.au.dk/" target="_blank" rel="noreferrer">Jens Kjeldgaard-Christiansen</a></strong><br/>Creator and developer · Department of English, Aarhus University</p>
@@ -30,5 +29,6 @@ export function About({research}:{research?:boolean}){
    <p className="reading-meta">Because the site evolves, include your access date where appropriate. Citation is appreciated and is not a condition of use.</p>
    {lastUpdated&&<p className="reading-meta">Site last updated {lastUpdated}.</p>}
   </article>
+  {research&&<SettingsExplained/>}
  </TabsContent>;
 }

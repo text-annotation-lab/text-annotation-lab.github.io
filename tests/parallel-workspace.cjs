@@ -64,11 +64,12 @@ async function parallelHarness(mode=4){
  h.button('Processing options').props.onClick();await h.flush();
  assert.equal(h.button('Processing options').props['aria-expanded'],false);
  assert(h.text(h.button('Processing options')).includes('Batch · No chunking'));
+ // A failed text is marked and the run carries on with the others.
  const fail=await parallelHarness();const failedRun=fail.h.button('Run all').props.onClick();await fail.h.flush();
- fail.releases[1](Response.json({error:'Rate limit'},{status:429}));await fail.h.flush();assert.equal(fail.h.calls.length,4);assert.equal(fail.h.latest().docs[1].status,'error');
+ fail.releases[1](Response.json({error:'The reply was cut off.'},{status:422}));await fail.h.flush();assert.equal(fail.h.calls.length,5);assert.equal(fail.h.latest().docs[1].status,'error');
  assert.equal(fail.h.button('Run all').props.disabled,true);
- for(const i of [0,2,3])fail.releases[i](Response.json({score:'OK',explanation:'Finished'}));
- await failedRun;await fail.h.flush();assert.deepEqual(fail.h.latest().docs.map(d=>d.status),['done','error','done','done','pending','pending','pending']);
+ for(let i=0;i<fail.releases.length;i++){if(i===1)continue;fail.releases[i](Response.json({score:'OK',explanation:'Finished'}));await fail.h.flush();}
+ await failedRun;await fail.h.flush();assert.deepEqual(fail.h.latest().docs.map(d=>d.status),['done','error','done','done','done','done','done']);
  const legacy=await parallelHarness(null);assert.equal(legacy.h.find(n=>n.props?.id==='annotation-concurrency').props.value,1);
  const fresh=harness();await fresh.flush();
  assert(fresh.text(fresh.button('Processing options')).includes('Instant · one at a time · No chunking'));
@@ -76,5 +77,5 @@ async function parallelHarness(mode=4){
  const old=harness({docs:[],provider:'openai',model:providers.defaultModel('openai'),effort:'medium'});await old.flush();
  assert(old.text(old.button('Processing options')).includes('Instant · one at a time · No chunking'));
  const saved=await parallelHarness(1);assert.equal(saved.h.find(n=>n.props?.id==='annotation-concurrency').props.value,1);
- console.log('Parallel workspace checks passed: restore/save settings, bounded scheduling, out-of-order results, pause, single-text test, batch selection, and rate-limit drain.');
+ console.log('Parallel workspace checks passed: restore/save settings, bounded scheduling, out-of-order results, pause, single-text test, batch selection, and carrying on past a failed text.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
