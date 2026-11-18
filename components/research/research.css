@@ -36,7 +36,7 @@
 .research-changes{margin:8px 0 0;padding-left:18px;list-style:disc}
 .research-changes li{margin:4px 0}
 .what-changes-menu .what-changes-note{margin:10px 0 0;font-size:12.5px;color:#526579}
-.reading-panel .about-research{background:#f3f6fb;border-radius:8px;padding:4px 20px 14px;margin:0 0 22px}
+.reading-panel .about-research{margin:24px 0 0}.reading-panel .about-research summary{cursor:pointer}.reading-panel .about-research summary h3{display:inline;margin:0}.reading-panel .about-research .research-changes{margin-top:12px}
 .reading-panel .about-research .research-changes{padding-left:20px}
 .reading-panel .about-research .research-changes li{margin:6px 0}
 
