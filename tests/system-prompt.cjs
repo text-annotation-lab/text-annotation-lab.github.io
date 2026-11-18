@@ -155,7 +155,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const React=req('react'),{renderToStaticMarkup}=req('react-dom/server'),{SystemPrompt}=load('components/research/request-options.tsx');
  const empty=renderToStaticMarkup(React.createElement(SystemPrompt,{id:'system-prompt',unit:'text',value:'',onChange(){}})),filledBox=renderToStaticMarkup(React.createElement(SystemPrompt,{id:'system-prompt',unit:'subject',value:SYSTEM,onChange(){}}));
  assert(!empty.includes('open=""')&&filledBox.includes('open=""'),'The box opens by itself when the study has one');
- assert(empty.includes('System prompt (optional)')&&empty.includes('Rarely needed.')&&filledBox.includes('ahead of the message with your prompt and the subject'));
+ assert(empty.includes('System prompt (optional)')&&empty.includes('Rarely needed.')&&fs.readFileSync(path.join(root,'lib/research/setting-help.ts'),'utf8').includes('ahead of the message with your prompt and the text'));
  const page=fs.readFileSync(path.join(root,'app/page.tsx'),'utf8');
  assert(page.includes('{research&&<ResearchSystemPrompt '),'The box is shown in research mode only');assert(page.includes('system={research?system:undefined}'),'Saved prompts keep it in research mode only');
  assert(page.includes('&&!requestSettings?.system?.trim()?{...requestSettings,cache:undefined}'),'Caching stays on for the system prompt when the prompt begins with a placeholder');

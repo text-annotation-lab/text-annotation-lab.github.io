@@ -76,7 +76,7 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   let sends=0;const paced=harness(three(),async()=>++sends===1?limited():Response.json({score:'ONE',explanation:'Fine',modelReported:'gpt-6-luna-2026-10-01',stopReason:'completed',output:'{"score":"ONE"}'}));paced.props.research=true;await paced.flush();
   paced.button('Processing options').props.onClick();await paced.flush();
   assert.equal(select(paced).value,128);assert.deepEqual(select(paced).children.map(option=>option.props.value),[1,2,4,8,16,32,64,128]);assert(paced.text(paced.button('Processing options')).includes('Instant · 128 at a time'));
-  assert.equal(help(paced),'Run all can annotate up to 128 subjects at once. Each subject gets a separate request; token prices are unchanged. When the provider reports a rate limit, the run waits and goes on with fewer at a time. Annotate next always runs one subject.');
+  assert.throws(()=>help(paced),'Research mode has no fixed line under the setting');assert(paced.find(n=>n.props?.topic==='parallel'),'What it does is behind its ⓘ');
   paced.button('Run all').props.onClick();await paced.flush();assert.deepEqual(paced.latest().items.map(item=>item.status),['running','done','done']);
   await until(paced,()=>paced.latest().items.every(item=>item.status==='done'));
   assert.equal(paced.requests.length,4);assert(paced.latest().items.every(item=>item.concurrency===128&&item.error===undefined));
@@ -149,7 +149,7 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   });r.props.research=true;await r.flush();
   r.button('Processing options').props.onClick();await r.flush();
   assert.equal(repeatsSelect(r).value,3);assert.deepEqual(repeatsSelect(r).children.map(option=>String(option.props.value)),['1','2','3','4','5','6','7','8','9','10']);assert(r.text(r.button('Processing options')).includes('3 annotations per subject'));
-  assert.match(r.text(r.find(n=>n.props?.id==='knowledge-repeats-help')),/^Each subject is annotated 3 times, each time with a request of its own\./);
+  assert.throws(()=>r.find(n=>n.props?.id==='knowledge-repeats-help'),'No fixed line under the setting with an odd number');
   assert.equal(r.find(n=>n.type==='input'&&n.props?.type==='checkbox').props.disabled,true,'Web search makes one annotation per subject');assert.match(r.text(r.find(n=>n.props?.id==='knowledge-search-help')),/^Web search makes one annotation per subject; set Annotations per subject to 1 to use it\./);
   r.button('Run all').props.onClick();await until(r,()=>r.latest()?.items.every(item=>item.status==='done'));
   let items=r.latest().items;

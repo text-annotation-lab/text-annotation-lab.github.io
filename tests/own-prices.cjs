@@ -139,7 +139,8 @@ const STORE='text-annotation-lab:own-prices';
  const page=read('app/page.tsx'),knowledge=read('components/model-knowledge.tsx'),options=read('components/research/request-options.tsx'),panel=read('lib/cost-estimate/panel.tsx');
  for(const source of [page,knowledge]){assert(source.includes('typedPrice=research?ownPrice(provider,model,ownPrices):undefined'));assert.equal(source.split('ownPrice:typedPrice,research').length,3,'The estimate and the provider’s count both take it');}
  // The boxes, with the labels and the hint.
- for(const text of ['Price per million input tokens ($)','Price per million output tokens ($)','placeholder="Unknown"','Used only for the cost estimate before a run.','Use the Lab’s price','Remove your price'])assert(options.includes(text),text);
+ for(const text of ['Price per million input tokens ($)','Price per million output tokens ($)','placeholder="Unknown"','Use the Lab’s price','Remove your price'])assert(options.includes(text),text);
+ assert(read('lib/research/setting-help.ts').includes('Used only for the cost estimate before a run.'),'The ⓘ beside the prices says what they are for');
  assert(panel.includes('Uses your own price for this model:'));
  // No other code knows the prices: not the study, its backups, the exports, or the recorded cost of a run.
  const sources=[];(function walk(dir){for(const entry of fs.readdirSync(path.join(root,dir),{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory()){if(!['node_modules','dist','.git','tests','public'].includes(entry.name))walk(file);}else if(/\.(ts|tsx)$/.test(entry.name))sources.push(file.split(path.sep).join('/'));}})('.');

@@ -7,9 +7,10 @@ import {PROVIDERS,type Provider} from '@/lib/providers';
 import {MAX_OUTPUT_TOKENS,MAX_SYSTEM_PROMPT,budgetedClaude,cleanRequestSettings,defaultOutputLimit,outputFloor,plainOpenAI,sentRequestSettings,summarizesReasoning,takesTemperature,temperatureCeiling,type RequestSettings} from '@/lib/request-settings';
 import {PREVIEW_PLACEHOLDER,previewRequest,type RequestView} from '@/lib/research/request-view';
 import type {FrameSettings} from '@/lib/request-frame';
-import {PRICE_DATE,priceFor} from '@/lib/cost-estimate/pricing';
+import {priceFor} from '@/lib/cost-estimate/pricing';
 import {MAX_OWN_PRICE,ownPrice,setOwnPrice,useOwnPrices} from '@/lib/own-prices';
 import {CacheOption} from './cache-option';
+import {SettingInfo} from '@/components/setting-info';
 
 const count=(n:number)=>n.toLocaleString('en-US');
 // What the Lab adds after the prompt of these settings: on the answer format (the standard Lab's format), and on
@@ -26,16 +27,15 @@ function NumberBox({id,value,placeholder,min,max,step,disabled,describedBy,onCom
 // Your own price for the selected model, for the cost estimate before a run (lib/own-prices.ts). A number typed
 // into a box becomes your own price, and the other box keeps the price it shows (0 where there is none). An
 // emptied box changes nothing, and shows the price again when it is left.
-const PRICES_AS_OF=new Date(PRICE_DATE+'T00:00:00Z').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric',timeZone:'UTC'});
 function PriceBoxes({provider,model}:{provider:Provider;model:string}){
  const own=ownPrice(provider,model,useOwnPrices()),listed=priceFor(provider,model),shown=own??listed;
  const typed=(which:'input'|'output')=>(value:number|undefined)=>{if(value!==undefined)setOwnPrice(provider,model,{input:shown?.input??0,output:shown?.output??0,[which]:value});};
  return <>
   <div className="research-prices">
-   <div><label htmlFor="price-input">Price per million input tokens ($)</label><NumberBox id="price-input" value={shown?.input} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy="price-help" onCommit={typed('input')}/></div>
+   <div><label htmlFor="price-input">Price per million input tokens ($)<SettingInfo topic="prices"/></label><NumberBox id="price-input" value={shown?.input} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy="price-help" onCommit={typed('input')}/></div>
    <div><label htmlFor="price-output">Price per million output tokens ($)</label><NumberBox id="price-output" value={shown?.output} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy="price-help" onCommit={typed('output')}/></div>
   </div>
-  <p id="price-help" className="hint batch-explainer research-price-help">Used only for the cost estimate before a run. {listed?`The Lab’s prices are list prices as of ${PRICES_AS_OF}, and can go out of date; type your own to replace them.`:own?'':'The Lab has no price for this model; type its price to have its cost estimated.'}{own&&<> Your own price is in use and is kept in this browser. <button type="button" className="textbutton" onClick={()=>setOwnPrice(provider,model,null)}>{listed?'Use the Lab’s price':'Remove your price'}</button></>}</p>
+  {(!listed||own)&&<p id="price-help" className="hint batch-explainer research-price-help">{!listed&&!own?'The Lab has no price for this model; type its price to have its cost estimated.':''}{own&&<>Your own price is in use and is kept in this browser. <button type="button" className="textbutton" onClick={()=>setOwnPrice(provider,model,null)}>{listed?'Use the Lab’s price':'Remove your price'}</button></>}</p>}
  </>;
 }
 
@@ -49,13 +49,13 @@ export function RequestOptions({part,provider,model,effort,prompt,fixed,value,di
  const takes=takesTemperature(provider,model,effort),ceiling=temperatureCeiling(provider),usual=defaultOutputLimit(provider,model),floor=outputFloor(provider,model,effort),reasons=summarizesReasoning(effort,provider,model);
  if(part==='cache')return <CacheOption provider={provider} model={model} prompt={prompt} fixed={fixed} value={value} disabled={disabled} onChange={next=>set({cache:next?.cache})}/>;
  return <>
-  <div className="processing-choice research-first-option"><label htmlFor="request-temperature">Temperature</label><NumberBox id="request-temperature" value={takes?sent?.temperature:undefined} placeholder={takes?'Model default':'Not sent'} min={0} max={ceiling} step={0.1} disabled={disabled||!takes} describedBy="request-temperature-help" onCommit={temperature=>set({temperature})}/></div>
-  <p id="request-temperature-help" className="hint batch-explainer">{takes?`Empty: no temperature is sent and the model uses its own. From 0 to ${ceiling}. Many reasoning models accept only their default and reject a request with another value.`:provider==='openrouter'?'Claude models that reason take no temperature, so none is sent.':`Claude models that reason take no temperature, so none is sent. ${budgetedClaude(model)&&!model.startsWith('claude-haiku-4-5')?'This model':'Claude Haiku 4.5'} takes one with reasoning off.`}</p>
-  <div className="processing-choice"><label htmlFor="request-max-output">Max output tokens</label><NumberBox id="request-max-output" value={sent?.maxOutput??usual} placeholder={String(usual)} min={floor} max={MAX_OUTPUT_TOKENS} step={1} disabled={disabled} describedBy="request-max-output-help" onCommit={maxOutput=>set({maxOutput})}/></div>
-  <p id="request-max-output-help" className="hint batch-explainer">The most tokens a reply may use, reasoning included; a reply that reaches the limit counts as failed. The Lab’s own limit for this model is {count(usual)}.{floor>16?` This reasoning setting needs at least ${count(floor)}.`:''}</p>
+  <div className="processing-choice research-first-option"><label htmlFor="request-temperature">Temperature<SettingInfo topic="temperature"/></label><NumberBox id="request-temperature" value={takes?sent?.temperature:undefined} placeholder={takes?'Model default':'Not sent'} min={0} max={ceiling} step={0.1} disabled={disabled||!takes} describedBy="request-temperature-help" onCommit={temperature=>set({temperature})}/></div>
+  {!takes&&<p id="request-temperature-help" className="hint batch-explainer">{provider==='openrouter'?'Claude models that reason take no temperature, so none is sent.':`Claude models that reason take no temperature, so none is sent. ${budgetedClaude(model)&&!model.startsWith('claude-haiku-4-5')?'This model':'Claude Haiku 4.5'} takes one with reasoning off.`}</p>}
+  <div className="processing-choice"><label htmlFor="request-max-output">Max output tokens<SettingInfo topic="max-output"/></label><NumberBox id="request-max-output" value={sent?.maxOutput??usual} placeholder={String(usual)} min={floor} max={MAX_OUTPUT_TOKENS} step={1} disabled={disabled} describedBy="request-max-output-help" onCommit={maxOutput=>set({maxOutput})}/></div>
+  <p id="request-max-output-help" className="hint batch-explainer">A reply that reaches it counts as failed. The Lab’s own limit for this model is {count(usual)}.{floor>16?` This reasoning setting needs at least ${count(floor)}.`:''}</p>
   <PriceBoxes provider={provider} model={model}/>
-  <label className="research-check research-output-check research-request-option"><input type="checkbox" checked={reasons&&Boolean(value?.summary)} disabled={disabled||!reasons} onChange={event=>set({summary:event.target.checked?true:undefined})}/><span>Record the model’s reasoning summary<small>{reasons?'A readable summary of the model’s reasoning, kept with each result and in the exports. Some models return none.':provider==='openai'&&plainOpenAI(model)?'This model has no reasoning to summarize.':'Reasoning is switched off for this model, so there is nothing to summarize.'}</small></span></label>
-  {provider==='openai'&&<label className="research-check research-output-check research-request-option"><input type="checkbox" checked={value?.store!==false} disabled={disabled} onChange={event=>set({store:event.target.checked?undefined:false})}/><span>Show requests in OpenAI’s logs<small>Lets you inspect them on platform.openai.com. OpenAI keeps stored requests for a limited time; switch this off for confidential texts.</small></span></label>}
+  <label className="research-check research-output-check research-request-option"><input type="checkbox" checked={reasons&&Boolean(value?.summary)} disabled={disabled||!reasons} onChange={event=>set({summary:event.target.checked?true:undefined})}/><span>Record the model’s reasoning summary<SettingInfo topic="reasoning-summary"/>{!reasons&&<small>{provider==='openai'&&plainOpenAI(model)?'This model has no reasoning to summarize.':'Reasoning is switched off for this model, so there is nothing to summarize.'}</small>}</span></label>
+  {provider==='openai'&&<label className="research-check research-output-check research-request-option"><input type="checkbox" checked={value?.store!==false} disabled={disabled} onChange={event=>set({store:event.target.checked?undefined:false})}/><span>Show requests in OpenAI’s logs<SettingInfo topic="openai-logs"/><small>OpenAI keeps them for a limited time; switch this off for confidential texts.</small></span></label>}
  </>;
 }
 
@@ -65,9 +65,8 @@ export function SystemPrompt({id,unit,value,disabled,onChange}:{id:string;unit:'
  const filled=value.trim()!=='',[open,setOpen]=useState(filled);
  useEffect(()=>{if(filled)setOpen(true);},[filled]);
  return <details className="research-system-prompt" open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
-  <summary>System prompt (optional)</summary>
-  <textarea id={id} aria-label="System prompt" aria-describedby={id+'-help'} rows={4} maxLength={MAX_SYSTEM_PROMPT} value={value} disabled={disabled} placeholder="Rarely needed. Standing instructions sent separately from the prompt, e.g. a role: “You are an expert in educational assessment.”" onChange={event=>onChange(event.target.value)}/>
-  <p id={id+'-help'} className="hint">Sent unchanged with every request as the system prompt, ahead of the message with your prompt and the {unit}. Leave empty unless you follow a setup that uses one.</p>
+  <summary>System prompt (optional)<SettingInfo topic="system-prompt"/></summary>
+  <textarea id={id} aria-label="System prompt" rows={4} maxLength={MAX_SYSTEM_PROMPT} value={value} disabled={disabled} placeholder="Rarely needed. Standing instructions sent separately from the prompt, e.g. a role: “You are an expert in educational assessment.”" onChange={event=>onChange(event.target.value)}/>
  </details>;
 }
 

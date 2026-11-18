@@ -8,7 +8,9 @@ const percent=(share:number)=>`${+(share*100).toFixed(1)}%`;
 // the prompt has placeholders that are filled in for each text, the length of the part before the first one,
 // which is all that the texts' prompts share and so all that is stored. system: research mode's own system prompt,
 // which is stored with it.
-export function cacheNote(provider:Provider,model:string,prompt:string,fixed?:number,system?:string):{available:boolean;text:string}{
+// When it can be switched: about, what caching does at this provider (behind the setting's ⓘ), and size, the
+// shortest prompt cached and how long this one is, which stays beside the setting.
+export function cacheNote(provider:Provider,model:string,prompt:string,fixed?:number,system?:string):{available:boolean;text:string;about?:string;size?:string}{
  const support=cacheSupport(provider,model),min=support?.minTokens?.toLocaleString('en-US');
  if(!support)return {available:false,text:'Not available for this model.'};
  if(support.kind==='automatic')return {available:false,text:`${support.vendor==='openai'?'OpenAI':support.vendor==='anthropic'?'Anthropic':'Gemini'} caches repeated prompts by itself${min?`, from ${min} tokens on this model`:''}. There is nothing to switch on or off.`};
@@ -20,5 +22,6 @@ export function cacheNote(provider:Provider,model:string,prompt:string,fixed?:nu
  const stored=`${percent(support.write!-1)} extra${batch&&support.batchWrite!==support.write?` (${percent(support.batchWrite!-1)} in a batch)`:''}`;
  const length=shared.trim()||own?textTokens(own+(own&&shared.trim()?'\n':'')+(shared.trim()?shared:''),price?.tokenMultiplier||1):undefined;
  const sized=!length?'':own?(fixed===undefined?` The system prompt and this prompt: about ${tokens(length)} tokens.`:` Only the system prompt and the part of the prompt before the first placeholder are stored: about ${tokens(length)} tokens.`):fixed===undefined?` This prompt: about ${tokens(length)} tokens.`:` Only the part before the first placeholder is stored: about ${tokens(length)} tokens.`;
- return {available:true,text:`${support.vendor==='anthropic'?'Anthropic':'OpenAI'} stores the prompt for ${life}; later texts read it ${read}, and storing it costs ${stored}. Prompts under ${min} tokens are not cached.${sized}`};
+ const about=`${support.vendor==='anthropic'?'Anthropic':'OpenAI'} stores the prompt for ${life}; later texts read it ${read}, and storing it costs ${stored}. Prompts under ${min} tokens are not cached.`;
+ return {available:true,text:about+sized,about,size:`Cached from ${min} tokens.${sized}`};
 }
