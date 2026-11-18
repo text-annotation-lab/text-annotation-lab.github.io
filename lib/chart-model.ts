@@ -7,7 +7,8 @@ import {chartNumber,suggestedYear,validChartYear} from './results-chart';
 
 export type ChartSourceRow=NamedAnswers&{
  id:string;name:string;status:string;score?:string;explanation?:string;
- prompt?:string;model?:string;effort?:string;time?:string;startedAt?:string;
+ prompt?:string;model?:string;effort?:string;time?:string;startedAt?:string;provider?:string;webSearch?:boolean;
+ requestSettings?:{system?:string;temperature?:number;maxOutput?:number};
  runNumber?:number;subjectId?:string;sourceId?:string;sourceName?:string;chunkIndex?:number;
  chartYear?:number|null;chartGroup?:string|null;fields?:{heading:string;value:string}[];
 };
@@ -24,6 +25,8 @@ export type ScaleType='sequential'|'diverging';
 export type Scale={min:number;max:number;type:ScaleType;lowLabel:string;highLabel:string;source:'declared'|'prompt'|'data'|'custom'};
 
 const ABSTAIN='INSUFFICIENT_KNOWLEDGE';
+// A text whose chunks or runs gave two or more answers equally often (combined into one value per text).
+export const CHART_TIE='No majority (tie)';
 
 // A plain-text reply that is JSON (research mode) can be charted by each of its values.
 const splitReply=(row:ChartSourceRow)=>row.answerSettings?.plain?jsonAnswers(row.answers):null;
@@ -47,8 +50,15 @@ function explanationOf(row:ChartSourceRow){
  return row.explanation?.trim()||(named?resultAnswer(row,named).trim():key?jsonValue(reply,key).trim():'');
 }
 
-/** Identical prompt, model, effort and fields count as one setting. */
-export function settingsKey(row:ChartSourceRow){return JSON.stringify([row.prompt??'',row.model??'',row.effort??'',row.answerFields??[]]);}
+// The settings that can change the answers, each with its name for the notice. Results whose settings are all the
+// same count as one setting. (Prompt caching, the provider's logs, and reasoning summaries change no answer.)
+const SETTING_PARTS:[string,(row:ChartSourceRow)=>unknown][]=[
+ ['provider',row=>row.provider??''],['prompt',row=>row.prompt??''],['model',row=>row.model??''],['reasoning effort',row=>row.effort??''],
+ ['answer fields',row=>[row.answerFields??[],row.answerSettings??null]],['system prompt',row=>row.requestSettings?.system??''],
+ ['temperature',row=>row.requestSettings?.temperature??null],['output limit',row=>row.requestSettings?.maxOutput??null],
+ ['web research',row=>Boolean(row.webSearch)],
+];
+export function settingsKey(row:ChartSourceRow){return JSON.stringify(SETTING_PARTS.map(([,part])=>part(row)));}
 
 export function settingsSummary(rows:ChartSourceRow[]){
  const done=rows.filter(row=>row.status==='done');
@@ -60,7 +70,10 @@ export function settingsSummary(rows:ChartSourceRow[]){
  });
  let latestKey='',latestStamp='',latestIndex=-1;
  for(const [key,{latest,last}] of counts)if(!latestKey||latest>latestStamp||latest===latestStamp&&last>latestIndex){latestKey=key;latestStamp=latest;latestIndex=last;}
- return {count:counts.size,latestKey,latestCount:counts.get(latestKey)?.count??0};
+ // What differs between the settings: the names of the parts that are not the same in all of them.
+ const keys=[...counts.keys()].map(key=>JSON.parse(key) as unknown[]);
+ const changed=SETTING_PARTS.map(([name],i)=>({name,i})).filter(({i})=>new Set(keys.map(key=>JSON.stringify(key[i]))).size>1).map(({name})=>name);
+ return {count:counts.size,latestKey,latestCount:counts.get(latestKey)?.count??0,changed};
 }
 
 /** Classifies a field from its values: numbers make a scale; many long, unique answers are free text. */
@@ -155,7 +168,13 @@ export function buildUnits(rows:ChartSourceRow[],field:Field,options:ChartOption
   let value=values[0],number=numbers[0];
   if(list.length>1){
    if(numeric){number=numbers.reduce((sum,n)=>sum!+n!,0)!/numbers.length;value=formatNumber(number);}
-   else{const counts=new Map<string,number>();values.forEach(v=>counts.set(v,(counts.get(v)||0)+1));value=Array.from(counts).sort((a,b)=>b[1]-a[1])[0][0];number=null;}
+   else{
+    // The most common answer; when two or more are equally common, no answer is picked (the order of the chunks or
+    // runs must not decide it).
+    const counts=new Map<string,number>();values.forEach(v=>counts.set(v,(counts.get(v)||0)+1));
+    const most=Math.max(...counts.values()),top=Array.from(counts).filter(([,n])=>n===most);
+    value=top.length>1?CHART_TIE:top[0][0];number=null;
+   }
   }
   const first=list[0];
   const name=first.sourceId?(first.sourceName||first.name):list.length>1||first.runNumber===undefined?first.name:first.name+(first.runNumber>1?` · Run ${first.runNumber}`:'');

@@ -173,13 +173,18 @@ export function timeDots(units:Unit[],scale:Scale|undefined,trend:boolean,o:View
  return {svg:svgDoc(W,H,s,'Scores by year',o.interactive),width:W,height:H,picks,notes};
 }
 
+// The answers outside the charted categories, as one segment. Its key is never an answer, so a category that is
+// really called "Other" stays a segment of its own; it is then labeled "All other answers".
+export const REST='\u0000rest';
+export function restLabel(categories:string[]){return categories.some(c=>c.trim().toLowerCase()==='other')?'All other answers':'Other';}
+
 // ---------- Over time: share per period ----------
 export function timeShares(units:Unit[],scale:Scale|undefined,categories:string[]|undefined,length:number,o:ViewOptions):Figure{
  const dated=units.filter(u=>u.year!==undefined);
  const periods=periodsFor(dated.map(u=>u.year!),length);
- const keys=scale?scalePoints(scale).map(String):[...categories!,...(units.some(u=>!categories!.includes(u.value))?['Other']:[])];
+ const keys=scale?scalePoints(scale).map(String):[...categories!,...(units.some(u=>!categories!.includes(u.value))?[REST]:[])];
  const colorOf=(k:string)=>scale?scaleColor(scale,Number(k)):categoryColors(categories!).get(k)||OTHER;
- const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.round(u.number!)))):(categories!.includes(u.value)?u.value:'Other');
+ const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.round(u.number!)))):(categories!.includes(u.value)?u.value:REST);
  const W=o.width,l=44,r=W-6,t=10,b=250,H=b+46,slot=(r-l)/periods.length,bw=Math.min(84,slot*.7),Y=(p:number)=>b-p*(b-t);
  let s='';const picks:Pick[]=[],notes:string[]=[];
  for(const p of [0,.25,.5,.75,1])s+=line(l,Y(p),r,Y(p),p?GRID:AXIS)+text(l-8,Y(p)+4,Math.round(p*100)+'%',{anchor:'end'});
@@ -190,7 +195,7 @@ export function timeShares(units:Unit[],scale:Scale|undefined,categories:string[
   let acc=0;
   for(const key of keys){
    const members=inPeriod.filter(u=>keyOf(u)===key),c=members.length;if(!c)continue;
-   const top=Y((acc+c)/total),h=Y(acc/total)-top,fill=colorOf(key),label=scale?scaleLabel(scale,Number(key)):key;
+   const top=Y((acc+c)/total),h=Y(acc/total)-top,fill=colorOf(key),label=scale?scaleLabel(scale,Number(key)):key===REST?restLabel(categories!):key;
    picks.push({label:`${period.start}–${period.end} · ${label}`,ids:members.flatMap(u=>u.ids)});
    s+=pickOpen(picks.length-1,`${period.start} to ${period.end}, ${label}: ${c} of ${total} ${o.noun}. Show them.`,o.interactive)+hit(x,top,bw,h,o.interactive)+rect(x,top+1,bw,h-2,fill);
    if(h>=18&&bw>=44){const ink=inkOn(fill),short=scale?label:'';
@@ -213,9 +218,9 @@ export function groupsView(units:Unit[],groups:string[],scale:Scale|undefined,ca
  const meansTop=narrow&&showMeans?top+groups.length*rowH+44:top;
  const H=(narrow&&showMeans?meansTop+groups.length*40+40:top+groups.length*rowH+40);
  let s='';
- const keys=scale?scalePoints(scale).map(String):[...categories!,...(units.some(u=>!categories!.includes(u.value))?['Other']:[])];
+ const keys=scale?scalePoints(scale).map(String):[...categories!,...(units.some(u=>!categories!.includes(u.value))?[REST]:[])];
  const colorOf=(k:string)=>scale?scaleColor(scale,Number(k)):categoryColors(categories!).get(k)||OTHER;
- const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.round(u.number!)))):(categories!.includes(u.value)?u.value:'Other');
+ const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.round(u.number!)))):(categories!.includes(u.value)?u.value:REST);
  const diverging=scale?.type==='diverging';
  // Diverging bars are centered on the neutral point; others start at the left edge.
  const center=diverging?barL+(barR-barL)*.5:barL,U=diverging?(barR-barL)/2:(barR-barL);
@@ -229,7 +234,7 @@ export function groupsView(units:Unit[],groups:string[],scale:Scale|undefined,ca
   if(diverging){const below=members.filter(u=>Math.round(u.number!)<scaleCenter(scale!)).length,mid=members.filter(u=>Math.round(u.number!)===scaleCenter(scale!)).length;x=center-(below+mid/2)/Math.max(1,total)*U;}
   for(const key of keys){
    const list=members.filter(u=>keyOf(u)===key),c=list.length;if(!c)continue;
-   const w=c/total*U,fill=colorOf(key),label=scale?scaleLabel(scale,Number(key)):key;
+   const w=c/total*U,fill=colorOf(key),label=scale?scaleLabel(scale,Number(key)):key===REST?restLabel(categories!):key;
    picks.push({label:`${group} · ${label}`,ids:list.flatMap(u=>u.ids)});
    s+=pickOpen(picks.length-1,`${group}, ${label}: ${c} of ${total} ${o.noun}. Show them.`,o.interactive)+hit(x,y,w,h,o.interactive)+rect(x+1,y,w-2,h,fill);
    const ink=inkOn(fill);
