@@ -1,6 +1,7 @@
 // Research mode: a batch run larger than the provider takes in one batch is sent as several provider batches, all in
 // the same run. Each batch holds whole texts (or subjects): every annotation of a text goes in the same batch. The
 // requests are numbered across the run, so the results of every batch are matched to the run's texts as before.
+import {CLOSE_WHEN_SAVED} from '../batch-save-note';
 import {SPLIT_LIMITS} from '../batch-limits';
 import type {BatchJob,BatchPart} from '../batch-types';
 import type {Provider} from '../providers';
@@ -94,7 +95,7 @@ export function partsNotice(job:BatchJob,action:'check'|'collect'|'cancel',colle
  if(!open.length)return `Batch results collected from all ${parts.filter(part=>part.state==='collected').length} batches of this run. Any failed ${unit} are marked for review; completed results are kept.`;
  const check=unknown>=0?` Batch ${unknown+1} of ${parts.length} needs checking: recover it under Batch details.`:'';
  const running=open.filter(part=>part.state==='processing').length,ended=open.filter(part=>part.state==='ready').length;
- if(running)return `${got}${running} of the ${parts.length} batches ${running===1?'is':'are'} still processing. You can close this page once the workspace is saved.${ended?' Collect results to take in the batches that have ended.':''}${check}`;
+ if(running)return `${got}${running} of the ${parts.length} batches ${running===1?'is':'are'} still processing. ${CLOSE_WHEN_SAVED}${ended?' Collect results to take in the batches that have ended.':''}${check}`;
  if(ended)return `${got}The batches still to collect have ended. Collect results to see their annotations and any errors.${check}`;
  return (got+check).trim();
 }
