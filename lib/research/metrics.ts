@@ -32,7 +32,7 @@ export interface Agreement {
    * labels near it (see `agreement`); `range` is the scale's lowest and highest value. With codebook categories
    * that aren't numbers: a label that isn't one of them (nor a tie of them).
    */
-  leftOut: { n: number; values: string[]; range?: [number, number]; ties?: number; tiedValues?: string[] };
+  leftOut: { n: number; values: string[]; range?: [number, number]; ties?: number; tiedValues?: string[]; abstained?: { both: number; one: number } };
   /**
    * Plain-text scores: texts kept although a label lies outside the range of the model's answers (`range`), because it
    * is near that range or another label on the scale (e.g. a −3 when the model answered −2…3), or because the answers
@@ -556,6 +556,12 @@ export function agreement(
   // A tied majority vote (several annotations per text, "a | b") is no answer the model gave: such a pair is left
   // out before anything else and reported on its own (Jens, 2026-11-17).
   // (A category of the field whose name holds " | " is no tie.)
+  // Model knowledge: a model that answers INSUFFICIENT_KNOWLEDGE gave no judgment. Such a pair is left out and
+  // counted, both models abstaining apart from one (Jens, 2026-11-18), so two models are not said to agree because
+  // both abstained.
+  const abstains = (v: string) => v.trim().toUpperCase() === 'INSUFFICIENT_KNOWLEDGE';
+  const abstainPairs = pairs.filter(([x, y]) => abstains(x) || abstains(y));
+  if (abstainPairs.length) pairs = pairs.filter(([x, y]) => !abstains(x) && !abstains(y));
   const tied = (v: string) => isTie(v) && !allowed.includes(v);
   const tiedPairs = pairs.filter(([x, y]) => tied(x) || tied(y));
   if (tiedPairs.length) pairs = pairs.filter(([x, y]) => !tied(x) && !tied(y));
@@ -691,6 +697,11 @@ export function agreement(
         }
       : {}),
   });
+  if (abstainPairs.length) {
+    const both = abstainPairs.filter(([x, y]) => abstains(x) && abstains(y)).length;
+    leftOut.abstained = { both, one: abstainPairs.length - both };
+    leftOut.n += abstainPairs.length;
+  }
   if (tiedPairs.length) {
     leftOut.ties = tiedPairs.length;
     leftOut.tiedValues = [...new Set(tiedPairs.flat().filter(tied))].slice(0, 5);

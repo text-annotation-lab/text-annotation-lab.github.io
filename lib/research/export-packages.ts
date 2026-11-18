@@ -26,7 +26,9 @@ import {offScaleLeftOut} from './scale-combine';
 // Told each step as it starts: "Computing agreement", or the file about to be written.
 export type Progress=(step:string)=>void|Promise<void>;
 export type PackageFile={path:string;data:string|Uint8Array|Blob};
-export type Package={name:string;files:PackageFile[]};
+// warning: what the package lacks that it should have (a research repository without its study backup), to say on
+// the page as well as in the README.
+export type Package={name:string;files:PackageFile[];warning?:string};
 // read: each text as it was sent. intervals: how the 95% intervals are computed (by default here). backup:
 // the whole study as a backup file. now: the time of the export.
 export type ExportContext={study:ExportStudy;read:DocumentReader;intervals?:Intervals;onProgress?:Progress;backup?:()=>Promise<string>;now?:Date};
@@ -335,7 +337,7 @@ function agreementSection(study:ExportStudy,report:RunReport):string[]{
 
 // The README of the supplementary repository: what the package holds, and how to send the requests again. It names
 // neither the Lab nor its build, and has no text for a paper (the researcher writes that).
-function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord,options:SupplementaryOptions,has:{agreement:boolean;script:boolean;scriptWhy:string;schema:boolean;asSent:boolean;files:number;unread:number;answersOnce:boolean;fewer:boolean;source:boolean}):string{
+function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord,options:SupplementaryOptions,has:{agreement:boolean;script:boolean;scriptWhy:string;schema:boolean;asSent:boolean;files:number;unread:number;answersOnce:boolean;fewer:boolean;source:boolean;readLeftOut?:string[]}):string{
  const {dataset}=study,{facts}=report,{run}=facts,unit=unitOf(dataset),knowledge=dataset.kind==='knowledge',plain=Boolean(run.answerSettings?.plain),reps=run.repeats||1;
  // Placeholders of the prompt that were filled in for each text, and where the corpus holds their values.
  const inserted=runInserts(report.sent),valued=valuedInserts(dataset,run.number),metaFilled=inserted.filter(name=>name!=='id'&&valued.has(name)),unfilled=inserted.filter(name=>!valued.has(name));
@@ -366,7 +368,7 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   ...(has.script?[tableRow(['`scripts/annotate.py`','Python script that sends the requests again (values inserted)']),tableRow(['`scripts/annotate_template.py`','The same script with `{{PLACEHOLDERS}}` marking every value that comes from the study']),tableRow(['`scripts/requirements.txt`','Says that the script needs no packages besides Python itself'])]:[]),
   '',...(options.logs?[LOG_NOTE+' A failed attempt’s request may never have reached the provider (a connection that broke, say).','']:[])];
  if(has.script)lines.push('## Reproducing','','```bash','cd scripts',`export ${keyVariable(run.provider as Provider)}=...`,`python annotate.py ${options.texts?'../data/corpus.csv':'your_corpus.csv'}`,'```','',
-  `The script needs Python 3.9 or later and nothing else. ${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files||report.sent.pdf?' (or file, with the path of a PDF)':''}${[report.sent.text,report.sent.pdf].some(sent=>sent?.frame.body.includes('<<DOCUMENT_FILENAME>>'))?'; a column source gives the name each request states for the document':''}${inserted.length?`; and the columns the prompt’s placeholders take their values from (${insertColumns(dataset,inserted,run.number).filter(pair=>pair[1]).map(pair=>pair[1]).join(', ')})`:''}. `}${inserted.length?`The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent${options.logs?' (the logs hold the requests as they were sent)':''}. `:''}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
+  `The script needs Python 3.9 or later and nothing else. ${options.texts&&has.readLeftOut?.length?`\`data/corpus.csv\` leaves out the ${has.readLeftOut.length===1?'column':'columns'} ${listed(has.readLeftOut.map(name=>'`'+name+'`'))}, which the prompt’s placeholders take their values from; add ${has.readLeftOut.length===1?'it':'them'} to the file to run the script. `:''}${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files||report.sent.pdf?' (or file, with the path of a PDF)':''}${[report.sent.text,report.sent.pdf].some(sent=>sent?.frame.body.includes('<<DOCUMENT_FILENAME>>'))?'; a column source gives the name each request states for the document':''}${inserted.length?`; and the columns the prompt’s placeholders take their values from (${insertColumns(dataset,inserted,run.number).filter(pair=>pair[1]).map(pair=>pair[1]).join(', ')})`:''}. `}${inserted.length?`The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent${options.logs?' (the logs hold the requests as they were sent)':''}. `:''}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
  else if(has.scriptWhy)lines.push('## Reproducing','',has.scriptWhy+(options.logs?' The logs hold every request as it was sent.':' The requests as sent are in the logs when the package includes them.'),'');
  // With the logs, the texts are in every request there.
  if(!options.texts)lines.push(options.logs?`The annotated ${unit}s are not included as a separate file, but \`logs/requests.jsonl\` holds every request with its ${knowledge?'subject':'full text'}${report.sent.pdf?' (a PDF sent as a file is named there, not included)':''}.`:`The annotated ${unit}s are not included in this package (for example, for copyright or privacy reasons).`,'');
@@ -385,10 +387,11 @@ export async function buildSupplementary(ctx:ExportContext,run:number,options:Su
  const hashes=await promptHashes(dataset),find=requestFinder(study),report=await reportRun(ctx,run,hashes,find),record=runRecord(study,report.facts,report.hash,report.sent,exportedAt);
  const ids=new Set(requestLines(dataset).filter(line=>line.run===run).map(line=>line.row.id)),rows=dataset.rows.filter(row=>ids.has(row.id));
  const reps=report.facts.run.repeats||1,corpus=options.texts?await readCorpus(ctx,rows,name+'/data',true):undefined;
- // The label and metadata columns chosen; data/corpus.csv also keeps the metadata columns the prompt's placeholders
- // read. A column of human labels never: its placeholder was sent empty, and the script fills it in empty too.
+ // The label and metadata columns chosen, in results.csv and data/corpus.csv alike. A metadata column the prompt's
+ // placeholders read that was left out is named in the README, which says the script needs it (readLeftOut).
  const chosen=publicColumns(dataset).filter(c=>!options.columns||options.columns.includes(dataset.columns[c].name));
  const read=new Set(runInserts(report.sent).filter(insert=>insert.startsWith('meta.')).map(insert=>columnIndex(dataset.columns,insert.slice(5))).filter(c=>c>=0&&dataset.columns[c].role==='meta'));
+ const corpusNames=corpusColumnNames(dataset),readLeftOut=[...read].filter(c=>!chosen.includes(c)).map(c=>corpusNames[c]??dataset.columns[c].name);
  // source: the name each request gave for its document, only where a request named it (a run made before
  // November 16, 2026, or a PDF sent as a file) or where it says more than the doc_id.
  const frames=[report.sent.text,report.sent.pdf].filter(Boolean).map(sent=>sent!.frame.body);
@@ -402,7 +405,7 @@ export async function buildSupplementary(ctx:ExportContext,run:number,options:Su
  await add('results/results_by_replicate.csv',toCsv(byRequest));
  if(report.agreement.length)await add('results/agreement.csv',toCsv(agreementTable(report.agreement,agreementKeys(dataset))));
  if(corpus){
-  await add('data/corpus.csv',toCsv(corpusTable(dataset,sentValues(dataset,rows,run),corpus.texts,corpus.files,{columns:dataset.columns.map((_,c)=>c).filter(c=>chosen.includes(c)||read.has(c)),source})));
+  await add('data/corpus.csv',toCsv(corpusTable(dataset,sentValues(dataset,rows,run),corpus.texts,corpus.files,{columns:dataset.columns.map((_,c)=>c).filter(c=>chosen.includes(c)),source})));
   for(const pdf of corpus.pdfs){await ctx.onProgress?.('Writing '+pdf.path.slice(name.length+1));files.push({path:pdf.path,data:pdf.file});}
  }
  if(options.logs){
@@ -412,7 +415,7 @@ export async function buildSupplementary(ctx:ExportContext,run:number,options:Su
  const script=scriptFiles(study,report,exportedAt);
  for(const file of script.files)await add('scripts/'+file.path,file.data);
  await add('README.md',supplementaryReadme(study,report,record,options,{agreement:report.agreement.length>0,script:script.files.length>0,scriptWhy:script.why,schema:Boolean(schema),asSent:prompt.some(file=>file.path==='prompt_as_sent.txt'),files:corpus?.pdfs.length||0,unread:corpus?.unread||0,
-  answersOnce:reps===1,fewer:results[0].includes('n_ok'),source}));
+  answersOnce:reps===1,fewer:results[0].includes('n_ok'),source,readLeftOut}));
  return {name,files};
 }
 
@@ -491,7 +494,7 @@ export async function buildResearchRepository(ctx:ExportContext,options:Research
   ...(options.logs?[LOG_NOTE+' A failed attempt’s request may never have reached the provider (a connection that broke, say).'+(runs.some(run=>reports.get(run.number)!.sent.rebuilt>0)?' '+REBUILT_NOTE:''),'']:[]),
   ...(corpus.unread?[`${count(corpus.unread)} ${unit}${corpus.unread===1?'':'s'} could not be read when this repository was made and ${corpus.unread===1?'has':'have'} no text here.`,'']:[])].join('\n');
  await add('README.md',readme);
- return {name,files};
+ return {name,files,...(backupNote?{warning:`study-backup.json is missing: ${backupNote.replace(/\.$/,'')}. Its README says so too.`}:{})};
 }
 
 // A package as one .zip file.

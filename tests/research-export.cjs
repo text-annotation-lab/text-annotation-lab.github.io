@@ -224,6 +224,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert(steps.includes('Computing agreement for run 2')&&steps.includes('Writing corpus/corpus.csv')&&steps.some(step=>step.startsWith('Reading the texts')),'Each step is named before it starts');
  const bare=await packages.buildResearchRepository(context({backup:async()=>{throw new Error('Wait for both workspaces to finish opening');}}),{logs:false});
  assert(!names(bare).includes('study-backup.json')&&!names(bare).some(name=>name.endsWith('.jsonl')&&name.startsWith('runs/')));assert((await read(bare,'README.md')).includes('Not included: Wait for both workspaces to finish opening'));
+ assert.match(bare.warning,/^study-backup\.json is missing: .*Wait for both workspaces to finish opening/,'The page says so too');assert.equal(full.warning,undefined);
  // As one .zip file.
  const zipped=await JSZip.loadAsync(await packages.zipPackage(full));
  assert.deepEqual(Object.keys(zipped.files).filter(name=>!zipped.files[name].dir).sort(),full.files.map(file=>file.path).sort());

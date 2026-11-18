@@ -272,9 +272,10 @@ export function disagreements(p:Pairing):Disagreement[]{
 export function leftOutNote(stats:Agreement,unit='text',kind:Pairing['leftOut']='marker'):string{
  if(!stats.leftOut.n)return '';
  const quoted=(list:string[])=>list.map(v=>`“${v}”`).join(', ')+(list.length===5?', …':'');
- const ties=stats.leftOut.ties||0,other=stats.leftOut.n-ties;
+ const ties=stats.leftOut.ties||0,abstained=stats.leftOut.abstained,gave=abstained?abstained.both+abstained.one:0,other=stats.leftOut.n-ties-gave;
  const why=stats.leftOut.range?`not a number on the scale ${stats.leftOut.range[0]} to ${stats.leftOut.range[1]}`:kind==='value'?'not one of the field’s allowed values':kind==='number'?'not a number':'a missing-value marker';
- return [ties?`${ties} ${unit}${ties===1?' was':'s were'} left out because the annotations tied, with no majority: ${quoted(stats.leftOut.tiedValues||[])}.`:'',
+ return [gave?`${gave} ${unit}${gave===1?' was':'s were'} left out because ${abstained!.both===gave?(gave===1?'both models':'both models each time'):abstained!.one===gave?'one model':'a model'} answered INSUFFICIENT_KNOWLEDGE${abstained!.both&&abstained!.one?` (both models: ${abstained!.both}; one: ${abstained!.one})`:''}; agreement is computed on the ${unit}s both judged.`:'',
+  ties?`${ties} ${unit}${ties===1?' was':'s were'} left out because the annotations tied, with no majority: ${quoted(stats.leftOut.tiedValues||[])}.`:'',
   other?`${other} ${unit}${other===1?' was':'s were'} left out because a value was ${why}: ${quoted(stats.leftOut.values)}.`:''].filter(Boolean).join(' ');
 }
 // The comparison as a table for a CSV file.
@@ -283,6 +284,7 @@ export function agreementTable(title:{a:string;b:string;field:string;dataset:str
  const raw:[string,number|null,CiStat|undefined][]=[[unit+'s_compared',stats.n,undefined],['percent_agreement',stats.percentAgreement,'percentAgreement'],['within_tolerance_'+stats.tolerance,stats.withinTolerance,'withinTolerance'],['cohen_kappa',stats.cohenKappa,'cohenKappa'],['weighted_kappa_linear',stats.weightedKappaLinear,'weightedKappaLinear'],['weighted_kappa_quadratic',stats.weightedKappa,'weightedKappa'],['krippendorff_alpha',stats.krippendorffAlpha,'krippendorffAlpha'],['gwet_ac1',stats.gwetAC1,'gwetAC1'],['gwet_ac2_linear',stats.gwetAC2Linear,'gwetAC2Linear'],['spearman_rho',stats.spearman,undefined],['pearson_r',stats.pearson,undefined],['mean_difference',stats.meanDifference,'meanDifference'],['mean_absolute_error',stats.mae,'mae']];
  for(const [name,value,key] of raw){if(value===null)continue;const range=key?ci?.[key]:undefined;rows.push([name,value,range?range[0]:'',range?range[1]:'']);}
  rows.push([unit+'s_left_out',stats.leftOut.n,'','']);
+ if(stats.leftOut.abstained)rows.push([unit+'s_left_out_both_insufficient_knowledge',stats.leftOut.abstained.both,'',''],[unit+'s_left_out_one_insufficient_knowledge',stats.leftOut.abstained.one,'','']);
  rows.push([],['confusion_matrix: rows = '+title.a+', columns = '+title.b]);
  rows.push(['',...stats.categories]);
  for(const row of stats.categories)rows.push([row,...stats.categories.map(column=>stats.confusion[row]?.[column]??0)]);

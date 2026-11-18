@@ -171,5 +171,53 @@ const source=file=>fs.readFileSync(path.join(root,file),'utf8');
  globalThis.fetch=async()=>Response.json({id:'msg_9',model:'claude',stop_reason:'end_turn',content:[{type:'text',text:'not json'}],usage:{input_tokens:100,output_tokens:50}});
  out=await (await load('lib/anthropic.ts').annotateAnthropic(new File(['t'],'t.txt'),'Rate.','claude-haiku-5-5','medium','sk-ant-key')).json();
  assert.deepEqual([out.tokens,out.responseId,Boolean(out.error)],[150,'msg_9',true]);
- console.log('PASS: November 18 audit: chart segments, ties, comparable settings, scale per study, review order, assessment status, Excel pieces, backup after a failed save, saved-key line, section links, Clear workspace scope; table encodings, Excel IDs, duplicate headers, unclosed quotes, large tables, long HTML, texts over 20 MB; the cost question for resumed runs, counts of the request as sent, recovered batch IDs, billed fields on unreadable replies.');
+
+ // #2. Two different source documents called speech.txt: a row for speech.txt labels neither (ambiguous). A row for a
+ // chunk wins over its source's row in either order, and the source's row labels the other chunk.
+ const {matchRows}=load('lib/research/columns.ts');
+ const parts=[{id:'a1',name:'speech.txt (part 1)',sourceName:'speech.txt',sourceId:'A'},{id:'a2',name:'speech.txt (part 2)',sourceName:'speech.txt',sourceId:'A'},{id:'b1',name:'speech.txt (part 1) ',sourceName:'speech.txt',sourceId:'B'},{id:'b2',name:'speech.txt (part 2) ',sourceName:'speech.txt',sourceId:'B'}];
+ let matched=matchRows(parts,['speech.txt']);assert.deepEqual([matched.rowOf.size,matched.ambiguous],[0,[0]]);
+ const oneSource=parts.slice(0,2);
+ const chunkFirst=matchRows(oneSource,['speech.txt (part 1)','speech.txt']),wholeFirst=matchRows(oneSource,['speech.txt','speech.txt (part 1)']);
+ assert.deepEqual([...chunkFirst.rowOf].sort(),[['a1',0],['a2',1]]);assert.deepEqual([...wholeFirst.rowOf].sort(),[['a1',1],['a2',0]]);
+ assert.deepEqual([chunkFirst.repeated,wholeFirst.repeated],[[],[]]);
+
+ // #3a/b. INSUFFICIENT_KNOWLEDGE is an abstention, not a category: left out of agreement and counted, with or
+ // without declared values; and counted as such (not as a category) in the Results summary.
+ const metrics=load('lib/research/metrics.ts'),IK='INSUFFICIENT_KNOWLEDGE';
+ for(const allowed of [[],['A','B']]){
+  const r=metrics.agreement(['A','B',IK,IK],['B','B',IK,IK],'nominal',allowed,0,{withIntervals:false,known:['A','B',IK]});
+  assert.deepEqual([r.n,r.percentAgreement,r.leftOut.abstained],[2,0.5,{both:2,one:0}],JSON.stringify(allowed));
+ }
+ const oneSided=metrics.agreement(['A','B',IK,'A'],['A','B','B',IK],'nominal',[],0,{withIntervals:false,known:['A','B',IK]});
+ assert.deepEqual([oneSided.n,oneSided.percentAgreement,oneSided.leftOut.abstained],[2,1,{both:0,one:2}]);
+ const summaries=load('lib/research/summary.ts'),answers=['A','B',IK,IK,'A'];
+ const summed=summaries.summarizeField({key:'f',label:'F',level:'nominal',allowed:[],yesNo:false},answers.map((v,i)=>({id:'s'+i,status:'ok',fewer:false,meta:{},value:()=>v})));
+ assert.deepEqual([summed.missing,summed.abstained],[2,2]);assert(!JSON.stringify(summed.bins??[]).includes(IK),'Not a category');
+
+ // #23. Strata whose joined names coincide ("A · B / C" and "A / B · C"; a blank and "(none)") stay apart in the new
+ // method, and a sample recorded with method 1 is drawn again exactly as before.
+ const sampling=load('lib/research/sample.ts');
+ const strataColumns=[{name:'x',role:'meta'},{name:'y',role:'meta'}];
+ const strataRows=[['A · B','C'],['A','B · C'],['','z'],['(none)','z']].flatMap((cells,g)=>[0,1,2].map(i=>({id:`g${g}-${i}`,name:`g${g}-${i}.txt`,cells})));
+ const options={size:8,strata:['x','y'],exclude:null,seed:7};
+ const drawn=sampling.drawStratifiedSample(strataRows,strataColumns,options);
+ assert.deepEqual(drawn.strata.map(s=>[s.stratum,s.available,s.drawn]),[['(none) · z',3,2],['(none) · z',3,2],['A · B · C',3,2],['A · B · C',3,2]]);
+ const old=sampling.drawStratifiedSample(strataRows,strataColumns,{...options,method:1});
+ assert.deepEqual(old.strata.map(s=>[s.stratum,s.available]),[['(none) · z',6],['A · B · C',6]],'Method 1 as it was');
+ assert.equal(sampling.sampleRecord({...options,markedAs:{column:'sample',value:'v'}},drawn,'2026-11-18').method,'sampling method 2');
+ assert.equal(sampling.sampleRecord({...options,method:1,markedAs:{column:'sample',value:'v'}},old,'2026-11-18').method,'sampling method 1');
+ assert.deepEqual([sampling.methodNumber('sampling method 1'),sampling.methodNumber('sampling method 2')],[1,2]);
+ assert.equal(sampling.cleanSamples([{column:'sample',value:'v'}])[0].method,'sampling method 1','An older record without a method names method 1');
+ // Where no names coincide, the new method draws exactly as method 1.
+ const unmixed=Array.from({length:30},(_,i)=>({id:'p'+i,name:`p${String(i).padStart(2,'0')}.txt`,cells:[['1950s','1960s','1970s'][i%3],i%4?'AQ':'BR']}));
+ for(const seed of [1,7,99])assert.deepEqual(sampling.drawStratifiedSample(unmixed,strataColumns,{size:11,strata:['y','x'],exclude:null,seed}),sampling.drawStratifiedSample(unmixed,strataColumns,{size:11,strata:['y','x'],exclude:null,seed,method:1}));
+
+ // #1b, #9, #27. The export panel: where the subjects' other fields are chosen, a repository without its backup said
+ // on the page, and the two .zip buttons named for screen readers.
+ const panel=source('components/research/export-panel.tsx');
+ assert(panel.includes('The subjects’ other fields are chosen under “Label and metadata columns” below.')||panel.includes("The subjects' other fields are chosen under “Label and metadata columns” below."));
+ assert(panel.includes('was downloaded, but not in full.'));
+ assert(panel.includes('aria-label="Download research repository (.zip)"')&&panel.includes('aria-label="Download supplementary repository (.zip)"'));
+ console.log('PASS: November 18 audit: chart segments, ties, comparable settings, scale per study, review order, assessment status, Excel pieces, backup after a failed save, saved-key line, section links, Clear workspace scope; table encodings, Excel IDs, duplicate headers, unclosed quotes, large tables, long HTML, texts over 20 MB; the cost question for resumed runs, counts of the request as sent, recovered batch IDs, billed fields on unreadable replies; source names shared by two documents, chunk rows in either order, abstentions in agreement and summaries, strata that join alike, the export panel’s notes and button names.');
 })().catch(error=>{console.error(error);process.exit(1);});
