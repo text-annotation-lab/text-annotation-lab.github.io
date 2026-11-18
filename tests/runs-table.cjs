@@ -194,7 +194,7 @@ assert.equal(runs.runRequestSettings([{id:'a',status:'done',...setup,runNo:1}],1
  assert.deepEqual(said(base),[]);
  const page=fs.readFileSync(path.join(root,'app/page.tsx'),'utf8');
  assert(page.includes("onCheck:()=>{setBatchNoteInRuns(true);void manageBatch(batchJob.state==='ready'?'collect':'check');}"),'The row uses the batch box’s own check and collect');
- assert(page.includes("batch={runsBatch} batchNote={batchNoteInRuns&&notice||undefined}"));
+ assert(page.includes("batch={runsBatch} batchNote={batchNoteInRuns&&notice?withSaveState(notice,saveState):undefined}"));
 }
 
 // The page: the run buttons name what they cover, a label is saved with the study, and "Retry failed" is
