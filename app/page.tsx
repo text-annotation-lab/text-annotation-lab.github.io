@@ -661,20 +661,23 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // Research mode: before a run of more than 50 requests, or with texts probably too long for the model, the run's
  // estimated cost to confirm. false: the run is not to start.
  const checkingRun=useRef(false);
- async function runConfirmed(ids:string[],batch:boolean):Promise<boolean>{
+ // again: when the run annotates texts again, what the dialog says about that. It goes in the same dialog as the cost,
+ // so a run asks one question.
+ async function runConfirmed(ids:string[],batch:boolean,again?:{ask:string;tell:string}):Promise<boolean>{
   if(checkingRun.current)return false;
   const only=new Set(ids),rows=latest.current.filter(d=>only.has(d.id));
   checkingRun.current=true;const slow=setTimeout(()=>setNotice('Estimating the cost of this run…'),400);
   let question:string|undefined;
   try{question=await runQuestion({provider,model,effort,prompt,system:sentRequest?.system,rows,samples:latest.current,answerFields:sentFields,answerSettings:sentSettings,cache:Boolean(sentRequest?.cache),batch,times,maxOutput:sentRequest?.maxOutput,ownPrice:typedPrice,unit:'text'});}catch{question=undefined;}
   finally{clearTimeout(slow);checkingRun.current=false;setNotice(current=>current==='Estimating the cost of this run…'?'':current);}
-  return !question||confirm(question);
+  if(!question)return !again||confirm(again.ask);
+  return confirm(again?again.tell+'\n\n'+question:question);
  }
  // "All": every text in scope, as a new run when any of them already has a result.
  async function runEvery(){
   const ids=scopeEvery.map(d=>d.id),repeats=scopeEvery.filter(d=>d.status==='done').length;
-  if(repeats&&!confirm(`${repeats===ids.length?`Annotate ${ids.length} ${ids.length===1?'text':'texts'} again`:`Annotate ${ids.length} texts, ${repeats} of them again,`} with the current settings? This starts a new run. The existing results are kept as earlier runs.`))return;
-  if(!await runConfirmed(ids,processing==='batch'))return;
+  const what=repeats===ids.length?`${ids.length===1?'the text':`all ${ids.length.toLocaleString('en-US')} texts`} again`:`${ids.length.toLocaleString('en-US')} texts, ${repeats.toLocaleString('en-US')} of them again,`;
+  if(!await runConfirmed(ids,processing==='batch',repeats?{ask:`Annotate ${what} with the current settings? This starts a new run. The existing results are kept as earlier runs.`,tell:`This annotates ${what} with the current settings, as a new run. The existing results are kept as earlier runs.`}:undefined))return;
   again(ids,(only,newRun)=>{scopeNote.current=`${scopeWords.every} texts (${ids.length.toLocaleString('en-US')})`;void(processing==='batch'?submitBatch(only,newRun):run(true,only,newRun));});
  }
  // "Remaining": the texts with no result from the current settings. They join the latest run when its settings are the same.
@@ -687,8 +690,8 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   const pool=scope.filter(d=>d.status==='pending'||d.status==='done'||d.status==='error'),count=Math.round(Number(tryCount));
   if(!pool.length||!Number.isFinite(count)||count<1){setNotice('Enter how many texts to annotate, from 1 upward.');return;}
   const picked=pickRandom(pool,count),repeats=picked.filter(d=>d.status==='done').length;
-  if(repeats&&!confirm(`${repeats} of the ${picked.length} randomly chosen texts already ${repeats===1?'has a result':'have results'}. Annotate them again? This starts a new run; the existing results are kept as earlier runs.`))return;
-  if(!await runConfirmed(picked.map(d=>d.id),false))return;
+  const already=`${repeats} of the ${picked.length} randomly chosen texts already ${repeats===1?'has a result':'have results'}.`;
+  if(!await runConfirmed(picked.map(d=>d.id),false,repeats?{ask:`${already} Annotate them again? This starts a new run; the existing results are kept as earlier runs.`,tell:`${already} They are annotated again, as a new run; the existing results are kept as earlier runs.`}:undefined))return;
   again(picked.map(d=>d.id),(only,newRun)=>{scopeNote.current=`Random sample of ${picked.length.toLocaleString('en-US')}${scopeWords.of&&' '+scopeWords.of}`;void run(true,only,newRun);});
  }
  function applyResearch(next:any[],nextColumns:Column[],nextSamples:SampleRecord[],message:string,filter?:{column:string;value:string},nextRemoved?:any[]){
