@@ -53,5 +53,8 @@ export function latestRunCost(rows:CostRecord[]){
  if(!selected.length)return;
  let amount=0,known=0,calculated=0,active=0,cacheRead=0,cacheWrite=0;
  for(const row of selected){if(row.status==='running'||row.status==='queued')active++;const c=recordedCost(row);if(c){amount+=c.amount;known++;if(!c.reported)calculated++;}const cache=cacheTokens(row.provider,row.usage);cacheRead+=cache.read;cacheWrite+=cache.write+cache.hourWrite;}
- return {amount,known,calculated,active,cacheRead,cacheWrite,count:selected.length,missing:selected.length-known,planned:selected.reduce((n,r)=>Math.max(n,finite(r.runSize)?r.runSize:0),selected.length),legacy:!latest,startedAt:latest?.runStartedAt};
+ // The models and the way of running the run's requests used (normally one of each), so its cost is not
+ // mistaken for the estimate of the next run, which uses the current settings.
+ const models=[...new Set(selected.flatMap(r=>r.model?[r.model]:[]))],batch=selected.length>0&&selected.every(r=>r.processing==='batch');
+ return {amount,known,calculated,active,cacheRead,cacheWrite,models,batch,count:selected.length,missing:selected.length-known,planned:selected.reduce((n,r)=>Math.max(n,finite(r.runSize)?r.runSize:0),selected.length),legacy:!latest,startedAt:latest?.runStartedAt};
 }

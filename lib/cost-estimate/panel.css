@@ -3,3 +3,6 @@
 .cost-counting{border:1px solid #e1e8e3;border-radius:8px;background:#fff9;padding:9px 12px;margin:12px 0}.cost-counting p{margin:4px 0!important;font-size:11px!important}.cost-count-button{border:1px solid #c5d4ca;border-radius:6px;background:#f5f8f5;color:#365e4e;font:inherit;font-size:12px;padding:6px 9px;cursor:pointer;margin:5px 0}.cost-count-button:disabled{opacity:.55;cursor:default}.cost-panel .cost-pilot{border-left:2px solid #b8cec0;padding-left:10px}
 
 .cost-history{border-bottom:1px solid #e2e9e3;padding:10px 0 14px;margin-bottom:12px}.cost-history summary{cursor:pointer;font-size:12px}.cost-history>strong{color:#24483e}.cost-history b{font-variant-numeric:tabular-nums}
+
+/* Research mode: the last run's cost, below the estimate and quieter, so the two are not read as one. */
+.cost-history.last{border-bottom:0;border-top:1px solid #e2e9e3;margin:14px 0 0;padding:12px 0 0;color:#5d6b64}.cost-history.last>strong{color:#465650;font-size:12px}.cost-history.last .cost-history-what{font-weight:400;color:#63736a}.cost-history.last p{font-size:11px}
