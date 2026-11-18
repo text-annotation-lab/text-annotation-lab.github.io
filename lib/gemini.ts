@@ -30,12 +30,13 @@ export async function annotateGemini(file:File,prompt:string,model:string,effort
  if(record)noted.output=replyText(raw);
  // A reply that is cut off or blocked still used (and was billed for) tokens: it keeps them, its response ID, and
  // (research mode) the text it returned, though it counts as failed.
- if(out.promptFeedback?.blockReason||candidate?.finishReason!=='STOP')return reply({...noted,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId,error:incompleteAnnotation('gemini',out.promptFeedback?.blockReason||candidate?.finishReason)},422);
- if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...noted,...plain,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId}):reply({...noted,error:EMPTY_REPLY},422);}
- let result;try{result=JSON.parse(raw);}catch{return reply({...noted,error:'Gemini did not return a valid annotation. Review the response in Google AI Studio before retrying.'},422);}
+ const billed={tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId};
+ if(out.promptFeedback?.blockReason||candidate?.finishReason!=='STOP')return reply({...noted,...billed,error:incompleteAnnotation('gemini',out.promptFeedback?.blockReason||candidate?.finishReason)},422);
+ if(settings?.plain){const plain=plainAnswer(raw);return plain?reply({...noted,...plain,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId}):reply({...noted,...billed,error:EMPTY_REPLY},422);}
+ let result;try{result=JSON.parse(raw);}catch{return reply({...noted,...billed,error:'Gemini did not return a valid annotation. Review the response in Google AI Studio before retrying.'},422);}
  const read=readReply(result,answerFields,settings);
- if(!read)return reply({...noted,error:'Gemini returned an unexpected annotation format.'},422);
- if(typeof read==='string')return reply({...noted,error:read},422);
+ if(!read)return reply({...noted,...billed,error:'Gemini returned an unexpected annotation format.'},422);
+ if(typeof read==='string')return reply({...noted,...billed,error:read},422);
  return reply({...noted,rawResponse:raw,...read,tokens:out.usageMetadata?.totalTokenCount,usage:out.usageMetadata,responseId:out.responseId});
  }catch(error){return reply({error:'Gemini connection interrupted or timed out. Check Google AI Studio usage before retrying; the request may have completed.',...connectionFailure(error)},502);}
 }

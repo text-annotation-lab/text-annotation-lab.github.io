@@ -21,6 +21,7 @@ import {ResultsChart} from '@/components/results-chart';
 import {Button} from '@/components/ui/button';
 import {Table,TableHeader,TableRow,TableHead,TableBody,TableCell} from '@/components/ui/table';
 import type {BatchJob,BatchPart,BatchUpdate,BatchResult} from '@/lib/batch-types';
+import {recoveredBatchProblem} from '@/lib/batch-recover';
 import {partName,partsDone,partsNotice,restoredParts,sendParts,sentNotice,splitQuestion,textsIn,withPart,withParts,type BatchPlan} from '@/lib/research/batch-split';
 import {BatchParts} from '@/components/batch-parts';
 import {PROVIDERS,modelLabel,batchUnavailable} from '@/lib/providers';
@@ -90,6 +91,8 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // The values a subject gives those placeholders (kept with its result); {{id}} is its doc_id as the exports name it, worked out once for a run.
  const subjectIds=()=>{const study={kind:'knowledge',rows:withRemoved(latest.current,removed)};return (item:Item)=>docIdOf(study,item);};
  const insertsOf=(item:Item,idOf=subjectIds()):{inserts?:string[]}=>insertNames.length?{inserts:insertValues(insertNames,item,columns,idOf(item))}:{};
+ // What the cost estimate, the provider's count, and the cost question need to measure a subject's request as sent.
+ const perText={inserts:insertNames.length?(item:Item)=>insertsOf(item).inserts:undefined,placeText:Boolean(placed)};
  // Research mode: the requests the runs sent, each kept once (lib/research/requests.ts).
  const [requests,setRequests]=useState<RecordedRequest[]|undefined>(),requestsNow=useRef<RecordedRequest[]|undefined>(undefined);requestsNow.current=requests;
  const [processing,setProcessing]=useState('instant'),[batchJob,setBatchJob]=useState<BatchJob|null>(null),[batchBusy,setBatchBusy]=useState(false),[recoverId,setRecoverId]=useState('');
@@ -352,13 +355,15 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   if(lock.current||!batchJob||conflict)return;
   if(!apiKey.trim()){setNotice(`Re-enter the API key for the ${PROVIDERS[batchJob.provider].label} account that submitted this batch.`);return;}
   if(batchJob.parts)return manageParts(batchJob,action,idOverride);
-  const job=idOverride?{...batchJob,id:idOverride.trim()}:batchJob;if(!job.id)return;
+  const job:BatchJob=idOverride?{...batchJob,id:idOverride.trim(),recovered:true}:batchJob;if(!job.id)return;
   if(action==='cancel'&&!confirm('Request cancellation? Work already processed may still be charged. Completed results can be collected after the batch ends.'))return;
   lock.current=true;setBatchBusy(true);setNotice('');
   try{
    const out=await batchRequest(action,job) as BatchUpdate&{cancelRequested?:boolean};
    if(action==='cancel'){setNotice('Cancellation requested. Check status later, then collect any completed results.');return;}
    if(typeof out.terminal!=='boolean'||action==='collect'&&out.terminal&&!Array.isArray(out.results))throw new Error('The provider response could not be read. Your batch is still saved; check again.');
+   // A batch ID typed in must be this run's batch: another one is not attached (and one attached earlier is let go).
+   if(job.recovered){const wrong=recoveredBatchProblem(job,out);if(wrong){if(!idOverride)setBatchJob({...job,id:undefined,state:'unknown',recovered:undefined});throw new Error(wrong);}}
    if(action==='collect'&&out.terminal){
     const collected=gatherBatch(job,out,latest.current);
     // Retain the job until the complete result set is safely stored.
@@ -372,7 +377,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // the results of every batch that has ended, keeping each as soon as it is stored, and checks the others.
  async function manageParts(start:BatchJob,action:'check'|'collect'|'cancel',idOverride?:string){
   let job=start;
-  if(idOverride){const k=job.parts!.findIndex(part=>part.state==='unknown');if(k<0)return;job=withPart(job,k,{id:idOverride.trim(),state:'processing'});}
+  if(idOverride){const k=job.parts!.findIndex(part=>part.state==='unknown');if(k<0)return;job=withPart(job,k,{id:idOverride.trim(),state:'processing',recovered:true});}
   if(action==='cancel'&&!confirm('Request cancellation of the batches still running? Work already processed may still be charged. Completed results can be collected after the batches end.'))return;
   lock.current=true;setBatchBusy(true);setNotice('');
   let collected=0,problem='';
@@ -383,6 +388,8 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
     if(action==='cancel'){if(part.state!=='ready')await batchRequest('cancel',view);continue;}
     const out=await batchRequest(action,view) as BatchUpdate;
     if(typeof out.terminal!=='boolean'||action==='collect'&&out.terminal&&!Array.isArray(out.results))throw new Error(`The provider response for ${partName(job,k)} could not be read. Your batches are still saved; check again.`);
+    // A batch ID typed in must be this batch of the run: another one goes back to waiting for its ID.
+    if(part.recovered){const wrong=recoveredBatchProblem(job,out,part);if(wrong){job=withPart(job,k,{id:undefined,state:'unknown',recovered:undefined});setBatchJob(job);problem=`${partName(job,k)}: ${wrong}`;continue;}}
     const counts={completed:out.completed,total:out.total,providerState:out.state};
     if(action==='collect'&&out.terminal){
      const list=gatherBatch(job,out,latest.current,part),done=withPart(job,k,{...counts,state:'collected'}),next=partsDone(done)?null:done;
@@ -423,8 +430,11 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // Research mode: before a run of more than 50 requests, the run's estimated cost to confirm.
  async function startAll(){
   if(research&&!lock.current&&!locked){
-   const rows=latest.current.filter(item=>inScope(item)&&item.status==='pending');let question:string|undefined;
-   try{question=await runQuestion({provider,model,effort,prompt,system:sentRequest?.system,rows,samples:latest.current,answerFields:sentFields,answerSettings:sentSettings,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),batch:processing==='batch',times,maxOutput:sentRequest?.maxOutput,ownPrice:typedPrice,unit:'subject'});}catch{question=undefined;}
+   // The subjects the run will send, as run() takes them: those without a result, and those that get their missing
+   // annotations; each with the requests it will get.
+   const resume=resumable(latest.current),rows=latest.current.filter(item=>inScope(item)&&(item.status==='pending'||resume.has(item.id)&&incomplete(item)));
+   const counts=new Map(rows.map(item=>[item.id,item.status==='pending'?Math.max(1,times):missingRepeats(item).length]));let question:string|undefined;
+   try{question=await runQuestion({provider,model,effort,prompt,system:sentRequest?.system,rows,samples:latest.current,answerFields:sentFields,answerSettings:sentSettings,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),batch:processing==='batch',times,count:row=>counts.get(row.id)??Math.max(1,times),...perText,maxOutput:sentRequest?.maxOutput,ownPrice:typedPrice,unit:'subject'});}catch{question=undefined;}
    if(question&&!confirm(question))return;
   }
   void(processing==='batch'?submitBatch():run(true));
@@ -454,7 +464,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // or only the missing ones of a subject already begun.
  const estimateRows=(resumeNow.size?items.map(item=>resumeNow.has(item.id)?{...item,status:'pending'}:item):items).filter(item=>!scope||inScope(item)||item.status==='done');
  const requestsFor=times>1?(row:Item)=>resumeNow.has(row.id)?missingRepeats(row).length:times:undefined;
- const costEstimate=<CostEstimate rows={items} disabled={!ready} batch={processing==='batch'} revision={JSON.stringify([provider,model,effort,prompt,sentFields,sentSettings,processing,webSearch,items.map(d=>[d.id,d.status,d.usage,...(d.annotations?[d.annotations.length]:[])]),...(sentRequest?[sentRequest]:[]),...(research?[typedPrice||1]:[]),...(times>1?[times,[...resumeNow]]:[]),...(scope?[[...scope]]:[])])} load={signal=>studentEstimate({provider,model,effort,prompt,system:sentRequest?.system,answerFields:sentFields,answerSettings:sentSettings,rows:estimateRows,times:requestsFor,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),maxOutput:sentRequest?.maxOutput,batch:processing==='batch',ownPrice:typedPrice,research,signal})} canCountInputs={!keyRejected&&provider!=='openrouter'&&Boolean(apiKey.trim())&&!locked} countInputs={provider==='openrouter'?undefined:(signal,onProgress)=>countStudentInputs({provider,model,effort,prompt,system:sentRequest?.system,answerFields:sentFields,answerSettings:sentSettings,rows:estimateRows,times:requestsFor,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),maxOutput:sentRequest?.maxOutput,batch:processing==='batch',ownPrice:typedPrice,research,apiKey:apiKey,signal,onProgress})}/>;
+ const costEstimate=<CostEstimate rows={items} disabled={!ready} batch={processing==='batch'} revision={JSON.stringify([provider,model,effort,prompt,sentFields,sentSettings,processing,webSearch,insertNames.length?[columns,items.map(d=>d.cells)]:0,items.map(d=>[d.id,d.status,d.usage,...(d.annotations?[d.annotations.length]:[])]),...(sentRequest?[sentRequest]:[]),...(research?[typedPrice||1]:[]),...(times>1?[times,[...resumeNow]]:[]),...(scope?[[...scope]]:[])])} load={signal=>studentEstimate({...perText,provider,model,effort,prompt,system:sentRequest?.system,answerFields:sentFields,answerSettings:sentSettings,rows:estimateRows,times:requestsFor,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),maxOutput:sentRequest?.maxOutput,batch:processing==='batch',ownPrice:typedPrice,research,signal})} canCountInputs={!keyRejected&&provider!=='openrouter'&&Boolean(apiKey.trim())&&!locked} countInputs={provider==='openrouter'?undefined:(signal,onProgress)=>countStudentInputs({...perText,provider,model,effort,prompt,system:sentRequest?.system,answerFields:sentFields,answerSettings:sentSettings,rows:estimateRows,times:requestsFor,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),maxOutput:sentRequest?.maxOutput,batch:processing==='batch',ownPrice:typedPrice,research,apiKey:apiKey,signal,onProgress})}/>;
  return <div className="knowledge-workspace">
   <div className="knowledge-intro"><h2 id="model-knowledge" tabIndex={-1}>Model knowledge <span className="experimental-badge">Experimental</span></h2><p>Assess named subjects, such as books or films, using what the model has learned. You do not upload the original works here. Web search is optional; each subject is assessed independently.</p>
    <details className="knowledge-method">

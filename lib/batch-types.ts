@@ -9,8 +9,10 @@ export type BatchJob={responseFormat?:string;answerFields?:string[];answerSettin
  repeats?:number;ns?:number[][];
  // Research mode, a run sent as several provider batches: each batch with the texts (by position in docIds) and the
  // requests it holds, and its own reference and state. Absent when the run went out as one batch.
- parts?:BatchPart[]};
-export type BatchPart={items:[number,number];requests:[number,number];id?:string;state:'waiting'|'submitting'|'unknown'|'processing'|'ready'|'collected'|'unsent';completed?:number;total?:number;providerState?:string};
+ parts?:BatchPart[];
+ // Its ID was typed in (Recover batch): what the provider reports is checked against the run (lib/batch-recover.ts).
+ recovered?:true};
+export type BatchPart={items:[number,number];requests:[number,number];id?:string;recovered?:true;state:'waiting'|'submitting'|'unknown'|'processing'|'ready'|'collected'|'unsent';completed?:number;total?:number;providerState?:string};
 export type BatchResult={rawResponse?:string;answers?:Record<string,string>;id:string;score?:string;explanation?:string;tokens?:number;usage?:any;responseId?:string;error?:string;
  // Research mode: the model the provider names, why it stopped, the text it returned, and the summary of the
  // model's reasoning where the requests asked for one.
