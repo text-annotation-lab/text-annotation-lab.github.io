@@ -8,6 +8,7 @@ import {ArrowDown,ArrowUp,Plus,Trash2} from 'lucide-react';
 import {FIELD_TYPES,FIELD_TYPE_LABELS,MAX_ANSWER_FIELDS,fieldSpec,toNumber,type AnswerSettings,type FieldSpec,type FieldType} from '@/lib/answer-types';
 import {cleanScoreScale,type ScoreScale} from '@/lib/research/score-scale';
 import {SettingInfo} from '@/components/setting-info';
+import {EXPLANATION_HELP} from '@/lib/research/setting-help';
 
 // A field as typed: the name and the list of values stay as written until they are usable.
 type Draft={name:string;type:FieldType;values:string;description:string};
@@ -49,8 +50,9 @@ function ScaleField({scale,onChange,disabled}:{scale?:ScoreScale;onChange:(scale
  </div>;
 }
 
+// standard: shown in the standard Lab, which has no Preview request or reasoning summary.
 // scale: the study's scale of the scores in plain-text replies (research mode), shown with plain text.
-export function OutputEditor({names,settings,onChange,disabled,scale,onScaleChange}:{names:string[];settings?:AnswerSettings;onChange:(names:string[],settings:AnswerSettings|undefined)=>void;disabled:boolean;scale?:ScoreScale;onScaleChange?:(scale:ScoreScale|undefined)=>void}){
+export function OutputEditor({names,settings,onChange,disabled,scale,onScaleChange,standard}:{names:string[];settings?:AnswerSettings;onChange:(names:string[],settings:AnswerSettings|undefined)=>void;disabled:boolean;scale?:ScoreScale;onScaleChange?:(scale:ScoreScale|undefined)=>void;standard?:boolean}){
  const [drafts,setDrafts]=useState<Draft[]>(()=>draftsOf(names,settings)),[startOpen]=useState(()=>settings?.plain===true||names.length>0),box=useRef<HTMLDetailsElement>(null);
  const plain=settings?.plain===true,rationale=settings?.rationale!==false;
  // A study or saved prompt loaded elsewhere replaces what is being typed here.
@@ -97,7 +99,7 @@ export function OutputEditor({names,settings,onChange,disabled,scale,onScaleChan
     </div>;
    })}
    {drafts.length<MAX_ANSWER_FIELDS&&<button type="button" className="textbutton research-add-field" disabled={disabled} onClick={()=>change([...drafts,{name:'',type:'category',values:'',description:''}])}><Plus size={14} aria-hidden="true"/>Add field</button>}
-   <label className="research-check research-output-check"><input type="checkbox" checked={rationale} disabled={disabled} onChange={event=>emit(drafts,{rationale:event.target.checked})}/><span>Ask for an explanation<SettingInfo topic="explanation"/></span></label>
+   <label className="research-check research-output-check"><input type="checkbox" checked={rationale} disabled={disabled} onChange={event=>emit(drafts,{rationale:event.target.checked})}/><span>Ask for an explanation<SettingInfo topic="explanation" text={standard?EXPLANATION_HELP:undefined}/></span></label>
   </>}
  </details>;
 }

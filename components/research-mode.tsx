@@ -24,7 +24,6 @@ export function SamplingLimits({sent,children}:{sent?:RequestSettings;children:R
 // About in research mode.
 const CHANGES=[
  'API keys for each provider, kept in this browser if you choose.',
- 'Typed answer fields (scales, categories, numbers, yes/no) that the model must answer in that form.',
  'Request settings: system prompt, temperature, output limit, prompt caching, reasoning summary, and any model ID.',
  'Texts from a table with their metadata (also usable in the prompt), random samples, and filters.',
  'Batches of up to 100,000 requests in one run.',

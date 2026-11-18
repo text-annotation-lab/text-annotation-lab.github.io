@@ -85,9 +85,9 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  modes()[1].props.onClick();await h.flush();assert.equal(h.latest().processing,'batch');assert.equal(modes()[1].props['aria-checked'],true);assert(main().includes('Results arrive later'));
  modes()[0].props.onClick();await h.flush();assert.equal(h.latest().processing,'instant');assert(!main().includes('Results arrive later'));
  h.button('Processing options').props.onClick();await h.flush();assert.throws(()=>h.find(n=>n.props?.id==='processing-mode'));h.find(n=>n.props?.id==='annotation-concurrency');h.button('Processing options').props.onClick();await h.flush();
- // All: a second run; the first results are kept. Every text remains: its result came from the standard Lab, whose
- // requests put the answer format in a paragraph after the prompt, while research mode sends the fields by name.
- assert(h.text(h.button('All (')).includes('All (3)'));assert(h.text(h.button('Remaining')).includes('Remaining (3)'));assert.equal(h.button('Remaining').props.disabled,false);
+ // All: a second run; the first results are kept. No text remains: the standard Lab sends the answer fields as
+ // research mode does, so its results count as made with the current settings.
+ assert(h.text(h.button('All (')).includes('All (3)'));assert(h.text(h.button('Remaining')).includes('Remaining (0)'));assert.equal(h.button('Remaining').props.disabled,true);
  await h.button('All (').props.onClick();await h.flush();
  assert.equal(h.calls.length,6);assert.deepEqual(h.latest().docs.map(doc=>[doc.status,doc.runNo,doc.earlier.length,doc.earlier[0].runNo,doc.earlier[0].score]),Array(3).fill(['done',2,1,1,'POSITIVE']));
  assert.deepEqual(h.latest().runs.map(run=>run.number),[1,2]);
@@ -131,9 +131,8 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  assert.equal(h.calls.length,callsBefore+3);assert.deepEqual(h.latest().docs.map(doc=>[doc.status,doc.runNo,doc.prompt,doc.earlier.map(entry=>entry.runNo)]),Array(3).fill(['done',3,'Classify tone again',[1]]));
  assert.equal(h.latest().requests.length,1);assert(JSON.parse(h.latest().requests[0].body).input[0].content[0].text.startsWith('Classify tone again'));assert(h.latest().docs.every(doc=>doc.requestId===h.latest().requests[0].id));
  assert(h.text(h.button('Remaining')).includes('Remaining (0)'));
- // Back at the first prompt every text remains: its result from that prompt came from the standard Lab, which sends
- // the answer format another way.
- await setPrompt('Classify tone');assert(h.text(h.button('Remaining')).includes('Remaining (3)'));
+ // Back at the first prompt no text remains: each has a result from that prompt, made in the standard Lab.
+ await setPrompt('Classify tone');assert(h.text(h.button('Remaining')).includes('Remaining (0)'));
 
  // Switching off from a research tab returns to the Workspace; nothing is lost and nothing research shows.
  page().onValueChange('runs');await h.flush();assert.equal(page().value,'runs');
@@ -183,10 +182,10 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   const replies=[];
   const typed=harness({docs:documents(),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1},async()=>{},async()=>Response.json(replies.shift()||{score:'',explanation:'',answers:{f0:'positive',f1:'Dry.'}}));
   await typed.flush();await typed.configure();
-  const mode=()=>typed.find(n=>n.type==='ModeSwitch').props,editor=()=>typed.find(n=>n.type==='ResearchAnswerFields').props,standard=()=>typed.find(n=>n.type==='AnswerFields').props,notes=()=>typed.all(n=>n.type==='p'&&n.props.role==='note').map(n=>typed.text(n));
-  assert.equal(typed.all(n=>n.type==='ResearchAnswerFields').length,0,'The standard Lab keeps its own answer fields');assert.deepEqual(standard().names,[]);assert.deepEqual(notes(),[]);
+  const mode=()=>typed.find(n=>n.type==='ModeSwitch').props,editor=()=>typed.find(n=>n.type==='ResearchAnswerFields').props,notes=()=>typed.all(n=>n.type==='p'&&n.props.role==='note').map(n=>typed.text(n));
+  assert.deepEqual(editor().names,[],'Both modes have the same answer fields');assert.equal(editor().onScaleChange,undefined,'The scale of the scores is for the statistics of research mode');assert.deepEqual(notes(),[]);
   mode().onChange(true);await typed.flush();
-  assert.equal(typed.all(n=>n.type==='AnswerFields').length,0);assert.deepEqual(editor().names,[]);assert.equal(editor().settings,undefined);
+  assert.deepEqual(editor().names,[]);assert.equal(editor().settings,undefined);
   const tone={name:'Tone',type:'category',values:['positive','negative'],description:'Overall tone.'},asked={rationale:false,fields:[tone,{name:'Notes',type:'text',values:[],description:''}]},sentForm={rationale:false,named:true,slugKeys:true,fields:[tone]};
   editor().onChange(['Tone','Notes'],asked);await typed.flush();
   assert.deepEqual(typed.latest().answerFields,['Tone','Notes']);assert.deepEqual(typed.latest().answerSettings,asked,'The study keeps the fields as they were entered');assert.deepEqual(editor().settings,asked);
@@ -223,13 +222,10 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   assert(typed.calls.length>sentBefore,'A run was sent');
   assert(typed.calls.slice(sentBefore).every(call=>!String(call.options.body.get('answerSettings')).includes('-3')&&![...call.options.body.keys()].some(key=>/scale/i.test(key))),'The scale is not sent');
   editor().onScaleChange(undefined);await typed.flush();assert(!('scoreScale' in typed.latest()));
-  // The standard Lab says that the settings still apply, and keeps them.
+  // The standard Lab shows the same fields and settings, without the scale.
   mode().onChange(false);await typed.flush();
-  assert.deepEqual(notes(),['This study asks for plain-text replies, set in research mode; the answer fields above are not used. Switch to research mode to change this.']);
-  mode().onChange(true);await typed.flush();editor().onChange(['Tone','Notes'],asked);await typed.flush();mode().onChange(false);await typed.flush();
-  assert.deepEqual(notes(),['These answer fields have types or other settings from research mode, which still apply here. Switch to research mode to change this.']);assert.deepEqual(standard().names,['Tone','Notes']);
-  // Removing a field there removes its settings, so a later field of that name starts plain.
-  standard().onChange(['Notes']);await typed.flush();
+  assert.deepEqual(notes(),[]);assert.deepEqual(editor().settings,{...asked,plain:true});assert.equal(editor().onScaleChange,undefined);
+  editor().onChange(['Notes'],{rationale:false,fields:[{name:'Notes',type:'text',values:[],description:''}]});await typed.flush();
   assert.deepEqual(typed.latest().answerFields,['Notes']);assert.deepEqual(typed.latest().answerSettings,{rationale:false,fields:[{name:'Notes',type:'text',values:[],description:''}]});
  }
 
@@ -244,14 +240,14 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   let replies=[limited];
   const plain=harness(study(),async()=>{},async()=>(replies.shift()||fine)());await plain.flush();await plain.configure();
   let c=controls(plain);plain.button('Processing options').props.onClick();await plain.flush();
-  assert.deepEqual(c.choices(),[1,2,4]);assert.equal(c.select().value,1);assert(c.summary().includes('Instant · one at a time'));assert(c.help().startsWith('Run all can annotate several texts at once.'));assert(!c.help().includes('128'));
+  assert.deepEqual(c.choices(),[1,2,4]);assert.equal(c.select().value,1);assert(c.summary().includes('Instant · one at a time'));assert.throws(()=>c.help(),'No fixed line under the setting');{const info=plain.find(n=>n.props?.topic==='parallel').props.text;assert(info[0].startsWith('Run all can annotate several texts at once.'));assert(!info[0].includes('128'));}
   await plain.button('Run all').props.onClick();await plain.flush();
   assert.equal(plain.calls.length,1,'The standard Lab does not send a refused request again');assert.deepEqual(c.statuses(),['error','pending','pending']);assert.equal(plain.latest().docs[0].concurrency,1);
   assert.equal(plain.latest().concurrency,128,'The study keeps its own setting');
   // Research mode: up to 128, and the study's setting applies.
   plain.find(n=>n.type==='ModeSwitch').props.onChange(true);await plain.flush();
   assert.deepEqual(c.choices(),[1,2,4,8,16,32,64,128]);assert.equal(c.select().value,128);assert(c.summary().includes('Instant · 128 at a time'));
-  assert.throws(()=>c.help(),'Research mode has no fixed line under the setting');assert.equal(plain.find(n=>n.props?.topic==='parallel').type,'SettingInfo','What it does is behind its ⓘ');
+  assert.throws(()=>c.help(),'Research mode has no fixed line under the setting');assert.equal(plain.find(n=>n.props?.topic==='parallel').type,'SettingInfo','What it does is behind its ⓘ');assert.equal(plain.find(n=>n.props?.topic==='parallel').props.text,undefined,'with research mode’s text');
   c.select().onChange({target:{value:'16'}});await plain.flush();assert.equal(plain.latest().concurrency,16);assert.equal(c.select().value,16);
   c.select().onChange({target:{value:'100'}});await plain.flush();assert.equal(plain.latest().concurrency,1,'Only the offered numbers are taken');
   c.select().onChange({target:{value:'64'}});await plain.flush();

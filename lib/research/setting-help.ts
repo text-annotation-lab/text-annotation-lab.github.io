@@ -4,6 +4,12 @@
 import {PRICE_DATE} from '@/lib/cost-estimate/pricing';
 import {PLAIN_FIELD} from '@/lib/answer-types';
 const PRICES_AS_OF=new Date(PRICE_DATE+'T00:00:00Z').toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric',timeZone:'UTC'});
+// Ask for an explanation, in both modes (the standard Lab shows these three, research mode adds two lines).
+export const EXPLANATION_HELP=[
+ 'This adds nothing to your prompt. It adds an explanation field to the answer format sent with each request, ahead of the answers, so the model must write one before it answers. It is kept as each result’s explanation.',
+ 'The format asks only for a brief justification, citing the text where relevant. Say in your prompt what a good explanation should contain, such as its length or the evidence to cite.',
+ 'Without it the reply has no place for an explanation, even if your prompt asks for one. A field of your own named Explanation takes its place.',
+];
 export type SettingHelpId='temperature'|'max-output'|'prices'|'reasoning-summary'|'openai-logs'|'prompt'|'system-prompt'|'answer-fields'|'plain-text'|'json-scale'|'explanation'|'chunking'|'parallel'|'repeats'|'prompt-caching';
 export const SETTING_HELP:{id:SettingHelpId;label:string;text:string[]}[]=[
  {id:'temperature',label:'Temperature',text:['Empty: no temperature is sent and the model uses its own. From 0 to 2 (0 to 1 for Anthropic). Many reasoning models accept only their default and reject a request with another value. Claude models that reason take no temperature, so none is sent.']},
@@ -16,7 +22,7 @@ export const SETTING_HELP:{id:SettingHelpId;label:string;text:string[]}[]=[
  {id:'answer-fields',label:'Answer fields',text:['Without fields, the model returns one score or category. With fields, the model must return exactly these fields, in this order, so every result becomes a clean column.','Changes apply to future annotations. Results keep the fields they were made with.']},
  {id:'plain-text',label:'Plain text',text:[`The whole reply is stored as one column, “${PLAIN_FIELD}.” When a reply is one JSON object, exports, charts, and comparisons also have a column for each of its values; a reply with JSON among other text counts as failed. No answer format is sent or added to your prompt, and no explanation is asked for separately.`]},
  {id:'json-scale',label:'Scale of the scores',text:['If the replies are JSON with scores (for example, "race": −2), give their scale. Agreement then uses all of it, as for an ordinal field: Gwet’s AC1 and AC2 count every point, and a number off the scale (for example, 7) is left out and reported. A value answered only with 0 and 1 keeps its own range. Empty: the range of the scores the model gave. Not sent to the model; applies to every plain-text run of this study, also earlier ones.']},
- {id:'explanation',label:'Ask for an explanation',text:['Written before the answers; useful when checking disagreements.']},
+ {id:'explanation',label:'Ask for an explanation',text:[EXPLANATION_HELP[0],EXPLANATION_HELP[1]+' Preview request shows it in the request.',EXPLANATION_HELP[2],'It is not the reasoning summary, which is the provider’s digest of a reasoning model’s hidden thinking.']},
  {id:'chunking',label:'Split into chunks',text:['Choose a word-count target and boundary method. Each chunk gets its own annotation and result. Whole sentences: sentences are kept together where possible, so chunk lengths are approximate. Exact word counts: boundaries may fall within a sentence.']},
  {id:'parallel',label:'Parallel annotations',text:['A run can annotate up to 128 texts at once. Each text gets a separate request; token prices are unchanged. When the provider reports a rate limit, the run waits and goes on with fewer at a time. Annotate next always runs one text.']},
  {id:'repeats',label:'Annotations per text',text:['Use 2 or more to measure how consistent the model is. Each text is then annotated that many times, each time with a request of its own. Results show the majority (categories), the median (ordinal scales), or the mean (numbers), and how consistent the repeats were; scores in plain-text JSON answers are combined by their median, other values by majority. Use an odd number so a median is a whole number.']},
