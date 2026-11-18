@@ -149,7 +149,7 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
  for(const [model,p] of Object.entries(pricing.PRICES)){const e=engine.estimate({...config,provider:p.provider,model,cache:true},inputs);assert(Number.isFinite(e.total.high)&&e.total.low>0&&e.total.high>=e.total.low,model);}
 
  // --- The note beside the option ------------------------------------------------------------
- assert.deepEqual(notes.cacheNote('anthropic','claude-sonnet-5-5',''),{available:true,text:'Anthropic stores the prompt for 5 minutes; later texts read it at 5% of the input price, and storing it costs 25% extra. Prompts under 512 tokens are not cached.'});
+ assert.deepEqual(notes.cacheNote('anthropic','claude-sonnet-5-5',''),{available:true,text:'Anthropic stores the prompt for 5 minutes; later texts read it at 5% of the input price, and storing it costs 25% extra. Prompts under 512 tokens are not cached.',about:'Anthropic stores the prompt for 5 minutes; later texts read it at 5% of the input price, and storing it costs 25% extra. Prompts under 512 tokens are not cached.',size:'Cached from 512 tokens.'});
  assert.equal(notes.cacheNote('anthropic','claude-fable-5-2','').text.includes('at 2.5% of the input price'),true);
  const openaiNote=notes.cacheNote('openai','gpt-6-luna',long).text;
  assert(openaiNote.startsWith('OpenAI stores the prompt for 30 minutes; later texts read it at 10% of the input price, and storing it costs 25% extra. Prompts under 1,024 tokens are not cached. This prompt: about '));assert(openaiNote.endsWith(' tokens.'));

@@ -251,7 +251,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   // Research mode: up to 128, and the study's setting applies.
   plain.find(n=>n.type==='ModeSwitch').props.onChange(true);await plain.flush();
   assert.deepEqual(c.choices(),[1,2,4,8,16,32,64,128]);assert.equal(c.select().value,128);assert(c.summary().includes('Instant · 128 at a time'));
-  assert.equal(c.help(),'A run can annotate up to 128 texts at once. Each text gets a separate request; token prices are unchanged. When the provider reports a rate limit, the run waits and goes on with fewer at a time. Annotate next always runs one text.');
+  assert.throws(()=>c.help(),'Research mode has no fixed line under the setting');assert.equal(plain.find(n=>n.props?.topic==='parallel').type,'SettingInfo','What it does is behind its ⓘ');
   c.select().onChange({target:{value:'16'}});await plain.flush();assert.equal(plain.latest().concurrency,16);assert.equal(c.select().value,16);
   c.select().onChange({target:{value:'100'}});await plain.flush();assert.equal(plain.latest().concurrency,1,'Only the offered numbers are taken');
   c.select().onChange({target:{value:'64'}});await plain.flush();

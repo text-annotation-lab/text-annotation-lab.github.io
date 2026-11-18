@@ -20,6 +20,12 @@ export function repeatsHint(repeats:number,settings:AnswerSettings|undefined,uni
  if(settings?.plain)return `${each} Scores in JSON answers are combined by their median, other values by majority. Compare the repeats with each other under Runs & agreement (choose single annotations on both sides).${repeats%2===0?' Use an odd number: with an even one the median of two middle scores can be a half point (for example, 0.5), which never counts as the same score.':''}`;
  return `${each} Results show the majority (categories), the median (ordinal scales), or the mean (numbers), and how consistent the repeats were.${settings?.fields?.some(field=>field.type==='ordinal')&&repeats%2===0?' Use an odd number so the median of an ordinal scale is a whole number.':''}`;
 }
+// What stays beside the setting (research mode): a warning only. What the setting does is behind its ⓘ.
+export function repeatsWarning(repeats:number,settings:AnswerSettings|undefined):string{
+ if(repeats<2||repeats%2)return '';
+ if(settings?.plain)return 'Use an odd number: with an even one the median of two middle scores can be a half point (for example, 0.5), which never counts as the same score.';
+ return settings?.fields?.some(field=>field.type==='ordinal')?'Use an odd number so the median of an ordinal scale is a whole number.':'';
+}
 // The number as stored with a study, a run, or a result: only 2 to 10 is ever stored (absent: one).
 export const cleanRepeats=(value:unknown):number|undefined=>typeof value==='number'&&Number.isInteger(value)&&value>=2&&value<=MAX_REPEATS?value:undefined;
 export const repeatsOf=(result:{repeats?:unknown})=>cleanRepeats(result.repeats)??1;

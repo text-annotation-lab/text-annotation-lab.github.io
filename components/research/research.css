@@ -526,3 +526,9 @@
 @media (max-width: 720px) { .sum-time-caption { margin-left: -38px; } }
 /* Phones: the research table (check box, document, status, answer, run) fits the screen without scrolling sideways. */
 @media(max-width:600px){.results:has(.research-check-cell) :is(th,td){padding-left:4px;padding-right:4px}.results:has(.research-check-cell) .status{font-size:11px;padding-left:5px;padding-right:5px}}
+/* The ⓘ beside a research setting, and its text. */
+.setting-info{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:6px;padding:0;border:1.3px solid #6a7b90;border-radius:50%;background:none;color:#4b5d73;font:600 10px/1 Georgia,'Times New Roman',serif;vertical-align:1px;cursor:pointer;flex:none}
+.setting-info:hover,.setting-info[data-state=open]{border-color:#003d73;color:#003d73;background:#eef3f9}
+.setting-info:focus-visible{outline:2px solid #003d73;outline-offset:2px}
+.setting-info-text{width:320px;font-size:13px;line-height:1.55;color:#33435a}.setting-info-text p{margin:0}.setting-info-text p+p{margin-top:8px}
+.settings-explained dl{margin:0}.settings-explained dl>div{padding:10px 0;border-top:1px solid #e3e8ef}.settings-explained dt{font-weight:600}.settings-explained dd{margin:4px 0 0}
