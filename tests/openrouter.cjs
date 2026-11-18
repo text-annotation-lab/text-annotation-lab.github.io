@@ -46,7 +46,8 @@ const good=(extra={})=>({id:'test-response',choices:[{finish_reason:'stop',messa
  }
  calls.length=0;
  assert.equal(providers.availableProvider('openrouter'),'openrouter');
- assert.deepEqual(providers.PROVIDERS.openrouter.models,['openai/gpt-6-luna','anthropic/claude-haiku-5.5','google/gemini-3.1-flash-lite','openai/gpt-6.1-sol','anthropic/claude-sonnet-5.5','google/gemini-4-hydrogen']);
+ assert.deepEqual(providers.PROVIDERS.openrouter.models,['openai/gpt-6-luna','anthropic/claude-haiku-5.5','google/gemini-3.1-flash-lite','openai/gpt-6.2-sol','anthropic/claude-sonnet-5.5','google/gemini-4-hydrogen','openai/gpt-6.2-astra','anthropic/claude-fable-5.2','google/gemini-4-carbon']);
+ assert.equal(providers.modelLabel('anthropic/claude-fable-5.2'),'Anthropic · Claude Fable 5.2');assert.equal(providers.modelLabel('openai/gpt-6.2-astra'),'OpenAI · GPT-6.2 Astra');
  assert.equal(safety.setupErrors('openrouter',key,'prompt','openai/gpt-6-luna','medium').key,'');
  assert.match(safety.setupErrors('openai',key,'prompt','gpt-6-luna','medium').key,/OpenRouter/);
  for(const model of providers.PROVIDERS.openrouter.models){

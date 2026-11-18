@@ -1,6 +1,7 @@
 // Text Annotation Lab estimator. Jens’s Annotation Lab retains its earlier version.
 // USD per million tokens, first-party Standard APIs. No subscription/free credits.
 export const PRICE_DATE='2026-11-15';
+export const OPENROUTER_PRICE_DATE='2026-11-18';
 export const SOURCES={openrouter:'https://openrouter.ai/models',openai:'https://developers.openai.com/api/docs/pricing',anthropic:'https://platform.claude.com/docs/en/about-claude/pricing',gemini:'https://ai.google.dev/gemini-api/docs/pricing'};
 export type Provider=keyof typeof SOURCES;
 // cacheRead: the price of input read from the provider's prompt cache, as a share of the input price; absent
@@ -11,8 +12,8 @@ const oa=(input:number,output:number,cacheRead?:number):Price=>({provider:'opena
 const cl=(input:number,output:number,cacheRead=.1):Price=>({provider:'anthropic',input,output,batch:true,tokenMultiplier:1.3,cacheRead});
 const gg=(input:number,output:number,cacheRead?:number):Price=>({provider:'gemini',input,output,batch:true,...(cacheRead?{cacheRead}:{})});
 const flash:Price={...gg(.75,3.75,.1),changes:[{from:'2027-01-01',input:1.5,output:7.5}]};
-// OpenRouter catalogue checked 2026-11-15. Credit-purchase fees are not inference usage.
-const or=(input:number,output:number):Price=>({provider:'openrouter',input,output,batch:false,note:'OpenRouter catalogue rates checked November 15, 2026. Routing and price changes can affect actual usage.'});
+// OpenRouter catalogue checked 2026-11-18. Credit-purchase fees are not inference usage.
+const or=(input:number,output:number):Price=>({provider:'openrouter',input,output,batch:false,note:'OpenRouter catalogue rates checked November 18, 2026. Routing and price changes can affect actual usage.'});
 export const PRICES:Record<string,Price>={
  'openai/gpt-6-luna':{...or(.1,.5),threshold:272000,longInput:.2,longOutput:.75},
  'anthropic/claude-haiku-5.5':{...or(.1,.5),threshold:100000,longInput:.5,longOutput:2.5,tokenMultiplier:1.3},
@@ -20,9 +21,13 @@ export const PRICES:Record<string,Price>={
  'openai/gpt-6.1-terra':{...or(1,5),threshold:272000,longInput:2,longOutput:7.5},
  'openai/gpt-6-sol':{...or(2,10),threshold:272000,longInput:4,longOutput:15},
  'openai/gpt-6.1-sol':{...or(2,10),threshold:272000,longInput:4,longOutput:15},
+ 'openai/gpt-6.2-sol':{...or(2,10),threshold:272000,longInput:4,longOutput:15},
+ 'openai/gpt-6.2-astra':{...or(8,40),threshold:272000,longInput:16,longOutput:60},
  'google/gemini-4-hydrogen':or(1.5,7.5),
- 'google/gemini-3.8-flash':{...or(.75,3.75),note:'OpenRouter standard endpoint rates checked November 1, 2026. Routing and service tiers can change actual costs.'},
+ 'google/gemini-4-carbon':or(2,10),
+ 'google/gemini-3.8-flash':or(.825,4.125),
  'anthropic/claude-sonnet-5.5':{...or(2,10),tokenMultiplier:1.3},
+ 'anthropic/claude-fable-5.2':{...or(8,40),tokenMultiplier:1.3},
  'gpt-6-luna':oa(.1,.5,.1),'gpt-6.1-terra':oa(1,5,.05),'gpt-6.1-sol':oa(2,10,.05),'gpt-6-sol':oa(2,10),'gpt-6-astra':oa(10,50,.1),
  'gpt-5.6-luna':oa(.2,1.2),'gpt-5.6-terra':oa(2,12),'gpt-5.6-sol':{...oa(4,20),note:'GPT-5.6 Sol promotional rates are confirmed through at least November 21, 2026.'},
  'claude-haiku-5-5':{...cl(.1,.5),threshold:100000,longInput:.5,longOutput:2.5},
