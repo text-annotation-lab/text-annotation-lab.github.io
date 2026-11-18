@@ -26,10 +26,12 @@ function NumberBox({id,value,placeholder,min,max,step,disabled,describedBy,onCom
 
 // Your own price for the selected model, for the cost estimate before a run (lib/own-prices.ts). A number typed
 // into a box becomes your own price, and the other box keeps the price it shows (0 where there is none). An
-// emptied box changes nothing, and shows the price again when it is left.
+// emptied box changes nothing, and shows the price again when it is left. The boxes show by themselves only where
+// the Lab has no price or your own is in use; for a model with the Lab's price, a link opens them.
 function PriceBoxes({provider,model}:{provider:Provider;model:string}){
- const own=ownPrice(provider,model,useOwnPrices()),listed=priceFor(provider,model),shown=own??listed;
+ const own=ownPrice(provider,model,useOwnPrices()),listed=priceFor(provider,model),shown=own??listed,[asked,setAsked]=useState(false);
  const typed=(which:'input'|'output')=>(value:number|undefined)=>{if(value!==undefined)setOwnPrice(provider,model,{input:shown?.input??0,output:shown?.output??0,[which]:value});};
+ if(listed&&!own&&!asked)return <button type="button" className="textbutton research-own-price" onClick={()=>setAsked(true)}>Use your own price</button>;
  return <>
   <div className="research-prices">
    <div><label htmlFor="price-input">Price per million input tokens ($)<SettingInfo topic="prices"/></label><NumberBox id="price-input" value={shown?.input} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy="price-help" onCommit={typed('input')}/></div>
