@@ -6,7 +6,7 @@ import {Select,SelectContent,SelectGroup,SelectItem,SelectLabel,SelectSeparator,
 import {PROVIDERS,OPENROUTER_STARTER_MODELS,defaultModel,isListedModel,modelAccessLabel,modelLabel,validModelId,type AccountModel,type Provider} from '@/lib/providers';
 import {canCheckKey} from '@/lib/workflow-safety';
 
-const OTHER='other-model-id',REFRESH='refresh-model-list',MENU_LIMIT=150,count=(n:number)=>n.toLocaleString('en-US');
+const OTHER='other-model-id',REFRESH='refresh-model-list',MENU_LIMIT=150;
 // A provider's list is asked for once per key and kept while this page is open; "refresh" asks again.
 const lists=new Map<string,Promise<AccountModel[]>>();
 function accountModels(provider:Provider,key:string):Promise<AccountModel[]>{
@@ -65,7 +65,7 @@ export function ModelChoice({provider,model,apiKey,disabled,onChange,onModels}:{
    {typed&&model!==''&&!wellFormed&&<span>This does not look like a model ID of {config.label}{provider==='openrouter'?', which has the form vendor/model':''}.</span>}
    {account?.status==='loading'&&<span>Loading the models on your account…</span>}
    {account?.status==='error'&&<span>{account.error} <button type="button" className="textbutton" onClick={refresh}>Try again</button></span>}
-   {account?.status==='ok'&&<span>{count(account.models.length)} {account.models.length===1?'model':'models'} on your account{typed&&unknown?'; this ID is not among them':''} · <button type="button" className="textbutton" onClick={refresh}>refresh</button></span>}
+   {typed&&unknown&&<span>This ID is not on your account.</span>}
   </p>}
  </>;
 }

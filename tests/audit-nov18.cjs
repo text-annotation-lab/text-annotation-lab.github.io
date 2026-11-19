@@ -71,11 +71,13 @@ const source=file=>fs.readFileSync(path.join(root,file),'utf8');
  assert.ok(!/[\uD800-\uDBFF]$/.test(pieces[0]));
  assert.match(source('lib/export-results.ts'),/const fromJson=new Set\(answerNames\.map\(\(_,i\)=>'answer'\+i\)\)/);
 
- // #10, #11, #24, #25: a failed save offers the backup; saved keys are named in the standard Lab; links open
+ // #10, #11, #24, #25: a failed save offers the backup; saved keys are not called unsaved in the standard Lab; links open
  // their section; Clear workspace names its scope.
  const page=source('app/page.tsx');
  assert.match(page,/const recovering=storageConflict\|\|knowledgeSaveState==='conflict'\|\|saveFailed\|\|knowledgeSaveState==='error'/);
- assert.match(page,/Keys saved in research mode are remembered in this browser\./);
+ // Since 2026-11-19 the standard Lab no longer names saved keys (they are managed in research mode), but it
+ // does not claim a remembered key is never saved.
+ assert.match(page,/keysStored\?<p className="hint">Sent directly from your browser to \{config\.label\}\. <a/);
  assert.match(page,/Saved studies are not affected\./);
 
  // #17. Table text: UTF-16 with its byte-order mark is read; Windows-1252 is refused with a way out; an Excel ID shown
