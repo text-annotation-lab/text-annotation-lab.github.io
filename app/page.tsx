@@ -1,5 +1,6 @@
 "use client";
 import {newId} from '@/lib/identifier';
+import {AuCookieLink} from '@/components/au-cookie-link';
 
 import {SettingsNotice} from '@/components/student-guidance';
 import {ProviderKeyStatus,useProviderKeyCheck} from '@/components/provider-key-status';
@@ -74,7 +75,7 @@ const SAMPLE='Classify the document’s overall tone as POSITIVE (mainly favorab
 // A failed save in this browser: the open work is still complete in this page, and the Studies menu can download it.
 const SAVE_FAILED='Could not save in this browser. Keep this page open and download a backup now: Studies → More options → Download backup. It holds both workspaces and your files.';
 const BRAND=<div className="brand"><img className="brand-icon" src="/favicon.svg?v=58" width="40" height="40" alt=""/><div className="brandtext"><span>Text Annotation Lab</span><small>Department of English &amp; American Studies Center Aarhus · Aarhus University</small></div></div>;
-const FOOTER=<footer><div><strong>Text Annotation Lab</strong><span>Developed for teaching and research in the <a href="https://cc.au.dk/en/english" target="_blank" rel="noreferrer">Department of English</a> at Aarhus University. Open to anyone who finds it useful.</span></div><div className="attribution"><span>Created by</span><strong>Jens Kjeldgaard-Christiansen</strong><span>Methodological advisor: <a href="https://edgardubourg.fr/" target="_blank" rel="noreferrer">Edgar Dubourg</a></span></div></footer>;
+const FOOTER=<footer><div><strong>Text Annotation Lab</strong><span>Developed for teaching and research in the <a href="https://cc.au.dk/en/english" target="_blank" rel="noreferrer">Department of English</a> at Aarhus University. Open to anyone who finds it useful.</span><AuCookieLink/></div><div className="attribution"><span>Created by</span><strong>Jens Kjeldgaard-Christiansen</strong><span>Methodological advisor: <a href="https://edgardubourg.fr/" target="_blank" rel="noreferrer">Edgar Dubourg</a></span></div></footer>;
 
 export default function Home(){
  useEffect(()=>{
