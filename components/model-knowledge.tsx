@@ -48,6 +48,7 @@ import {knowledgeRows,subjectRows,applySubjectCells} from '@/lib/research/knowle
 import {runSummaries,type Row} from '@/lib/research/runs';
 import {DEFAULT_VIEW,researchRows,runTag,viewNarrowed,parseSource,type View} from '@/lib/research/view';
 import {cleanRemovedSubjects,removeSubjects,sentForSubject,withRemoved} from '@/lib/research/removed';
+import {ask,askThen} from '@/lib/ask';
 import {MAX_REPEATS,annotationCount,annotationFrom,claimRepeats,cleanRepeats,incomplete,missingRepeats,repeatsWarning,repeatsOf,settle,unclaimed,withAnnotation,type Annotation} from '@/lib/research/repeats';
 
 // system, setSystem: research mode's own system prompt (lib/request-settings.ts).
@@ -127,7 +128,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  useEffect(()=>{if(!detailRequest.current)return;detailRequest.current=false;const detail=document.getElementById('knowledge-detail');detail?.focus();detail?.scrollIntoView({block:'nearest'});},[selected]);
  function add(keepDuplicates=false){if(locked||parsed.error||!parsed.items.length)return;if(duplicates.duplicateIndices.size&&!keepDuplicates)return;commitSubjects(parsed.items);}
  function commitSubjects(fieldsList:typeof parsed.items){const added=fieldsList.map(fields=>{const id=newId();return {id,subjectId:id,runNumber:1,name:fields.map(f=>f.value).filter(v=>v.trim()).join(' · '),fields,status:'pending'};});setItems(current=>[...current,...added]);setInput('');setNotice(`${added.length} subjects added as separate observations. Each will be annotated separately.`);}
- function retry(id?:string){if(locked)return;const count=latest.current.filter(item=>item.status==='error'&&(!id||item.id===id)).length;if(count&&confirm(retryMessage(count))){latest.current=queueRetries(latest.current,id);setItems(latest.current);setNotice('Retries queued. Review the current prompt and settings, then choose Annotate next or '+(processing==='batch'?'Submit batch':'Run all')+'.');}}
+ function retry(id?:string){if(locked)return;const count=latest.current.filter(item=>item.status==='error'&&(!id||item.id===id)).length;if(count)askThen(retryMessage(count),()=>{latest.current=queueRetries(latest.current,id);setItems(latest.current);setNotice('Retries queued. Review the current prompt and settings, then choose Annotate next or '+(processing==='batch'?'Submit batch':'Run all')+'.');},{yes:'Queue retries'});}
 
  const notifiedBusy=useRef(false);
  function reportBusy(next:boolean){if(next!==notifiedBusy.current){notifiedBusy.current=next;onBusyChange(next);}}
@@ -147,8 +148,8 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   if(filter)setView(current=>({...current,column:filter.column,value:filter.value,show:'all',query:''}));
  }
  // Clear results keeps one fresh row of each subject; subjects kept only for their runs go with the runs.
- function clearResults(){if(lock.current||locked)return;if(confirm('Clear all annotation runs and results, keeping one copy of each subject? Save a version in Studies or download a study backup first to keep your results.')){setItems(keepCells(repeatKnowledgeItems(items).map(item=>({...item,runNumber:1}))));setRequests(undefined);setSelected('');setRemoved([]);}}
- function clearWorkspace(){if(lock.current||locked)return;if(confirm('Clear all subjects and results from the experimental workspace? Save a version in Studies or download a study backup first to keep them.')){setItems([]);setSelected('');setColumns([]);setSamples([]);setRemoved([]);setChecked([]);setView(DEFAULT_VIEW);}}
+ function clearResults(){if(lock.current||locked)return;askThen('Clear all annotation runs and results, keeping one copy of each subject? Save a version in Studies or download a study backup first to keep your results.',()=>{if(lock.current)return;setItems(keepCells(repeatKnowledgeItems(items).map(item=>({...item,runNumber:1}))));setRequests(undefined);setSelected('');setRemoved([]);},{yes:'Clear results',danger:true});}
+ function clearWorkspace(){if(lock.current||locked)return;askThen('Clear all subjects and results from the experimental workspace? Save a version in Studies or download a study backup first to keep them.',()=>{if(lock.current)return;setItems([]);setSelected('');setColumns([]);setSamples([]);setRemoved([]);setChecked([]);setView(DEFAULT_VIEW);},{yes:'Clear workspace',danger:true});}
  // Research mode: delete subjects. A subject a run used stays with that run's results, comparisons, and exports,
  // but leaves Model knowledge and is never annotated again; one no run used is deleted outright.
  function deleteSubjects(ids:string[],how:'selected'|'all'){
@@ -156,13 +157,15 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   const present=new Set(latest.current.map(item=>item.subjectId||item.id)),chosen=new Set(ids.filter(id=>present.has(id))),n=chosen.size,one=n===1;if(!n)return;
   const used=latest.current.some(item=>chosen.has(item.subjectId||item.id)&&sentForSubject(item as Row));
   const kept=used?` Results already made for ${one?'this subject':'these subjects'} stay with their runs (Runs & agreement and Export).`:'';
-  if(!confirm(how==='all'?`Delete ${one?'the only subject':`all ${n.toLocaleString('en-US')} subjects`} from this study?${kept}`:`Delete ${n.toLocaleString('en-US')} selected ${one?'subject':'subjects'}?${kept}`))return;
-  const next=removeSubjects(latest.current as (Item&Row)[],removed as (Item&Row)[],chosen,new Date().toISOString());
-  latest.current=next.items;setItems(next.items);setRemoved(next.removed);
-  setChecked(current=>current.filter(id=>!chosen.has(id)));if(!next.items.some(item=>item.id===selected))setSelected('');
-  setNotice(`${n.toLocaleString('en-US')} ${one?'subject':'subjects'} deleted.${next.kept?` ${next.kept===n?(one?'Its results stay':'Their results stay'):`The results of ${next.kept.toLocaleString('en-US')} of them stay`} with the runs that made them.`:''}`);
+  askThen(how==='all'?`Delete ${one?'the only subject':`all ${n.toLocaleString('en-US')} subjects`} from this study?${kept}`:`Delete ${n.toLocaleString('en-US')} selected ${one?'subject':'subjects'}?${kept}`,()=>{
+   if(lock.current)return;
+   const next=removeSubjects(latest.current as (Item&Row)[],removed as (Item&Row)[],chosen,new Date().toISOString());
+   latest.current=next.items;setItems(next.items);setRemoved(next.removed);
+   setChecked(current=>current.filter(id=>!chosen.has(id)));if(!next.items.some(item=>item.id===selected))setSelected('');
+   setNotice(`${n.toLocaleString('en-US')} ${one?'subject':'subjects'} deleted.${next.kept?` ${next.kept===n?(one?'Its results stay':'Their results stay'):`The results of ${next.kept.toLocaleString('en-US')} of them stay`} with the runs that made them.`:''}`);
+  },{yes:one?'Delete subject':'Delete subjects',danger:true});
  }
- function loadExamples(){if(locked||input&&!confirm('Replace the unqueued input with example subjects? Queued subjects and results are kept.'))return;setMode('list');setInput(KNOWLEDGE_EXAMPLES);if(!prompt.trim()||prompt===ownInstructions||prompt===otherInstructions)setPrompt(example);setNotice('Example subjects loaded for preview. Review the prompt, then add them to the queue.');}
+ function loadExamples(){if(locked)return;const load=()=>{setMode('list');setInput(KNOWLEDGE_EXAMPLES);if(!prompt.trim()||prompt===ownInstructions||prompt===otherInstructions)setPrompt(example);setNotice('Example subjects loaded for preview. Review the prompt, then add them to the queue.');};if(!input)load();else askThen('Replace the unqueued input with example subjects? Queued subjects and results are kept.',load,{yes:'Replace'});}
  // Research mode: what a result about to be made records of its request: the request itself (kept once in the
  // list) and the build of the Lab. The standard Lab records nothing.
  function recorded(batch:boolean):Recorded{
@@ -295,7 +298,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
     let plan:BatchPlan;
     try{plan=await batchRequest('prepare',job,form,true);}catch(error){setNotice(error instanceof Error?error.message:'Could not prepare this batch.');return;}
     if(plan.parts.length>1){
-     if(!confirm(splitQuestion(plan,provider))){await batchRequest('discard',job).catch(()=>undefined);return;}
+     if(!await ask(splitQuestion(plan,provider),{title:'Send this run as several batches?',yes:'Submit'})){await batchRequest('discard',job).catch(()=>undefined);return;}
      sending=withParts(job,plan.parts.map(part=>({items:part.items,requests:part.requests,state:'waiting' as const})));
     }
    }
@@ -356,7 +359,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   if(!apiKey.trim()){setNotice(`Re-enter the API key for the ${PROVIDERS[batchJob.provider].label} account that submitted this batch.`);return;}
   if(batchJob.parts)return manageParts(batchJob,action,idOverride);
   const job:BatchJob=idOverride?{...batchJob,id:idOverride.trim(),recovered:true}:batchJob;if(!job.id)return;
-  if(action==='cancel'&&!confirm('Request cancellation? Work already processed may still be charged. Completed results can be collected after the batch ends.'))return;
+  if(action==='cancel'&&(!await ask('Request cancellation? Work already processed may still be charged. Completed results can be collected after the batch ends.',{yes:'Request cancellation',no:'Keep the batch'})||lock.current))return;
   lock.current=true;setBatchBusy(true);setNotice('');
   try{
    const out=await batchRequest(action,job) as BatchUpdate&{cancelRequested?:boolean};
@@ -378,7 +381,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  async function manageParts(start:BatchJob,action:'check'|'collect'|'cancel',idOverride?:string){
   let job=start;
   if(idOverride){const k=job.parts!.findIndex(part=>part.state==='unknown');if(k<0)return;job=withPart(job,k,{id:idOverride.trim(),state:'processing',recovered:true});}
-  if(action==='cancel'&&!confirm('Request cancellation of the batches still running? Work already processed may still be charged. Completed results can be collected after the batches end.'))return;
+  if(action==='cancel'&&(!await ask('Request cancellation of the batches still running? Work already processed may still be charged. Completed results can be collected after the batches end.',{yes:'Request cancellation',no:'Keep the batches'})||lock.current))return;
   lock.current=true;setBatchBusy(true);setNotice('');
   let collected=0,problem='';
   try{
@@ -408,10 +411,14 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   if(!batchJob||batchBusy||conflict)return;
   // Anthropic refuses batches from web pages before anything is sent, so there is no job to check for.
   const refused=batchJob.provider==='anthropic';
-  if(!refused&&!confirm('Only continue after checking your provider’s console and confirming that this batch was never submitted, or has ended and you no longer need its results. This forgets the local batch reference; it does not cancel a provider job.'))return;
-  // A run sent as several batches: only the batch that needs checking is forgotten.
-  const queuedIds=batchJob.parts?textsIn(batchJob,['unknown']):new Set(batchJob.docIds),rest=batchJob.parts?withParts(batchJob,batchJob.parts.map(part=>part.state==='unknown'?{...part,state:'unsent' as const}:part)):null;
-  latest.current=latest.current.map(d=>queuedIds.has(d.id)?unclaimed(d):d);setItems(latest.current);setBatchJob(rest&&!partsDone(rest)?rest:null);setNotice(refused?'Local batch reference cleared. These subjects can now be run with Instant processing.':'Local batch reference cleared. Check provider usage before submitting these subjects again.');
+  const job=batchJob,forget=()=>{
+   if(lock.current)return;
+   // A run sent as several batches: only the batch that needs checking is forgotten.
+   const queuedIds=job.parts?textsIn(job,['unknown']):new Set(job.docIds),rest=job.parts?withParts(job,job.parts.map(part=>part.state==='unknown'?{...part,state:'unsent' as const}:part)):null;
+   latest.current=latest.current.map(d=>queuedIds.has(d.id)?unclaimed(d):d);setItems(latest.current);setBatchJob(rest&&!partsDone(rest)?rest:null);setNotice(refused?'Local batch reference cleared. These subjects can now be run with Instant processing.':'Local batch reference cleared. Check provider usage before submitting these subjects again.');
+  };
+  if(refused)forget();
+  else askThen('Only continue after checking your provider’s console and confirming that this batch was never submitted, or has ended and you no longer need its results. This forgets the local batch reference; it does not cancel a provider job.',forget,{title:'Forget this batch?',yes:'Forget batch',danger:true});
  }
  async function download(){if(exporting)return;setExporting(true);try{const {createResultsWorkbook}=await import('@/lib/export-results');const buffer=await createResultsWorkbook(viewItems,{answerFields:sentFields,prompt,model,effort,provider,webSearch,processing,concurrency:parallel,workspace:'model-knowledge',studyName});const url=URL.createObjectURL(new Blob([new Uint8Array(buffer)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));const link=document.createElement('a');link.href=url;link.download='model-knowledge-annotations.xlsx';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch{setNotice('The Excel download failed. Your results are still here; try again.');}finally{setExporting(false);}}
  // Research mode: the results table lists one row per subject (its latest result, or that of the run chosen),
@@ -435,7 +442,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
    const resume=resumable(latest.current),rows=latest.current.filter(item=>inScope(item)&&(item.status==='pending'||resume.has(item.id)&&incomplete(item)));
    const counts=new Map(rows.map(item=>[item.id,item.status==='pending'?Math.max(1,times):missingRepeats(item).length]));let question:string|undefined;
    try{question=await runQuestion({provider,model,effort,prompt,system:sentRequest?.system,rows,samples:latest.current,answerFields:sentFields,answerSettings:sentSettings,knowledge:true,webSearch,cache:Boolean(sentRequest?.cache),batch:processing==='batch',times,count:row=>counts.get(row.id)??Math.max(1,times),...perText,maxOutput:sentRequest?.maxOutput,ownPrice:typedPrice,unit:'subject'});}catch{question=undefined;}
-   if(question&&!confirm(question))return;
+   if(question&&(!await ask(question,{yes:processing==='batch'?'Submit batch':'Start run'})||lock.current))return;
   }
   void(processing==='batch'?submitBatch():run(true));
  }
@@ -477,7 +484,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
    </details>
   </div>
   <div className="workspace">{renderSetup({answerFields,setAnswerFields,system:requestSettings?.system,setSystem:value=>setRequestSettings(current=>cleanRequestSettings({...current,system:value})),answerSettings,setAnswerSettings,scoreScale,setScoreScale,validationRequested:setupChecked,prompt,setPrompt,locked,ready,columns,promptNote,example,keyLocked:busy||batchBusy||parentLocked||!ready||conflict,sampling:research?<SamplingLimits sent={sentRequest}><ResearchRequestOptions part="sampling" provider={provider} model={model} effort={effort} prompt="" value={requestSettings} disabled={locked} onChange={setRequestSettings}/></SamplingLimits>:undefined,preview:<ResearchRequestPreview unit="subject" disabled={!ready} source={()=>({settings:{provider,model,effort,prompt,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,knowledge:true,webSearch,batch:processing==='batch',inserts:insertNames.length>0,placed},document:async()=>items[0]?{filename:'subject.txt',text:knowledgeItemText(items[0].fields),inserts:insertMap(prompt,insertValues(insertNames,items[0],columns,subjectIds()(items[0])))}:undefined,...(webSearch&&processing!=='batch'?{note:'With web search on, the Lab first sends a separate search request for each subject and adds what it finds to the subject’s fields.'}:{})})}/>,extraSetup:<><section className="processing-options" aria-label="Model knowledge processing options">
-   <button type="button" className="processing-options-toggle" aria-expanded={showProcessing} aria-controls="knowledge-processing-options" onClick={()=>setShowProcessing(v=>!v)}><span className="processing-options-title">Processing options <span aria-hidden="true">{showProcessing?'▴':'▾'}</span></span><span className="processing-options-summary">{processing==='batch'?'Batch':`Instant · ${parallel===1?'one at a time':`${parallel} at a time`}`}{(sentRequest?.cache?' · Prompt caching':'')}{times>1?` · ${times} annotations per subject`:''}</span></button>
+   <button type="button" className="processing-options-toggle" aria-expanded={showProcessing} aria-controls="knowledge-processing-options" onClick={()=>setShowProcessing(v=>!v)}><span className="processing-options-title">Processing options</span><span className="processing-options-summary">{processing==='batch'?'Batch':`Instant · ${parallel===1?'one at a time':`${parallel} at a time`}`}{(sentRequest?.cache?' · Prompt caching':'')}{times>1?` · ${times} annotations per subject`:''}</span></button>
    {showProcessing&&<div id="knowledge-processing-options" className="processing-options-settings">
     <div className="processing-choice"><label htmlFor="knowledge-processing">Processing</label><select id="knowledge-processing" value={processing} disabled={locked} onChange={event=>setProcessing(event.target.value)} aria-describedby="knowledge-processing-help"><option value="instant">Instant</option><option value="batch" disabled={webSearch||Boolean(batchUnavailable(provider))}>Batch · 50% lower token costs</option></select></div>
     {processing==='instant'&&<><div className="processing-choice"><label htmlFor="knowledge-concurrency">Parallel annotations{!research&&<SettingInfo topic="parallel" text={['Run all can annotate several subjects at once. Each subject gets a separate request; token prices are unchanged. Speed depends on your provider’s rate limits. Annotate next always runs one subject.']}/>}</label><select id="knowledge-concurrency" value={parallel} disabled={locked} onChange={event=>setConcurrency(annotationConcurrency(Number(event.target.value),research))}>{concurrencyChoices(research).map(n=><option key={n} value={n}>{n===1?'Off · one at a time':`${n} at a time`}</option>)}</select></div></>}

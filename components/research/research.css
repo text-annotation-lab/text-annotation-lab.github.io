@@ -236,7 +236,9 @@
 .research-runs thead th{white-space:normal}
 .research-runs td.research-run-started{white-space:normal}
 .research-nowrap{white-space:nowrap}
-.research-run-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 14px;max-width:230px;margin-left:auto}
+.research-run-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 14px;max-width:320px;margin-left:auto}
+/* On a wide screen the three usual actions share one line; more than fit in 320 px wrap. */
+@media(min-width:1340px){.research-run-actions{width:max-content}}
 .research-row-actions .research-run-actions .textbutton{margin:0;white-space:nowrap}
 .research-runs td.research-run-model{white-space:normal;min-width:130px}
 .research-runs td.research-run-scope{white-space:normal;min-width:120px;max-width:220px;color:#53657a}
@@ -276,7 +278,7 @@
 .research-check.research-export-option{align-items:flex-start}
 .research-export-option input[type=checkbox]{margin:2px 0 0}
 .research-export-option small{display:block;font-size:12px;line-height:1.55;color:#64728b;margin-top:2px}
-.research-export-go{margin-top:auto;padding-top:4px}
+.research-export-go{padding-top:4px}
 .research-export-step{font-size:13px;line-height:1.55;color:#53657a;margin:8px 0 0;overflow-wrap:anywhere}
 .research-export-backup{display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid #dce2ec;border-radius:10px;background:#fff;padding:14px 20px;margin:14px 0 4px}
 .research-export-backup>div{display:flex;flex-direction:column;gap:3px;min-width:0}
@@ -433,6 +435,8 @@
 .sum-detail-body { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr); gap: 22px; align-items: start; }
 .sum-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 .sum-stats .sum-wide { grid-column: span 2; }
+/* Four tiles stand two by two, not three and one. */
+.sum-stats:has(> :nth-child(4):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sum-chart { padding: 0 4px; }
 .sum-plot { position: relative; height: 200px; margin-top: 8px; border-bottom: 1px solid var(--line-strong); }
 .sum-col-slot { position: absolute; top: 0; bottom: 0; transform: translateX(-50%); display: flex; justify-content: center; }

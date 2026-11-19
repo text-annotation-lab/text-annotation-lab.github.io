@@ -9,6 +9,7 @@ import {FIELD_TYPES,FIELD_TYPE_LABELS,MAX_ANSWER_FIELDS,fieldSpec,toNumber,type 
 import {cleanScoreScale,type ScoreScale} from '@/lib/research/score-scale';
 import {SettingInfo} from '@/components/setting-info';
 import {EXPLANATION_HELP} from '@/lib/research/setting-help';
+import {askThen} from '@/lib/ask';
 
 // A field as typed: the name and the list of values stay as written until they are usable.
 type Draft={name:string;type:FieldType;values:string;description:string};
@@ -68,8 +69,9 @@ export function OutputEditor({names,settings,onChange,disabled,scale,onScaleChan
  const move=(index:number,by:number)=>{const next=[...drafts];[next[index],next[index+by]]=[next[index+by],next[index]];change(next);};
  const remove=(index:number)=>{
   const draft=drafts[index];
-  if((draft.description.trim()||draft.values.trim())&&!confirm(`Remove the field “${draft.name.trim()||'without a name'}” with its description and values?`))return;
-  change(drafts.filter((_,i)=>i!==index));
+  const drop=()=>change(drafts.filter((_,i)=>i!==index));
+  if(draft.description.trim()||draft.values.trim())askThen(`Remove the field “${draft.name.trim()||'without a name'}” with its description and values?`,drop,{yes:'Remove field',danger:true});
+  else drop();
  };
  const count=fieldsFromDrafts(drafts).names.length;
  return <details className="answer-fields research-output" ref={box} open={startOpen}>

@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 import {listSavedPrompts,savePrompt,deletePrompt,type LibraryPrompt} from '@/lib/saved-prompts';
 import type {AnswerSettings} from '@/lib/answer-types';
 import {Button} from '@/components/ui/button';
+import {ask,askThen} from '@/lib/ask';
 
 // system: research mode's own system prompt, saved and used with the prompt (absent in the standard Lab, which
 // leaves it out when it saves and uses a prompt).
@@ -16,7 +17,7 @@ export function SavedPrompts({disabled,prompt,answerFields,answerSettings,system
   try{const updated=await savePrompt(name,prompt,answerFields,answerSettings,system);setEntries(updated);setSelected(updated[updated.length-1].id);setNaming(false);setName('');setMessage('Prompt saved.');window.dispatchEvent(new Event('saved-prompts-changed'));}catch(error){setMessage(error instanceof Error?error.message:'Could not save prompt.');}finally{setBusy(false);}
  }
  async function remove(){
-  if(!chosen||locked||!confirm(`Delete saved prompt “${chosen.name}”? Existing studies will keep their prompts.`))return;
+  if(!chosen||locked||!await ask(`Delete saved prompt “${chosen.name}”? Existing studies will keep their prompts.`,{yes:'Delete prompt',danger:true}))return;
   setBusy(true);setMessage('');try{setEntries(await deletePrompt(chosen.id));setSelected('');setMessage('Saved prompt deleted.');window.dispatchEvent(new Event('saved-prompts-changed'));}catch(error){setMessage(error instanceof Error?error.message:'Could not delete prompt.');}finally{setBusy(false);}
  }
  return <div className="saved-prompts hint">
@@ -26,8 +27,9 @@ export function SavedPrompts({disabled,prompt,answerFields,answerSettings,system
   {naming&&<div className="saved-prompt-actions"><input aria-label="Prompt name" placeholder="Name this prompt" maxLength={80} value={name} disabled={locked} onChange={event=>setName(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();void save();}}}/><Button type="button" variant="outline" disabled={locked||!name.trim()} onClick={()=>void save()}>Save</Button><button type="button" className="textbutton" disabled={locked} onClick={()=>setNaming(false)}>Cancel</button></div>}
   {chosen&&<div className="saved-prompt-actions"><Button type="button" variant="outline" disabled={locked} onClick={()=>{
    const differs=prompt!==chosen.prompt||JSON.stringify(answerFields)!==JSON.stringify(chosen.answerFields)||JSON.stringify(answerSettings||null)!==JSON.stringify(chosen.answerSettings||null)||system!==undefined&&system.trim()!==(chosen.system??'').trim();
-   if(differs&&(prompt.trim()||answerFields.length)&&!confirm(system!==undefined?'Replace your current prompt, system prompt, and answer fields with this saved prompt?':'Replace your current prompt and answer fields with this saved prompt?'))return;
-   onUse(chosen.prompt,[...chosen.answerFields],chosen.answerSettings,chosen.system);setMessage('Prompt loaded.');
+   const use=()=>{onUse(chosen.prompt,[...chosen.answerFields],chosen.answerSettings,chosen.system);setMessage('Prompt loaded.');};
+   if(differs&&(prompt.trim()||answerFields.length))askThen(system!==undefined?'Replace your current prompt, system prompt, and answer fields with this saved prompt?':'Replace your current prompt and answer fields with this saved prompt?',use,{yes:'Replace'});
+   else use();
   }}>Use prompt</Button><button type="button" className="textbutton" disabled={locked} onClick={()=>void remove()}>Delete</button></div>}
   {message&&<p role="status">{message}</p>}
  </div>;

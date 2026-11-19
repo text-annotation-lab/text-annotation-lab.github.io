@@ -12,6 +12,7 @@ import {allocationNote,drawStratifiedSample,orderStrata,recordSample,sampleRecor
 import type {Row} from '@/lib/research/runs';
 import {withRemoved} from '@/lib/research/removed';
 import {PasteTextDialog,TableImportDialog,type AddTexts} from './import-texts';
+import {askThen} from '@/lib/ask';
 
 // removed: the deleted texts kept for their runs, when a change reaches them too (a label sheet).
 type Apply=(rows:Row[],columns:Column[],samples:SampleRecord[],notice:string,filter?:{column:string;value:string},removed?:Row[])=>void;
@@ -38,7 +39,7 @@ export function ResearchTools({rows,removed,fields,columns,samples,unit,disabled
    <ul>{columns.map(column=><li key={column.name}>
     <span className="research-column-name">{column.name}</span>
     <select aria-label={`What ${column.name} holds`} value={column.role} disabled={disabled} onChange={event=>onApply(rows,setRole(columns,column.name,event.target.value as 'label'|'meta'),samples,'')}><option value="label">Human labels</option><option value="meta">Metadata</option></select>
-    <button type="button" className="textbutton" disabled={disabled} onClick={()=>{const drawn=samples.filter(s=>s.column.toLowerCase()===column.name.toLowerCase()).length;if(!confirm(`Remove the column “${column.name}” and its values from every ${unit}?${drawn?` The record of the ${drawn===1?'sample':`${drawn} samples`} drawn into it (rule and seed) goes too.`:''} This cannot be undone (add it again from a spreadsheet if needed).`))return;const next=removeColumn(rows,columns,column.name);onApply(next.docs,next.columns,samples.filter(s=>s.column.toLowerCase()!==column.name.toLowerCase()),`Column “${column.name}” removed.`);}}>Remove</button>
+    <button type="button" className="textbutton" disabled={disabled} onClick={()=>{const drawn=samples.filter(s=>s.column.toLowerCase()===column.name.toLowerCase()).length;askThen(`Remove the column “${column.name}” and its values from every ${unit}?${drawn?` The record of the ${drawn===1?'sample':`${drawn} samples`} drawn into it (rule and seed) goes too.`:''} This cannot be undone (add it again from a spreadsheet if needed).`,()=>{const next=removeColumn(rows,columns,column.name);onApply(next.docs,next.columns,samples.filter(s=>s.column.toLowerCase()!==column.name.toLowerCase()),`Column “${column.name}” removed.`);},{yes:'Remove column',danger:true});}}>Remove</button>
    </li>)}</ul>
   </details>}
   {dialog==='labels'&&<LabelsDialog rows={rows} removed={removed} fields={fields} columns={columns} samples={samples} unit={unit} onApply={onApply} initial={labelSheet} onClose={()=>{setDialog('');setLabelSheet(undefined);}}/>}
