@@ -82,7 +82,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  assert.throws(()=>h.button('Run all'));assert.throws(()=>h.button('Submit batch'));assert(!main().includes('TRY')&&!main().includes('RUN'));
  const modes=()=>h.all(n=>n.type==='button'&&n.props.role==='radio');
  assert.deepEqual(modes().map(n=>[h.text(n),n.props['aria-checked']]),[['Now',true],['Batch · ½ price',false]]);
- modes()[1].props.onClick();await h.flush();assert.equal(h.latest().processing,'batch');assert.equal(modes()[1].props['aria-checked'],true);assert(main().includes('Results arrive later'));
+ modes()[1].props.onClick();await h.flush();assert.equal(h.latest().processing,'batch');assert.equal(modes()[1].props['aria-checked'],true);assert(main().includes('results usually arrive within 24 hours')&&main().includes('Batch limits'));
  modes()[0].props.onClick();await h.flush();assert.equal(h.latest().processing,'instant');assert(!main().includes('Results arrive later'));
  h.button('Processing options').props.onClick();await h.flush();assert.throws(()=>h.find(n=>n.props?.id==='processing-mode'));h.find(n=>n.props?.id==='annotation-concurrency');h.button('Processing options').props.onClick();await h.flush();
  // All: a second run; the first results are kept. No text remains: the standard Lab sends the answer fields as
