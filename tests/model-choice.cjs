@@ -206,7 +206,7 @@ const read=file=>fs.readFileSync(path.join(root,file),'utf8');
  assert(page.includes('const modelCell=<div><label>Model</label><Select value={model} onValueChange={chooseModel} disabled={workspaceLocked||!ready}>'));
  assert(!/from '@\/components\/research\//.test(page)&&!/from '@\/app\/api\//.test(page),'The research screens and the request handlers load on demand');
  assert(wrappers.includes("const Model=lazy(()=>load().then(module=>({default:module.ModelChoice})));"));
- assert(!page.includes('Other model ID')&&menu.includes('Other model ID…')&&menu.includes('Back to the list')&&menu.includes('on your account'));
+ assert(!page.includes('Other model ID')&&menu.includes('Other model ID…')&&menu.includes('Back to the list')&&menu.includes('on your account')&&menu.includes('Refresh model list'));
  assert(menu.includes("fetch('/api/models',{method:'POST',headers:{Authorization:'Bearer '+key,'X-Lab-Provider':provider}"),'The key travels in a header to the request handler, as for every other request');
  assert(!/localStorage|sessionStorage|indexedDB/.test(menu),'The account’s list is kept in memory only');
  console.log('model choice checks passed');

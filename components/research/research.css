@@ -534,4 +534,4 @@
 .settings-explained{margin:24px 0 0}.settings-explained summary{cursor:pointer}.settings-explained summary h3{display:inline;margin:0}.settings-explained dl{margin:12px 0 0}.settings-explained dl>div{padding:10px 0;border-top:1px solid #e3e8ef}.settings-explained dt{font-weight:600}.settings-explained dd{margin:4px 0 0}
 
 /* Research mode: the key status and Change on the row of the Provider label, above the menu. */
-.research-provider-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}.research-provider-head .research-key-line{margin:0}
+.pair.research-provider-pair{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-items:end}.research-key-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}.research-key-head .textbutton{padding:0}.research-provider-pair .research-key-line{margin:0;min-height:36px}

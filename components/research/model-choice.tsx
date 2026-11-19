@@ -1,12 +1,12 @@
 'use client';
 // Research mode: the model menu. It offers the Lab's own models, the other models on the account behind the
-// key, and "Other model ID…", which opens a box for any ID the provider knows.
+// key, "Other model ID…", which opens a box for any ID the provider knows, and "Refresh model list".
 import {useEffect,useId,useState} from 'react';
 import {Select,SelectContent,SelectGroup,SelectItem,SelectLabel,SelectSeparator,SelectTrigger,SelectValue} from '@/components/ui/select';
 import {PROVIDERS,OPENROUTER_STARTER_MODELS,defaultModel,isListedModel,modelAccessLabel,modelLabel,validModelId,type AccountModel,type Provider} from '@/lib/providers';
 import {canCheckKey} from '@/lib/workflow-safety';
 
-const OTHER='other-model-id',MENU_LIMIT=150,count=(n:number)=>n.toLocaleString('en-US');
+const OTHER='other-model-id',REFRESH='refresh-model-list',MENU_LIMIT=150,count=(n:number)=>n.toLocaleString('en-US');
 // A provider's list is asked for once per key and kept while this page is open; "refresh" asks again.
 const lists=new Map<string,Promise<AccountModel[]>>();
 function accountModels(provider:Provider,key:string):Promise<AccountModel[]>{
@@ -49,17 +49,18 @@ export function ModelChoice({provider,model,apiKey,disabled,onChange,onModels}:{
    {typed?<>
     <input id={id} className="research-model-id" value={model} placeholder="Model ID" list={id+'-ids'} autoFocus={typing} spellCheck={false} autoCapitalize="off" autoCorrect="off" autoComplete="off" disabled={disabled} aria-describedby={id+'-account'} onChange={event=>onChange(event.target.value.replace(/\s+/g,''))}/>
     <datalist id={id+'-ids'}>{[...config.models,...others.map(entry=>entry.id)].map(value=><option key={value} value={value}/>)}</datalist>
-   </>:<Select value={model} onValueChange={value=>{if(value===OTHER)setTyping(true);else onChange(value);}} disabled={disabled}>
+   </>:<Select value={model} onValueChange={value=>{if(value===OTHER)setTyping(true);else if(value===REFRESH)refresh();else onChange(value);}} disabled={disabled}>
     <SelectTrigger id={id} aria-label="Model" title={isListedModel(provider,model)?modelLabel(model):model}><SelectValue>{isListedModel(provider,model)?modelLabel(model):model}</SelectValue></SelectTrigger>
     <SelectContent>
      {provider==='openrouter'?['Economical starting points','More capable comparison models'].map((label,index)=><SelectGroup key={label}><SelectLabel>{label}</SelectLabel>{config.models.filter(value=>OPENROUTER_STARTER_MODELS.includes(value)===(index===0)).map(item)}</SelectGroup>):config.models.map(item)}
      {inMenu.length>0&&<SelectGroup><SelectLabel>Other models on your account</SelectLabel>{inMenu.map(entry=><SelectItem value={entry.id} key={entry.id} textValue={entry.id} title={entry.name}>{entry.id}</SelectItem>)}</SelectGroup>}
      <SelectSeparator/>
      <SelectItem value={OTHER}>Other model ID…</SelectItem>
+     {account?.status==='ok'&&<SelectItem value={REFRESH}>Refresh model list</SelectItem>}
     </SelectContent>
    </Select>}
   </div>
-  {(typed||account)&&<p id={id+'-account'} className="hint research-model-account" aria-live="polite">
+  {(typed||(account&&account.status!=='ok'))&&<p id={id+'-account'} className="hint research-model-account" aria-live="polite">
    {typed&&<button type="button" className="textbutton" disabled={disabled} onClick={back}>Back to the list</button>}
    {typed&&model!==''&&!wellFormed&&<span>This does not look like a model ID of {config.label}{provider==='openrouter'?', which has the form vendor/model':''}.</span>}
    {account?.status==='loading'&&<span>Loading the models on your account…</span>}
