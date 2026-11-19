@@ -15,7 +15,13 @@ function fingerprint(file: File) {
 
 // A matching name and size is only a candidate duplicate, never proof of one.
 export async function prepareDocumentUploads(files: File[], documents: QueuedDocument[]) {
-  const known = [...new Set(documents.flatMap(doc => [doc.file, ...(doc.sourceFile ? [doc.sourceFile] : [])]))];
+  // Files already in the queue or accepted from this selection, by name: each file is compared only with those of
+  // its own name, so adding thousands of files at once stays quick.
+  const known = new Map<string, File[]>();
+  for (const file of new Set(documents.flatMap(doc => [doc.file, ...(doc.sourceFile ? [doc.sourceFile] : [])]))) {
+    const named = known.get(file.name);
+    if (named) named.push(file); else known.set(file.name, [file]);
+  }
   const accepted: File[] = [], duplicateFiles: File[] = [], validFiles: File[] = [];
   let rejected = 0, duplicates = 0, unreadable = 0, matchingNames = 0;
   for (const file of files) {
@@ -23,7 +29,7 @@ export async function prepareDocumentUploads(files: File[], documents: QueuedDoc
       rejected++;
       continue;
     }
-    const sameName = known.filter(existing => existing.name === file.name);
+    const sameName = known.get(file.name) ?? [];
     let duplicate = false;
     try {
       for (const existing of sameName.filter(existing => existing.size === file.size)) {
@@ -40,7 +46,7 @@ export async function prepareDocumentUploads(files: File[], documents: QueuedDoc
     if (duplicate) { duplicates++; duplicateFiles.push(file); continue; }
     if (sameName.length) matchingNames++;
     accepted.push(file);
-    known.push(file);
+    if (sameName.length) sameName.push(file); else known.set(file.name, [file]);
   }
   return {accepted, duplicateFiles, validFiles, rejected, duplicates, unreadable, matchingNames};
 }
