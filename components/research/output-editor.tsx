@@ -73,7 +73,7 @@ export function OutputEditor({names,settings,onChange,disabled,scale,onScaleChan
  };
  const count=fieldsFromDrafts(drafts).names.length;
  return <details className="answer-fields research-output" ref={box} open={startOpen}>
-  <summary>Answer fields{plain?' (plain text)':count?` (${count})`:' (optional)'}<SettingInfo topic={plain?'plain-text':'answer-fields'}/></summary>
+  <summary>Answer fields{plain?' (plain text)':count?` (${count})`:' (optional)'}{standard&&<SettingInfo topic={plain?'plain-text':'answer-fields'}/>}</summary>
   <div className="research-segment research-output-mode" role="radiogroup" aria-label="Answer format">
    <button type="button" role="radio" aria-checked={!plain} disabled={disabled} onClick={()=>emit(drafts,{plain:false})}>Structured fields</button>
    <button type="button" role="radio" aria-checked={plain} disabled={disabled} onClick={()=>emit(drafts,{plain:true})}>Plain text</button>
