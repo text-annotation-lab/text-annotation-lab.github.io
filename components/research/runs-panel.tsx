@@ -23,6 +23,7 @@ import type {Agreement} from '@/lib/research/metrics';
 import {answersLabel} from '@/lib/answer-types';
 import {downloadBytes,downloadText} from './download';
 import {ResultsPanel} from './results-panel';
+import {askThen} from '@/lib/ask';
 
 const when=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(date.getTime())?'—':date.toLocaleString('en-US',{dateStyle:'medium',timeStyle:'short'});};
 // In the table the date and the time may go on two lines, so the table fits a laptop screen.
@@ -139,8 +140,8 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
  function retry(run:RunLine,requests:number){
   const what=`${count(requests)} request${requests===1?'':'s'} of run #${run.number}`,batch=facts.get(run.number)?.processing!=='instant';
   // Sent now, also for a run that was made as a batch; a large number is asked about first.
-  if((batch||requests>50)&&!confirm(`Send ${what} again now? They go out as immediate requests at the full price${batch?' (this run was made as a batch, at half price)':''}, with the settings of the run, and the answers join the run.`))return;
-  onRetryRun(run.number);
+  if(batch||requests>50)askThen(`Send ${what} again now? They go out as immediate requests at the full price${batch?' (this run was made as a batch, at half price)':''}, with the settings of the run, and the answers join the run.`,()=>onRetryRun(run.number),{yes:'Send again'});
+  else onRetryRun(run.number);
  }
 
  const runSources:CompareSource[]=lines.filter(run=>run.done>0).map(run=>({kind:'run',run:run.number}));
@@ -223,7 +224,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
     <td className="num">{known?`${count(fact.tokens.input)} / ${count(fact.tokens.output)}`:'—'}</td>
     <td className="num">{known?`${count(fact.tokens.cacheRead)} / ${count(fact.tokens.cacheWrite)}`:'—'}</td>
     <td className="num" title={run.costKnown<run.costCount?`Known for ${run.costKnown} of ${run.costCount} annotations`:undefined}>{run.costKnown?money(run.cost)+(run.costKnown<run.costCount?'+':''):'—'}</td>
-    <td className="research-row-actions"><div className="research-run-actions">{texts&&batch?.run===run.number&&<button type="button" className="textbutton" disabled={batch.disabled} title={batch.ready?'Collect the results of this batch from the provider':'Ask the provider how far this batch has come'} onClick={batch.onCheck}>{batch.busy?'Contacting provider…':batch.ready?'Collect results':'Check status'}</button>}<button type="button" className="textbutton" onClick={()=>setInspect(run.number)}>Settings</button>{texts&&failedRequests>0&&state!=='running'&&state!=='submitted'&&<button type="button" className="textbutton" disabled={locked} title="Send the requests of this run that have no usable answer again now, with the settings of the run. The new answers join the run." onClick={()=>retry(run,failedRequests)}>Retry failed ({count(failedRequests)})</button>}{texts&&<><button type="button" className="textbutton" onClick={()=>onShowRun(run.number)}>Show in Workspace</button><button type="button" className="textbutton" disabled={locked} onClick={()=>{if(confirm(`Delete run #${run.number} and its ${run.done+run.failed} results? Texts keep the results of their other runs. This cannot be undone.`))onDeleteRun(run.number);}}>Delete</button></>}</div></td>
+    <td className="research-row-actions"><div className="research-run-actions">{texts&&batch?.run===run.number&&<button type="button" className="textbutton" disabled={batch.disabled} title={batch.ready?'Collect the results of this batch from the provider':'Ask the provider how far this batch has come'} onClick={batch.onCheck}>{batch.busy?'Contacting provider…':batch.ready?'Collect results':'Check status'}</button>}<button type="button" className="textbutton" onClick={()=>setInspect(run.number)}>Settings</button>{texts&&failedRequests>0&&state!=='running'&&state!=='submitted'&&<button type="button" className="textbutton" disabled={locked} title="Send the requests of this run that have no usable answer again now, with the settings of the run. The new answers join the run." onClick={()=>retry(run,failedRequests)}>Retry failed ({count(failedRequests)})</button>}{texts&&<><button type="button" className="textbutton" onClick={()=>onShowRun(run.number)}>Show in Workspace</button><button type="button" className="textbutton" disabled={locked} onClick={()=>askThen(`Delete run #${run.number} and its ${run.done+run.failed} results? Texts keep the results of their other runs. This cannot be undone.`,()=>onDeleteRun(run.number),{yes:'Delete run',danger:true})}>Delete</button></>}</div></td>
    </tr>;})}</tbody></table></div>:<p className="research-empty">No runs yet. {dataset.kind==='texts'?'Annotate texts in the Workspace. Each setup you run (model, reasoning effort, prompt, and answer fields) is listed here as a numbered run.':'Annotate subjects under Model knowledge. Each repeat of the study is listed here as a numbered run.'}</p>}
    {texts&&batchNote&&<div className="message" role="status">{batchNote}</div>}
    {inspected&&<RunSettings dataset={dataset} run={inspected} facts={facts.get(inspected.number)!} state={runState(dataset.rows,inspected)} onClose={()=>setInspect(undefined)}/>}

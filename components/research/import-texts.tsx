@@ -5,6 +5,7 @@ import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {guessKeyColumn,matchRows,type CellRow,type NewText,type Sheet} from '@/lib/research/columns';
 import {countWords,fitIntoStudy,guessIdColumn,guessTextColumn,parseCorpusTable,pastedTexts,planTable,splitPasted,TooLong} from '@/lib/research/import-texts';
+import {askThen} from '@/lib/ask';
 
 // Adds the texts to the study; false when the workspace cannot take them right now.
 export type AddTexts=(texts:NewText[],names:string[],message:string)=>boolean;
@@ -28,7 +29,7 @@ export function PasteTextDialog({rows,removed,onAdd,onClose}:{rows:Existing[];re
   }catch(reason){setProblem(reason instanceof TooLong?reason.message:'The pasted text could not be added. Try again.');}
   finally{setAdding(false);}
  }
- const close=()=>{if(adding)return;if(text.trim()&&!confirm('Close without adding what you pasted?'))return;onClose();};
+ const close=()=>{if(adding)return;if(text.trim())askThen('Close without adding what you pasted?',onClose,{yes:'Close',no:'Keep editing'});else onClose();};
  return <Dialog open onOpenChange={open=>{if(!open)close();}}>
   <DialogContent className="research-dialog research-wide">
    <DialogTitle>Paste text</DialogTitle>
