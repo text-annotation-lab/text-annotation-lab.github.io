@@ -560,3 +560,6 @@
 @media(max-width:600px){.research-run-box{padding:12px}.research-run-box .run-progress{flex-wrap:wrap}}
 .result-pages.compact .research-menu>button{height:30px;min-height:30px;padding:0 10px}
 .research-setup-head+.research-provider-pair>div>label{margin-top:0}
+/* Setup fields use the standard Lab's Provider size (14 px) in both modes. */
+.setup .pair [data-slot=select-trigger],.setup .model-settings .research-model-id,.research-key-line.research-key-box,.research-key-box .provider-key-status,.research-key-box .key-status-badge{font-size:14px}
+@media(max-width:1050px){.setup .pair [data-slot=select-trigger],.setup .model-settings .research-model-id,.research-key-line.research-key-box,.research-key-box .provider-key-status,.research-key-box .key-status-badge{font-size:13px}}
