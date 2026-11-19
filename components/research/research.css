@@ -532,3 +532,6 @@
 .setting-info:focus-visible{outline:2px solid #003d73;outline-offset:2px}
 .setting-info-text{width:320px;font-size:13px;line-height:1.55;color:#33435a}.setting-info-text p{margin:0}.setting-info-text p+p{margin-top:8px}
 .settings-explained{margin:24px 0 0}.settings-explained summary{cursor:pointer}.settings-explained summary h3{display:inline;margin:0}.settings-explained dl{margin:12px 0 0}.settings-explained dl>div{padding:10px 0;border-top:1px solid #e3e8ef}.settings-explained dt{font-weight:600}.settings-explained dd{margin:4px 0 0}
+
+/* Research mode: the key status and Change on the row of the Provider label, above the menu. */
+.research-provider-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}.research-provider-head .research-key-line{margin:0}
