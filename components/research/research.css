@@ -559,3 +559,4 @@
 .result-pages.compact button{min-height:30px;height:30px;padding:0 10px}
 @media(max-width:600px){.research-run-box{padding:12px}.research-run-box .run-progress{flex-wrap:wrap}}
 .result-pages.compact .research-menu>button{height:30px;min-height:30px;padding:0 10px}
+.research-setup-head+.research-provider-pair>div>label{margin-top:0}
