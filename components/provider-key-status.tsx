@@ -53,7 +53,8 @@ const keyBadges = {
  unverified: {label:'Couldn’t verify this key', icon:'?'},
 };
 
-export function ProviderKeyStatus({value}:{value:ReturnType<typeof useProviderKeyCheck>}) {
+// short: "Accepted" rather than "Key accepted", where a label already says API key.
+export function ProviderKeyStatus({value,short}:{value:ReturnType<typeof useProviderKeyCheck>;short?:boolean}) {
  const {empty,check,pauseAllowance,canRetry,refresh} = value;
  const balance = check.balance;
  const badge = keyBadges[check.status];
@@ -65,7 +66,7 @@ export function ProviderKeyStatus({value}:{value:ReturnType<typeof useProviderKe
   <span role="status" aria-atomic="true">
    {!empty && (pauseAllowance ? 'Spending details refresh after the run.' : <>
     <span className="key-status-badge" data-status={check.status}>
-     {badge.icon && <span aria-hidden="true">{badge.icon}</span>}{badge.label}
+     {badge.icon && <span aria-hidden="true">{badge.icon}</span>}{short?badge.label.replace(/^Key (\w)/,(_,c:string)=>c.toUpperCase()):badge.label}
     </span>{detail && <> {detail}</>}
    </>)}
   </span>
