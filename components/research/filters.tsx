@@ -13,7 +13,7 @@ import {modelName} from '@/lib/providers';
 
 export type MenuItem={label:string;onSelect:()=>void;disabled?:boolean;danger?:boolean};
 // "Clear": a small menu for clearing results, deleting texts, and clearing the workspace.
-function MoreMenu({items}:{items:MenuItem[]}){
+export function MoreMenu({items}:{items:MenuItem[]}){
  const [open,setOpen]=useState(false),box=useRef<HTMLSpanElement>(null);
  useEffect(()=>{
   if(!open)return;

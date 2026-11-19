@@ -110,9 +110,9 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
  // With a filter on, the run buttons apply to the shown texts only.
  assert(h.text(h.button('All (')).includes('All (2)'));assert(main().includes('The run buttons apply to the 2 shown texts.'));
  filters().onChange({...filters().view,show:'all',compare:''});await h.flush();
- // Research mode keeps one row of run buttons: the clearing actions are in the menu of the row above the table.
+ // Research mode keeps one row of run buttons: the clearing actions are in the menu on the line above the table.
  assert.equal(h.all(n=>n.type==='div'&&n.props.className==='clear-actions').length,0);
- assert.deepEqual(filters().menu.map(item=>[item.label,Boolean(item.danger),Boolean(item.disabled)]),[['Delete selected texts…',true,true],['Delete all texts…',true,false]]);
+ assert.deepEqual(h.find(n=>n.type==='ResultPages'||n.type?.name==='ResultPages').props.extra.props.items.map(item=>[item.label,Boolean(item.danger),Boolean(item.disabled)]),[['Delete selected texts…',true,true],['Delete all texts…',true,false]]);
  assert.equal(filters().actions,undefined,'research mode has no chart or Excel button above the table: the Results panel and the Export tab have them');
 
  // Deleting run 2 brings back the results of run 1.
@@ -548,7 +548,7 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   const until=async(h,ready)=>{for(let n=0;n<300&&!ready();n++){await new Promise(resolve=>setTimeout(resolve,25));await h.flush();}assert(ready(),'The run did not get there in time');};
   const four=()=>({docs:Array.from({length:4},(_,i)=>({id:String(i),name:`text-${i}.txt`,file:new File([`Text ${i}`],`text-${i}.txt`),status:'pending'})),prompt:'Classify tone',provider:'openai',model:providers.defaultModel('openai'),effort:'medium',concurrency:1,columns:[{name:'year',role:'meta'},{name:'tone_human',role:'label'}]});
   const h=harness(four());await h.flush();h.find(n=>n.type==='ModeSwitch').props.onChange(true);await h.flush();h.find(n=>n.type==='ResearchKeys').props.onSave({openai:'sk-delete'},false);await h.flush();
-  const filters=()=>h.find(n=>n.type==='ResearchFilters').props,item=label=>filters().menu.find(entry=>entry.label.startsWith(label)),notices=()=>h.all(n=>n.props?.role==='alert'||n.props?.role==='status').map(n=>h.text(n)).join(' | ');
+  const filters=()=>h.find(n=>n.type==='ResearchFilters').props,item=label=>h.find(n=>n.type==='ResultPages'||n.type?.name==='ResultPages').props.extra.props.items.find(entry=>entry.label.startsWith(label)),notices=()=>h.all(n=>n.props?.role==='alert'||n.props?.role==='status').map(n=>h.text(n)).join(' | ');
   const tab=value=>{h.find(n=>n.type==='Tabs').props.onValueChange(value);return h.flush();},panel=()=>h.find(n=>n.type==='ResearchRuns').props,tick=name=>h.find(n=>n.type==='input'&&n.props['aria-label']==='Select '+name).props.onChange({target:{checked:true}});
   // Two texts get a result in run 1, with values in both columns; the other two are never sent.
   h.find(n=>n.type==='ResearchTools').props.onApply(h.latest()?.docs||four().docs,[{name:'year',role:'meta'},{name:'tone_human',role:'label'}],[],'');await h.flush();
