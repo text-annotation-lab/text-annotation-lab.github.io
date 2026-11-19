@@ -12,6 +12,16 @@ test('keeps different texts even with identical names and byte lengths', async (
   assert.equal(result.matchingNames, 1);
 });
 
+test('keeps different texts with the same name within one selection', async () => {
+  const first = new File(['cat'], 'source.txt');
+  const second = new File(['dog'], 'source.txt');
+  const other = new File(['cat'], 'other.txt');
+  const result = await prepareDocumentUploads([first, other, second], []);
+  assert.deepEqual(result.accepted, [first, other, second]);
+  assert.equal(result.duplicates, 0);
+  assert.equal(result.matchingNames, 1);
+});
+
 test('counts identical files in an upload and against the saved queue', async () => {
   const first = new File(['same text'], 'source.txt');
   const copy = new File(['same text'], 'source.txt', {lastModified: 1});
