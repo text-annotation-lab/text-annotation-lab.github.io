@@ -535,3 +535,26 @@
 
 /* Research mode: the key status and Change on the row of the Provider label, above the menu. */
 .pair.research-provider-pair{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-items:end}.research-key-line.research-key-box{flex-wrap:nowrap;justify-content:space-between;gap:6px;min-height:36px;padding:4px 9px;border:1px solid #dce2ec;border-radius:6px;font-size:13px;white-space:nowrap}.research-key-box .provider-key-status{min-width:0;font-size:13px}.research-key-box .key-status-badge{padding:0;border:0;background:none}.research-key-box>button{padding:0;flex-shrink:0}.research-key-edit{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-right:-4px;border:0;border-radius:4px;background:none;color:#003d73}.research-key-edit:hover{background:#eef3f9}.research-key-edit:focus-visible{outline:2px solid #003d73}
+
+/* Workspace: the run controls, batch note, and progress grouped in one box; metadata beside the tools. */
+.research-tools{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 22px}
+.research-tools-actions{flex:1 1 auto}
+.research-tools>.research-columns{margin-top:0}
+.research-tools>.research-columns[open]{flex-basis:100%}
+.research-run-box{margin:18px 0 0;padding:14px 16px;background:#f6f8fc;border:1px solid #e3e9f2;border-radius:10px}
+.research-run-box>.actions{margin:0}
+.research-run-box .run-guidance{margin:10px 0 0}
+.research-run-box .batch-limits{display:inline}
+.research-run-box .batch-limits summary{display:inline;cursor:pointer;color:#003d73;text-decoration:underline;text-underline-offset:3px}
+.research-run-box .batch-limits[open]{display:block}
+.research-run-box .batch-limits p{margin:4px 0 0}
+.research-run-box .run-progress{display:flex;align-items:center;gap:12px;margin-top:12px}
+.research-run-box .run-progress .progressline{margin:0;white-space:nowrap}
+.research-run-box .run-progress [data-slot=progress]{flex:1;height:4px}
+.research-run-box>.message{margin-top:12px}
+.research-filters select{padding-right:24px}
+.research-search input{width:100px!important}
+.result-pages.compact{margin:10px 0 4px}
+.result-pages.compact>div{gap:6px}
+.result-pages.compact button{min-height:30px;height:30px;padding:0 10px}
+@media(max-width:600px){.research-run-box{padding:12px}.research-run-box .run-progress{flex-wrap:wrap}}
