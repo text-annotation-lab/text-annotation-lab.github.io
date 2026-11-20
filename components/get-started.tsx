@@ -6,7 +6,6 @@ export function GetStarted() {
   const [canFullscreen,setCanFullscreen]=useState(true);
   useEffect(()=>{setCanFullscreen(document.fullscreenEnabled!==false);},[]);
   return <TabsContent value="get-started" className="reading-panel panel">
-    <p className="eyebrow">YOUR FIRST ANNOTATION</p>
     <h2 id="get-started" tabIndex={-1}>Get started</h2>
     <p>Watch this short introduction, then follow the steps below to set up your account, try a small pilot, and save your results.</p>
 

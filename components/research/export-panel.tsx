@@ -102,7 +102,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
  const elsewhere=job&&job.kind!=='backup'&&job.data!==dataset.kind;
  return <div className="research-page">
   <div className="research-page-head">
-   <div><p className="eyebrow">RESEARCH MODE</p><h2 id="export" tabIndex={-1}>Export</h2></div>
+   <div><h2 id="export" tabIndex={-1}>Export</h2></div>
    {available.length>1&&<div className="research-segment" role="group" aria-label="Data">{available.map(d=><button key={d.kind} type="button" aria-pressed={d.kind===dataset.kind} onClick={()=>setKind(d.kind)}>{DATASET_NAMES[d.kind]}</button>)}</div>}
   </div>
   <p className="hint">{dataset.rows.length.toLocaleString('en-US')} {unit}{dataset.rows.length===1?'':'s'} · {all.length} {all.length===1?'run':'runs'} · {results.toLocaleString('en-US')} completed {results===1?'annotation':'annotations'}{dataset.columns.length?` · ${dataset.columns.length} label or metadata ${dataset.columns.length===1?'column':'columns'}`:''}{knowledge?'. Model knowledge: the model judged named subjects from what it has learned; no texts were supplied. Every file from this page says so.':''}</p>
