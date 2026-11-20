@@ -237,12 +237,12 @@
 .research-runs td.research-run-started{white-space:normal}
 .research-nowrap{white-space:nowrap}
 .research-run-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:4px 14px;max-width:320px;margin-left:auto}
-/* On a wide screen the three usual actions share one line; more than fit in 320 px wrap. */
-@media(min-width:1340px){.research-run-actions{width:max-content}}
-.research-row-actions .research-run-actions .textbutton{margin:0;white-space:nowrap}
+/* The runs table fits a desktop screen without a sideways scrollbar: the actions, status, model, and start time wrap when the columns would not fit otherwise; numbers stay on one line. */
+.research-runs td.research-run-status{white-space:normal;min-width:84px}
+.research-row-actions .research-run-actions .textbutton{margin:0;white-space:nowrap;min-height:0;padding:2px 0}
 .research-runs td.research-run-model{white-space:normal;min-width:130px}
-.research-runs td.research-run-scope{white-space:normal;min-width:120px;max-width:220px;color:#53657a}
-.research-runs input.research-run-label{font:inherit;font-size:13px;width:116px;min-height:0;padding:5px 8px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#19334f}
+.research-runs td.research-run-scope{white-space:normal;min-width:100px;max-width:220px;color:#53657a}
+.research-runs input.research-run-label{font:inherit;font-size:13px;width:100px;min-height:0;padding:5px 8px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#19334f}
 .research-runs input.research-run-label::placeholder{color:#8b98ab}
 .research-runs input.research-run-label:focus-visible{outline:2px solid #003d73;outline-offset:1px}
 .research-run-settings .research-cells{margin:0}
