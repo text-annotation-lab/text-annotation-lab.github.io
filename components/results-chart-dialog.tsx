@@ -4,7 +4,7 @@ import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/u
 import {Button} from '@/components/ui/button';
 import type {ResultsChartDialogProps} from './results-chart';
 import {ChartReview} from './chart-review';
-import {buildUnits,chartFieldList,formatNumber,groupableFields,mean,median,mostCommon,periodLengths,settingsSummary,suggestedGroupRule,suggestedPeriodLength,suggestedRowGroup,suggestedRowYear,suggestedScale,type ChartSourceRow,type Field,type GroupRule,type Scale,type Unit} from '@/lib/chart-model';
+import {buildUnits,chartFieldList,formatMean,formatNumber,groupableFields,mean,median,mostCommon,periodLengths,settingsSummary,suggestedGroupRule,suggestedPeriodLength,suggestedRowGroup,suggestedRowYear,suggestedScale,type ChartSourceRow,type Field,type GroupRule,type Scale,type Unit} from '@/lib/chart-model';
 import {OTHER,REST,restLabel,categoryColors,crowdedDots,distributionCategories,distributionNumbers,distributionScale,downloadPng,downloadSvg,exportFigure,groupsView,runsView,scaleColor,scaleLabel,scalePoints,timeDots,timeShares,type Figure} from '@/lib/chart-figures';
 import './results-chart.css';
 
@@ -104,11 +104,11 @@ function ChartBody({rows,scope,subjectLabel,onInspect,onSaveYears,onSaveGroups}:
  try{
   if(view==='distribution'){
    if(kind==='scale'&&scale){figure=distributionScale(units,scale,o);
-    stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle score (median)',formatNumber(median(numbers))],['Average',formatNumber(mean(numbers),1)],['Most common',mostCommon(units.map(u=>scaleLabel(scale,Math.round(u.number!))))],['Lowest – highest',`${scaleLabel(scale,Math.min(...numbers))} – ${scaleLabel(scale,Math.max(...numbers))}`]];
+    stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle score (median)',formatNumber(median(numbers))],['Mean (average)',formatMean(mean(numbers))],['Most common (mode)',mostCommon(units.map(u=>scaleLabel(scale,Math.round(u.number!))))],['Lowest – highest',`${scaleLabel(scale,Math.min(...numbers))} – ${scaleLabel(scale,Math.max(...numbers))}`]];
     read=`Each bar counts the ${noun} that received that score. Every point on the scale is shown, even when no ${noun.replace(/s$/,'')} received it, so you see where results sit on the whole scale. Select a bar to read those ${noun} and the model’s explanations.`;}
-   else if(kind==='scale'){figure=distributionNumbers(units,o);stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle value (median)',formatNumber(median(numbers))],['Average',formatNumber(mean(numbers))],['Lowest – highest',`${formatNumber(Math.min(...numbers))} – ${formatNumber(Math.max(...numbers))}`]];
+   else if(kind==='scale'){figure=distributionNumbers(units,o);stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle value (median)',formatNumber(median(numbers))],['Mean (average)',formatMean(mean(numbers))],['Lowest – highest',`${formatNumber(Math.min(...numbers))} – ${formatNumber(Math.max(...numbers))}`]];
     read=`Each bar counts the ${noun} whose value falls in that range. Select a bar to read them.`;}
-   else{figure=distributionCategories(units,o);const top=mostCommon(units.map(u=>u.value));stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Most common',top.length>28?top.slice(0,27)+'…':top],['Categories',new Set(units.map(u=>u.value)).size]];
+   else{figure=distributionCategories(units,o);const top=mostCommon(units.map(u=>u.value));stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Most common (mode)',top.length>28?top.slice(0,27)+'…':top],['Categories',new Set(units.map(u=>u.value)).size]];
     read=`Each bar counts the ${noun} the model put in that category, largest first. Select a bar to read them and the model’s explanations.`;}
   }else if(view==='time'){
    if(!dated.length)empty=<div className="chart-empty-state"><strong>No years yet</strong><p>{noun==='texts'?'Put the year in each filename, such as 1945_Roosevelt.txt, or type the years in yourself.':'Add a “Year” field to your subjects, or type the years in yourself.'}</p>{onSaveYears&&<Button variant="outline" onClick={()=>setReview('year')}>Enter years</Button>}</div>;
@@ -118,7 +118,7 @@ function ChartBody({rows,scope,subjectLabel,onInspect,onSaveYears,onSaveGroups}:
     else{figure=timeShares(dated,kind==='scale'?scale:undefined,categories,length,o);read=`Each column is one ${length}-year period and adds up to 100%.${scale?' The bold number is the score.':''} Check the count under each column: with few ${noun} in a period, one ${noun.replace(/s$/,'')} moves the column a lot.`;if(categories)legend=categoryLegend;}
     const first=Math.min(...years),last=Math.max(...years);
     stats=[[`${noun==='texts'?'Texts':'Subjects'} with a year`,`${dated.length} of ${units.length}`],['Years',first===last?String(first):`${first}–${last}`]];
-    if(numbers.length&&kind==='scale'){const early=dated.filter(u=>u.year!<=median(years)).map(u=>u.number!),late=dated.filter(u=>u.year!>median(years)).map(u=>u.number!);if(early.length&&late.length)stats.push(['Average, earlier half',formatNumber(mean(early),1)],['Average, later half',formatNumber(mean(late),1)]);}
+    if(numbers.length&&kind==='scale'){const early=dated.filter(u=>u.year!<=median(years)).map(u=>u.number!),late=dated.filter(u=>u.year!>median(years)).map(u=>u.number!);if(early.length&&late.length)stats.push(['Mean, earlier half',formatMean(mean(early))],['Mean, later half',formatMean(mean(late))]);}
    }
   }else if(view==='groups'){
    if(groupNames.length<2)empty=<div className="chart-empty-state"><strong>{groupNames.length===1?'Only one group so far':'No groups yet'}</strong><p>{noun==='texts'?`Groups let you compare, for example, women’s and men’s obituaries or two campaigns. The Lab can read groups from your filenames (such as …F.txt and …M.txt) or you can type them in.`:'Groups let you compare subjects, for example by author or period. The Lab can read them from one of your subject fields, or you can type them in.'}</p>{onSaveGroups&&<Button variant="outline" onClick={()=>setReview('group')}>Set up groups</Button>}</div>;
@@ -126,9 +126,9 @@ function ChartBody({rows,scope,subjectLabel,onInspect,onSaveYears,onSaveGroups}:
    else{
     figure=groupsView(grouped,groupNames,kind==='scale'?scale:undefined,categories,o);if(categories)legend=categoryLegend;
     if(kind==='scale'&&scale){const avgs=groupNames.map(g=>({g,m:mean(grouped.filter(u=>u.group===g).map(u=>u.number!))}));
-     stats=avgs.slice(0,4).map(({g,m})=>[`${g}, average`,formatNumber(m,2)] as [string,ReactNode]);
+     stats=avgs.slice(0,4).map(({g,m})=>[`${g}, mean`,formatMean(m)] as [string,ReactNode]);
      if(avgs.length===2)stats.push([`${avgs[1].g} minus ${avgs[0].g}`,formatNumber(avgs[1].m-avgs[0].m,2),'points']);
-     read=`Each bar is one group and adds up to 100%${scale.type==='diverging'?', centered on the neutral score, so lower scores extend left and higher ones right':''}. ${width<620?'Below':'On the right'}, each dot is a group’s average; the short bar shows how much it could shift with a different sample of ${noun} (a 95% range). If two ranges don’t overlap, the difference is unlikely to be chance alone; ranges that overlap a little can still differ. Neither shows whether the model judged correctly.`;}
+     read=`Each bar is one group and adds up to 100%${scale.type==='diverging'?', centered on the neutral score, so lower scores extend left and higher ones right':''}. ${width<620?'Below':'On the right'}, each dot is a group’s mean; the short bar shows how much it could shift with a different sample of ${noun} (a 95% range). If two ranges don’t overlap, the difference is unlikely to be chance alone; ranges that overlap a little can still differ. Neither shows whether the model judged correctly.`;}
     else{stats=groupNames.slice(0,4).map(g=>[g,`${grouped.filter(u=>u.group===g).length} ${noun}`] as [string,ReactNode]);read=`Each bar is one group and adds up to 100%, so groups of different sizes can be compared. Select a segment to read those ${noun}.`;}
    }
   }else if(view==='runs'){
@@ -229,7 +229,7 @@ function autoCaption({field,units,kind,scale,view,trend,rows,noun,period,groups}
  if(models.length)parts.push(`Annotated by ${models.join(', ')}${efforts.length===1?` (${efforts[0]} reasoning effort)`:''}${days.length?`, ${days[0]===days[days.length-1]?days[0]:`${days[0]} to ${days[days.length-1]}`}`:''}.`);
  if(view==='time'&&trend)parts.push('Line: smoothed average.');
  if(view==='time'&&period)parts.push(`Periods of ${period} years.`);
- if(view==='groups'&&kind==='scale')parts.push('Dots: group averages with 95% ranges.');
+ if(view==='groups'&&kind==='scale')parts.push('Dots: group means with 95% ranges.');
  if(units.some(u=>u.values.length>1))parts.push('Repeated runs or chunks combined per text.');
  return parts.join(' ');
 }

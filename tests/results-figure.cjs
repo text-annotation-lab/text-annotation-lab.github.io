@@ -29,7 +29,7 @@ assert(twins.notes.some(n=>/side by side/.test(n)));
 // Groups: F/M obituaries on a 1–7 scale, plus a diverging scale centered on zero.
 const obits=Array.from({length:20},(_,i)=>row(i%2?(i%7)+1:((i+3)%7)+1,i,{name:`19${String(i).padStart(2,'0')}-01${i%2?'M':'F'}.txt`}));
 const ou=m.buildUnits(obits,score,{...opts,groupRule:'end'}).units;assert.deepEqual(Array.from(new Set(ou.map(u=>u.group))).sort(),['F','M']);
-const groups=f.groupsView(ou,['F','M'],scale(1,7),undefined,o);clean(groups.svg);assert.match(groups.svg,/Average, with 95% range/);assert.equal(groups.picks.reduce((s,p)=>s+p.ids.length,0),20);
+const groups=f.groupsView(ou,['F','M'],scale(1,7),undefined,o);clean(groups.svg);assert.match(groups.svg,/Mean, with 95% range/);assert.equal(groups.picks.reduce((s,p)=>s+p.ids.length,0),20);
 const narrow=f.groupsView(ou,['F','M'],scale(1,7),undefined,{...o,width:340});clean(narrow.svg);assert(narrow.height>groups.height);
 const div=f.groupsView(m.buildUnits(obits.map((r,i)=>({...r,score:String((i%7)-3)})),score,{...opts,groupRule:'end'}).units,['F','M'],scale(-3,3),undefined,o);clean(div.svg);assert.match(div.svg,/← lower/);
 
