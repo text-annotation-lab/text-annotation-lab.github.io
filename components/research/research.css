@@ -138,17 +138,17 @@
 .research-run-group{display:inline-flex;flex-wrap:wrap;align-items:center;gap:10px}
 .research-run-divider{align-self:stretch;width:1px;background:#dce2ec;margin:0 4px}
 /* Now or Batch: two joined choices beside the run buttons */
-.research-seg{display:inline-flex;align-items:stretch;align-self:stretch;min-height:36px;border:1px solid #c3ccd9;border-radius:8px;overflow:hidden;background:#fff}
+.research-seg{display:inline-flex;align-items:stretch;height:36px;box-sizing:border-box;border:1px solid #c3cedc;border-radius:8px;overflow:hidden;background:#fff}
 .research-seg button{border:0;background:none;padding:0 13px;font:inherit;font-size:14px;font-weight:500;color:#44566c;white-space:nowrap}
-.research-seg button+button{border-left:1px solid #c3ccd9}
+.research-seg button+button{border-left:1px solid #c3cedc}
 .research-seg button[aria-checked=true]{background:#e8f1f8;color:#003d73;font-weight:600}
 .research-seg button:not([aria-checked=true]):not(:disabled):hover{background:#eef2f8}
 .research-seg button:disabled:not([aria-checked=true]){color:#9aa6b8}
 .research-seg button:focus-visible{outline:2px solid #003d73;outline-offset:-3px}
 .research-try{display:inline-flex;align-items:stretch}
-.research-try>button{border-top-right-radius:0;border-bottom-right-radius:0;height:auto}
-.actions .research-try input[type=number]{width:60px;min-height:0;padding:0 6px;border:1px solid currentColor;border-left:0;border-radius:0 8px 8px 0;font:inherit;font-size:14px;text-align:center;background:#fff;color:#1b2942}
-.actions .research-try input[type=number]:disabled{color:#9aa6b8;border-color:#c9d1dd}
+.research-try>button{border-top-right-radius:0;border-bottom-right-radius:0;height:36px}
+.actions .research-try input[type=number]{width:60px;height:36px;box-sizing:border-box;min-height:0;padding:0 6px;border:1px solid #c3cedc;border-left:0;border-radius:0 8px 8px 0;font:inherit;font-size:14px;text-align:center;background:#fff;color:#1b2942}
+.actions .research-try input[type=number]:disabled{color:#9aa6b8}
 .actions .research-try input[type=number]:focus-visible{outline:2px solid #003d73;outline-offset:1px}
 @media(max-width:600px){.research-run-divider{display:none}}
 
