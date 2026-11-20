@@ -216,7 +216,6 @@
 /* Runs & agreement, Export */
 .research-panel{width:calc(100% - 56px);max-width:1384px;margin:0 auto;padding:32px 40px}
 .research-page-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin-bottom:8px}
-.research-page-head .eyebrow{margin:0 0 10px}
 .research-page h2{font-family:Georgia,'Times New Roman',serif;font-size:28px;font-weight:400;line-height:1.25;margin:0;display:block}
 .research-page h3{font-size:18px;font-weight:600;margin:30px 0 12px}
 .research-page h4{font-size:15px;font-weight:600;margin:26px 0 10px}

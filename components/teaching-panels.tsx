@@ -6,7 +6,7 @@ import tips from '@/lib/teaching-tips.json';
 
 export function TeachingPanels(){return <>
   <TabsContent value="resources" className="reading-panel panel">
-    <p className="eyebrow">FURTHER READING</p><h2 id="further-resources" tabIndex={-1}>Further resources</h2>
+    <h2 id="further-resources" tabIndex={-1}>Further resources</h2>
     <p>For those who want to explore the methods behind AI-assisted text annotation in more depth.</p>
     <article><h3>Prompting guides</h3><p>General guidance on clear instructions, output formats, and using examples to communicate your task: <a href="https://developers.openai.com/api/docs/guides/prompt-engineering" target="_blank" rel="noreferrer">OpenAI ↗</a>, <a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview" target="_blank" rel="noreferrer">Anthropic ↗</a>, <a href="https://aistudio.google.com/docs/prompting-strategies" target="_blank" rel="noreferrer">Google ↗</a>.</p></article>
     <article><h3>Model overviews</h3><p>Current model documentation for comparing capabilities, supported settings, and costs when choosing a model for your study: <a href="https://developers.openai.com/api/docs/models" target="_blank" rel="noreferrer">OpenAI ↗</a>, <a href="https://platform.claude.com/docs/en/models/overview" target="_blank" rel="noreferrer">Anthropic ↗</a>, <a href="https://aistudio.google.com/docs/models" target="_blank" rel="noreferrer">Google ↗</a>, <a href="https://openrouter.ai/models" target="_blank" rel="noreferrer">OpenRouter ↗</a>.</p></article>
@@ -19,7 +19,7 @@ export function TeachingPanels(){return <>
     <article><h3><a href="https://arxiv.org/abs/2604.09638" target="_blank" rel="noreferrer">A Methodological Guide on Using Large Language Models for Reproducible Text Annotation in the Social Sciences and Humanities with Python and R ↗</a></h3><p className="reading-meta">Qixiang Fang, Javier Garcia Bernardo, &amp; Erik-Jan van Kesteren · 2026 · Preprint</p><p>A practical guide to reproducible annotation workflows in Python and R. Explains how to evaluate prompts without overfitting, account for annotation error in statistical analysis, and document model settings and results, with worked code examples.</p></article>
   </TabsContent>
   <TabsContent value="corpus" className="reading-panel panel">
-    <p className="eyebrow">TEACHING COLLECTIONS</p><h2 id="corpus-example" tabIndex={-1}>Corpus examples</h2>
+    <h2 id="corpus-example" tabIndex={-1}>Corpus examples</h2>
     <aside className="center-notice"><p>Explore American history, society, and culture with these teaching collections from the <a href="https://asca.au.dk/" target="_blank" rel="noreferrer">American Studies Center Aarhus</a>.</p></aside>
     <p>These collections offer different questions and text types for an annotation study. Each download contains individual text files and source information.</p>
     <CorpusChooser/>
@@ -90,7 +90,7 @@ export function TeachingPanels(){return <>
     </div></details>
   </TabsContent>
   <TabsContent value="tips" className="reading-panel panel">
-    <p className="eyebrow">STUDENT GUIDE</p><h2 id="prompting-tips" tabIndex={-1}>10 tips for prompting text annotation</h2>
+    <h2 id="prompting-tips" tabIndex={-1}>10 tips for prompting text annotation</h2>
     <p>Your prompt works like a small codebook: it tells the model what to look for and how to record its judgment.</p>
     <ol className="teaching-tips">{tips.map((tip,i)=>{const end=tip.indexOf('. ');return <li key={i}><strong>{tip.slice(0,end+1)}</strong>{' '}{tip.slice(end+2)}</li>})}</ol>
 

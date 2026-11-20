@@ -203,7 +203,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
 
  return <div className="research-page">
   <div className="research-page-head">
-   <div><p className="eyebrow">RESEARCH MODE</p><h2 id="runs" tabIndex={-1}>Runs &amp; agreement</h2></div>
+   <div><h2 id="runs" tabIndex={-1}>Runs &amp; agreement</h2></div>
    {available.length>1&&<div className="research-segment" role="group" aria-label="Data">{available.map(d=><button key={d.kind} type="button" aria-pressed={d.kind===dataset.kind} onClick={()=>{setKind(d.kind);setAKey('');setBKey('');setFieldChoice('');}}>{DATASET_NAMES[d.kind]}</button>)}</div>}
   </div>
   {dataset.kind==='knowledge'&&<p className="hint">Model knowledge: the model judged named subjects from what it has learned; no texts were supplied.</p>}

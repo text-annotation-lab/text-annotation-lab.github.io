@@ -8,7 +8,6 @@ const lastUpdated=typeof __BUILD_DATE__==='string'?new Date(__BUILD_DATE__+'T12:
 
 export function About({research}:{research?:boolean}){
  return <TabsContent value="about" className="reading-panel panel">
-  <p className="eyebrow">BACKGROUND AND CREDITS</p>
   <h2 id="about" tabIndex={-1}>About Text Annotation Lab</h2>
   <p>Text Annotation Lab is a teaching and research resource for AI-assisted text annotation and content analysis. {research?'Research mode shows the annotation workspace and its research tools; the teaching material is in the standard Lab.':'It brings together an annotation workspace, example corpora, teaching guidance, and methodological resources.'}</p>
   <p>The project is based in the Department of English at Aarhus University and is associated with the American Studies Center Aarhus (ASCA). It was developed for teaching and research in the department, with examples grounded in English and American Studies. Students, teachers, and researchers elsewhere are welcome to use it wherever they find it useful.</p>
