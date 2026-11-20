@@ -1,6 +1,6 @@
 // Draws the results charts as self-contained SVG strings.
 // The same drawing serves the interactive chart window and the downloaded figure.
-import {formatNumber,meanInterval,mean,periodsFor,smoothTrend,trendWindow,type Scale,type Unit} from './chart-model';
+import {formatMean,formatNumber,meanInterval,mean,periodsFor,smoothTrend,trendWindow,type Scale,type Unit} from './chart-model';
 
 export const INK='#1b2942',INK2='#425775',MUTED='#64728b',GRID='#e8ecf2',AXIS='#b7c3d1',ZERO='#8f9caf';
 export const SEQUENTIAL=['#86b6ef','#5c9be8','#3684e0','#2369bd','#184f95','#0f3a72','#082650'];
@@ -246,7 +246,7 @@ export function groupsView(units:Unit[],groups:string[],scale:Scale|undefined,ca
  if(showMeans&&scale){
   const L2=narrow?barL:meanL,R2=meanR,X=(v:number)=>L2+(v-scale.min)/(scale.max-scale.min||1)*(R2-L2);
   const t0=narrow?meansTop:top,rows=narrow?40:rowH;
-  s+=text((L2+R2)/2,t0-12,'Average, with 95% range',{anchor:'middle',size:11.5,fill:INK2});
+  s+=text((L2+R2)/2,t0-12,'Mean, with 95% range',{anchor:'middle',size:11.5,fill:INK2});
   const tickStep=scale.max-scale.min>10?Math.ceil((scale.max-scale.min)/10):1;
   for(let v=scale.min;v<=scale.max;v+=tickStep)s+=line(X(v),t0-6,X(v),t0+groups.length*rows-6,v===scaleCenter(scale)&&diverging?ZERO:GRID)+text(X(v),t0+groups.length*rows+10,scaleLabel(scale,v),{anchor:'middle'});
   groups.forEach((group,gi)=>{
@@ -254,7 +254,7 @@ export function groupsView(units:Unit[],groups:string[],scale:Scale|undefined,ca
    const ci=meanInterval(values),y=t0+gi*rows+17;
    if(narrow)s+=text(L2-12,y+4,group,{anchor:'end',fill:INK,size:12,weight:700});
    if(Number.isFinite(ci.low))s+=line(X(Math.max(scale.min,ci.low)),y,X(Math.min(scale.max,ci.high)),y,INK,2.5)+line(X(Math.max(scale.min,ci.low)),y-6,X(Math.max(scale.min,ci.low)),y+6,INK,2)+line(X(Math.min(scale.max,ci.high)),y-6,X(Math.min(scale.max,ci.high)),y+6,INK,2);
-   s+=`<circle cx="${n(X(ci.mean))}" cy="${y}" r="4.5" fill="${INK}" stroke="#fff" stroke-width="2"/>`+text(X(ci.mean),y-11,formatNumber(ci.mean),{anchor:'middle',fill:INK,size:12,weight:700});
+   s+=`<circle cx="${n(X(ci.mean))}" cy="${y}" r="4.5" fill="${INK}" stroke="#fff" stroke-width="2"/>`+text(X(ci.mean),y-11,formatMean(ci.mean),{anchor:'middle',fill:INK,size:12,weight:700});
   });
   if(groups.some(g=>units.filter(u=>u.group===g).length<2))notes.push('A group needs at least 2 texts for a 95% range.');
  }

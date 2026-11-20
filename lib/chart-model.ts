@@ -185,6 +185,12 @@ export function buildUnits(rows:ChartSourceRow[],field:Field,options:ChartOption
  return {units,kind,rows:plotted,settingsCount,excluded:rows.length-plotted.length,abstained,combinable,hasRuns:rows.some(row=>(row.runNumber||1)>1),hasChunks:rows.some(row=>Boolean(row.sourceId))};
 }
 
+/** A mean, always with two decimals (−0.19, 4.00), so means read alike everywhere. */
+export function formatMean(value:number){
+ if(!Number.isFinite(value))return '';
+ return new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(value).replace('-','−');
+}
+
 export function formatNumber(value:number,digits=2){
  if(!Number.isFinite(value))return '';
  if(Math.abs(value)>=1e6||(value!==0&&Math.abs(value)<.001))return value.toExponential(2).replace('-','−');

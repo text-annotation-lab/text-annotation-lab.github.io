@@ -25,7 +25,7 @@ const html=render(ChartBody,{...base,rows:inaugural});
 assert.match(html,/<b>60<\/b> texts plotted/);assert.match(html,/Scale 1 to 7/);assert.match(html,/Edit scale/);
 for(const tab of ['Distribution','Over time','Compare groups','Ranked list'])assert.match(html,new RegExp(`role="tab"[^>]*>${tab}<`));
 assert(!html.includes('Run agreement'));assert(!html.includes('different settings'));
-assert.match(html,/Middle score \(median\)/);assert.match(html,/Most common/);assert.match(html,/How to read this:/);assert.match(html,/Download figure/);
+assert.match(html,/Middle score \(median\)/);assert.match(html,/Most common \(mode\)/);assert.match(html,/Mean \(average\)/);assert.match(html,/How to read this:/);assert.match(html,/Download figure/);
 assert.match(html,/data-pick="0"/);assert(!html.includes('NaN'));
 
 // Mixed settings are flagged and default to the latest ones.
