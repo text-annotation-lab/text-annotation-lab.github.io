@@ -12,7 +12,7 @@ function load(file){
 const models={openai:'gpt-5.6-luna',gemini:'gemini-3.1-flash-lite',anthropic:'claude-sonnet-5-5'};
 function request(provider,changes={}){
  const form=new FormData();for(const [k,v] of Object.entries({provider,model:models[provider],effort:provider==='gemini'?'minimal':'high',prompt:'Classify tone',file:new File(['Sample text'],'sample.txt'),...changes}))form.set(k,v);
- return new Request('http://localhost/api/annotate',{method:'POST',headers:{origin:'http://localhost',authorization:'Bearer sk-ant-audit'},body:form});
+ return new Request('http://localhost/api/annotate',{method:'POST',headers:{origin:'http://localhost',authorization:'Bearer audit-key'},body:form});
 }
 (async()=>{
  const route=load('app/api/annotate/route.ts');

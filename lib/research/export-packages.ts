@@ -187,7 +187,8 @@ const unused=(value:unknown)=>value===''||value===0||value===null||value===undef
 function leanRequests(table:Table,lean?:{reps:number}):Table{
  const [header,...rows]=table,at=(name:string)=>header.indexOf(name),drop=new Set<number>();
  const same=(i:number)=>i>=0&&rows.every(row=>row[i]===rows[0][i]);
- for(const name of RUN_CONSTANTS)if(at(name)>=0)drop.add(at(name));
+ // (Where settings vary within the run, as the runs table then says, the provider, model, and prompt stay.)
+ for(const name of RUN_CONSTANTS)if(at(name)>=0&&(name==='latency_ms'||same(at(name))))drop.add(at(name));
  for(const name of BLANK_UNLESS_USED)if(at(name)>=0&&rows.every(row=>unused(row[at(name)])))drop.add(at(name));
  if(same(at('web_search')))drop.add(at('web_search'));
  if(lean){
@@ -211,7 +212,10 @@ function publicResults(table:Table,reps:number):Table{
 // and all runs.
 async function runWorkbook(ctx:ExportContext,report:RunReport,hashes:Map<string,string>):Promise<ArrayBuffer>{
  const {study}=ctx,run=report.facts.run.number;
- const results=resultsTable(study,run),requests=leanRequests(requestsTable(study,[run],hashes)),from=requests[0].indexOf('status'),to=requests[0].findIndex(column=>['rationale','reasoning_summary','parse_error'].includes(String(column)));
+ const results=resultsTable(study,run),all=requestsTable(study,[run],hashes),requests=leanRequests(all);
+ // The answers stand between status and the columns of the request's own (rationale on): counted before the lean
+ // table drops empty columns, so that answers stay numbers when rationale, reasoning summary, and parse error are all left out.
+ const from=requests[0].indexOf('status'),answers=all[0].findIndex(column=>['rationale','reasoning_summary','parse_error'].includes(String(column)))-all[0].indexOf('status')-1,to=from+answers+1;
  const fixedText=new Set(['doc_id','subject','source_document','chunk','text','rationale',PLAIN_FIELD]);
  const sheets:Sheet[]=[{name:'Results',table:results,frozen:1,numbers:column=>!fixedText.has(column)&&!isProse(column)},
   {name:'By replicate',table:requests,numbers:(column,i)=>i>from&&i<to&&!fixedText.has(column)&&!isProse(column)},
@@ -329,7 +333,7 @@ function agreementSection(study:ExportStudy,report:RunReport):string[]{
    lines.push(tableRow([fieldLabel(a.field),a.source,a.comparedWith,`${s.n} (of ${a.withLabel}${s.leftOut.n?`; ${s.leftOut.n} left out`:''})`,s.percentAgreement===null?'—':(s.percentAgreement*100).toFixed(1)+'%'+ci(s.ci.percentAgreement,true),fmtStat(s.cohenKappa)+ci(s.ci.cohenKappa),`${fmtStat(s.krippendorffAlpha)}${ci(s.ci.krippendorffAlpha)} (${s.level})`,fmtStat(s.gwetAC1)+ci(s.ci.gwetAC1)]));
   }
   const withIntervals=report.agreement.filter(a=>Object.values(a.stats.ci).some(Boolean)).length;
-  lines.push('',(withIntervals?`Brackets: 95% intervals: Wilson intervals for % agreement, bootstrap intervals (${count(BOOTSTRAP_RESAMPLES)} resamples of ${unit}s) for the coefficients.${withIntervals<report.agreement.length?` A comparison of fewer than 10 ${unit}s has no intervals.`:''}`:`No 95% intervals are given: they need at least 10 compared ${unit}s.`)+` “Of labelled”: this run’s ${unit}s with a value in the “Compared with” column (a missing-value marker such as NA counts as no value). Not compared: ${unit}s without a usable value under Annotations (no usable answer from the model, or no label in that column), and pairs with a value that does not fit the field (“left out”: a word where numbers are compared, such as an answer of NA, a number off the scale, a value that is not one of the field’s categories, or a tie between a text’s annotations with no majority, such as “a | b”). Their number is n_left_out_not_on_scale in agreement.csv, which also says what each field’s scale or categories rest on.`+(report.agreement.some(a=>a.source!=='model')?` Rows with a column name under Annotations compare two columns of human labels (human–human baseline) on this run’s ${unit}s.`:''));
+  lines.push('',(withIntervals?`Brackets: 95% intervals: Wilson intervals for % agreement, bootstrap intervals (${count(BOOTSTRAP_RESAMPLES)} resamples of ${unit}s) for the coefficients.${withIntervals<report.agreement.length?` A comparison of fewer than 10 ${unit}s has no intervals.`:''}`:`No 95% intervals are given: they need at least 10 compared ${unit}s.`)+` “Of labelled”: this run’s ${unit}s with a value in the “Compared with” column (a missing-value marker such as NA counts as no value). Not compared: ${unit}s without a usable value under Annotations (no usable answer from the model, or no label in that column), and pairs with a value that does not fit the field (“left out”: a word where numbers are compared, such as an answer of NA, a number off the scale, a value that is not one of the field’s categories, or a tie between a text’s annotations with no majority, such as “a | b”). Their number is n_left_out_not_on_scale in agreement.csv.`+(report.agreement.some(a=>a.source!=='model')?` Rows with a column name under Annotations compare two columns of human labels (human–human baseline) on this run’s ${unit}s.`:''));
  }
  if(report.skipped.length)lines.push('',`Label columns not used for agreement: ${report.skipped.map(skip=>`${skip.column} (${skip.reason})`).join(', ')}.`);
  return [...lines,''];

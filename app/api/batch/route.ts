@@ -1,4 +1,5 @@
 import {allowedOrigin,requestBody} from '@/lib/request-guards';
+import {keyProvider} from '@/lib/workflow-safety';
 import {readAnswerFields,readAnswerSettings,type AnswerSettings} from '@/lib/answer-fields';
 import {PROVIDERS,validModelId,reasoningOptions,GEMINI_ENABLED,type Provider} from '@/lib/providers';
 import {supportedFile} from '@/lib/extract-text';
@@ -27,6 +28,8 @@ export async function POST(request:Request){
   if(provider==='openrouter')return reply({error:'This operation is not available through OpenRouter. Use Instant processing and the rough cost estimate.'},400);
  if(key.startsWith('sk-or-'))return reply({error:'This is an OpenRouter key. Select OpenRouter as the provider.'},401);
  if(!Object.hasOwn(PROVIDERS,provider)||provider==='gemini'&&!GEMINI_ENABLED)return reply({error:'Unsupported provider.'},400);
+ // A key is sent only to its own provider.
+ {const recognized=keyProvider(key);if(recognized&&recognized!=='openrouter'&&recognized!==provider)return reply({error:`This key appears to be for ${PROVIDERS[recognized].label}. Select that provider or enter a ${PROVIDERS[provider as Provider].label} key.`},401);}
   if(provider==='openai'&&(!/^sk-[\w-]+$/.test(key)||key.startsWith('sk-ant-')))return reply({error:'Use an OpenAI key for OpenAI batches.'},401);
   if(action==='submit'||action==='prepare'){
    // prepare (research mode): the requests are prepared and grouped into batches, and nothing is sent yet.

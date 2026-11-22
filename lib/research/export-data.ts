@@ -16,7 +16,7 @@ import type {RecordedRequest} from './requests';
 export type ExportStudy={name:string;dataset:Dataset;requests?:RecordedRequest[];lab:string};
 // One request a run made and its outcome. replicate: which of the text's annotations in the run it is (1 when
 // the run makes one per text). attempt: counted per run and replicate. replaced: a failed attempt that was sent
-// again later. result: the request read as a result of its own (an annotation with its text's settings).
+// again later in the same run. result: the request read as a result of its own (an annotation with its text's settings).
 export type RequestLine={row:Row;run:number;replicate:number;attempt:number;result:Row;replaced:boolean};
 
 // Every request with an outcome, text by text in the order of the study; within a text, run by run, then by
@@ -37,6 +37,9 @@ export function requestLines(dataset:Dataset):RequestLine[]{
    const lines:RequestLine[]=[];
    for(const attempt of result.history||[])add(lines,attempt.runNo??result.runNo,attempt as Row,true);
    if(result.status==='done'||result.status==='error')add(lines,result.runNo,result,false);
+   // A failed attempt counts as sent again only where a later request of the same run went for the same annotation:
+   // one that failed in an earlier run and was annotated again in a later one stays a failed request of its own run.
+   lines.forEach((line,i)=>{if(line.replaced&&!lines.slice(i+1).some(later=>later.run===line.run&&later.replicate===line.replicate))line.replaced=false;});
    out.push(...lines.map((line,i)=>({line,i})).sort((a,b)=>a.line.run-b.line.run||a.line.replicate-b.line.replicate||a.i-b.i).map(entry=>entry.line));
   }
  }

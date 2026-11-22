@@ -11,15 +11,17 @@ import {providerBody,replyCode,replyText,reasoningSummary} from './request-frame
 const MAX_RESULT_BYTES=32*1024*1024;
 export class BatchError extends Error{constructor(message:string,public status=400,public uncertain=false){super(message);}}
 function headers(provider:Provider,key:string):Record<string,string>{return provider==='openai'?{Authorization:`Bearer ${key}`} : provider==='anthropic'?{'x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}:{'x-goog-api-key':key};}
-async function boundedText(response:Response){
+async function boundedText(response:Response,limit=MAX_RESULT_BYTES){
  const reader=response.body?.getReader();if(!reader)return '';
  const decoder=new TextDecoder();let size=0,text='';
- try{while(true){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>MAX_RESULT_BYTES){await reader.cancel();throw new BatchError('These results are too large to collect here. Download them from your provider’s console.',413);}text+=decoder.decode(next.value,{stream:true});}return text+decoder.decode();}finally{reader.releaseLock();}
+ try{while(true){const next=await reader.read();if(next.done)break;size+=next.value.byteLength;if(size>limit){await reader.cancel();throw new BatchError('These results are too large to collect here. Download them from your provider’s console.',413);}text+=decoder.decode(next.value,{stream:true});}return text+decoder.decode();}finally{reader.releaseLock();}
 }
-async function call(provider:Provider,key:string,url:string,init:RequestInit={},creating=false):Promise<any>{
+// limit: the most a reply may hold (a Gemini batch holds its results in its own record, so asking how far it has
+// come reads them too).
+async function call(provider:Provider,key:string,url:string,init:RequestInit={},creating=false,limit=MAX_RESULT_BYTES):Promise<any>{
  let response:Response;
  try{response=await fetch(url,{...init,headers:{...headers(provider,key),...init.headers},signal:AbortSignal.timeout(90000)});}catch{throw new BatchError(creating?'Submission was not confirmed. Check your provider’s console before trying again.':'Could not reach your provider. Your batch is still saved; try checking again.',502,creating);}
- let text:string;try{text=await boundedText(response);}catch(error){if(creating)throw new BatchError('Submission was not confirmed. Check your provider’s console before trying again.',502,true);throw error;}
+ let text:string;try{text=await boundedText(response,limit);}catch(error){if(creating)throw new BatchError('Submission was not confirmed. Check your provider’s console before trying again.',502,true);throw error;}
  if(response.ok&&!text.trim())return {};
  let out;try{out=JSON.parse(text);}catch{out=null;}
  if(!response.ok){const status=response.status;const uncertain=creating&&(status>=500||status===408);const message=providerError(provider,status,out,response.headers)+(uncertain?' Submission was not confirmed. Check the provider’s batch list before submitting again; a job may already exist.':'');throw new BatchError(message,status,uncertain);}
@@ -144,7 +146,7 @@ export function parseBatchAnnotation(provider:Provider,out:any,plain=false,recor
 }
 export async function checkBatch(provider:Provider,key:string,id:string,collect:boolean,plain=false,record=false,summary=false,format?:ReplyFormat):Promise<BatchUpdate>{
  const base=provider==='openai'?'https://api.openai.com/v1/batches/':provider==='anthropic'?'https://api.anthropic.com/v1/messages/batches/':'https://generativelanguage.googleapis.com/v1beta/';
- const out=await call(provider,key,base+id);
+ const out=await call(provider,key,base+id,{},false,provider==='gemini'?MAX_RECORDED_RESULT_BYTES:MAX_RESULT_BYTES);
  const state=String(provider==='openai'?out.status:provider==='anthropic'?out.processing_status:out.metadata?.state||out.state||'processing');
  const terminal=provider==='openai'?['completed','failed','expired','cancelled'].includes(state):provider==='anthropic'?state==='ended':out.done===true||/(SUCCEEDED|FAILED|CANCELLED|EXPIRED)$/.test(state);
  const counts=out.request_counts||out.metadata?.batchStats||out.batchStats||{};
