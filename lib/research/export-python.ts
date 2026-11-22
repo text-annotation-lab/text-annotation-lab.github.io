@@ -2,7 +2,8 @@
 // sent it (lib/request-frame.ts), puts each document where the marks are, and posts it to the same address,
 // using only Python's standard library. The template marks every value that comes from the study as
 // {{PLACEHOLDER}}; fillScript inserts the values.
-import {isGemini4,type Provider} from '../providers';
+import {type Provider} from '../providers';
+import {requestTimeout} from '../request-settings';
 import {wireKeys,isExplanationField,RATIONALE_KEY,type AnswerSettings} from '../answer-types';
 import type {RequestFrame} from '../request-frame';
 import {requestParts} from './export-data';
@@ -189,7 +190,7 @@ def without_data(value, data):
 
 
 def headers(key):
-    common = {"Content-Type": "application/json", "User-Agent": "text-annotation-lab-script/1"}
+    common = {"Content-Type": "application/json", "User-Agent": "annotation-script/1"}
     if PROVIDER == "anthropic":
         return {"x-api-key": key, "anthropic-version": "2023-06-01", **common}
     if PROVIDER == "gemini":
@@ -472,6 +473,10 @@ function allowedValues(frame:RequestFrame,fields:string[],keys?:string[]):Record
 // filled in, the corpus column that holds its values (null: the study no longer has the column).
 // settings: the run's answer settings (for the named format).
 export type ScriptInput={studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;settings?:AnswerSettings;repeats?:number;note?:string;inserts?:[string,string|null][]};
+// The output limit a recorded request was sent with.
+function sentLimit(frame:RequestFrame):number|undefined{
+ try{const body=JSON.parse(frame.body),limit=body.max_output_tokens??body.max_tokens??body.generationConfig?.maxOutputTokens;return Number.isInteger(limit)?limit:undefined;}catch{return undefined;}
+}
 export function scriptValues(input:ScriptInput):Record<string,string>{
  const frame=(input.text||input.pdf)!,model=requestParts(frame).model,named=!input.plain&&input.settings?.named===true,keys=named?wireKeys(input.fields,input.settings):undefined;
  return {
@@ -482,7 +487,8 @@ export function scriptValues(input:ScriptInput):Record<string,string>{
   REQUEST:input.text?pyLiteral(JSON.parse(input.text.body)):'None',REQUEST_PDF:input.pdf?pyLiteral(JSON.parse(input.pdf.body)):'None',
   INSERTS:pyLiteral(Object.fromEntries(input.inserts||[])),
   FIELDS:pyLiteral(input.plain?[]:input.fields),KEYS:keys?pyLiteral(keys):'None',RATIONALE:named&&input.settings?.rationale!==false&&!input.fields.some(isExplanationField)?JSON.stringify(RATIONALE_KEY):'None',EXPLANATION_REQUIRED:!input.plain&&input.settings?.rationale!==false&&(!named||!input.fields.some(isExplanationField))?'True':'False',ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields,keys)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
-  TIMEOUT:String(input.provider==='gemini'&&isGemini4(model)?900:180),
+  // As long as the browser waits: longer for a model that thinks at length or an output limit above the Lab's own.
+  TIMEOUT:String(requestTimeout(input.provider,model,{maxOutput:sentLimit(frame)})/1000),
  };
 }
 // Only the placeholders of the configuration are replaced; text inserted for one is never read again, so a

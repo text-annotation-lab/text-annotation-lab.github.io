@@ -44,10 +44,12 @@ export function reasoningAssumption(c:EstimateConfig,input:Range):Range{
  return range(Math.min(b[0]*complexity,budget||Infinity),Math.min(b[1]*complexity,budget||Infinity));
 }
 const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
+// Gemini leaves out candidatesTokenCount when a reply has no answer (its thinking used up the limit, or it was
+// blocked), while its thinking is still billed.
 export function usageSample(provider:Provider,usage:any):Sample|undefined{
  if(!usage)return;
  const input=provider==='openrouter'?usage.prompt_tokens:provider==='gemini'?usage.promptTokenCount:provider==='anthropic'?(finite(usage.input_tokens)?usage.input_tokens+(usage.cache_creation_input_tokens||0)+(usage.cache_read_input_tokens||0):undefined):usage.input_tokens;
- const output=provider==='openrouter'?usage.completion_tokens:provider==='gemini'?(finite(usage.candidatesTokenCount)?usage.candidatesTokenCount+(usage.thoughtsTokenCount||0):undefined):usage.output_tokens;
+ const output=provider==='openrouter'?usage.completion_tokens:provider==='gemini'?(finite(usage.candidatesTokenCount)||finite(usage.thoughtsTokenCount)?(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0):undefined):usage.output_tokens;
  const reasoning=provider==='openrouter'?usage.completion_tokens_details?.reasoning_tokens:provider==='openai'?usage.output_tokens_details?.reasoning_tokens:provider==='gemini'?usage.thoughtsTokenCount:undefined;
  if(!finite(output))return;
  return {input:finite(input)?input:undefined,output,...(finite(reasoning)&&reasoning<=output?{reasoning,visible:output-reasoning}:{})};

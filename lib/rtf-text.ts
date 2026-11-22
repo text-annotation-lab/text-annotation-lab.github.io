@@ -29,6 +29,8 @@ export function rtfText(raw: string): string {
     if(next==='~'){text('\u00a0');continue;}
     if(next==='_'){text('‑');continue;}
     if(next==='-'){text('\u00ad');continue;}
+    // A backslash before a line break is a paragraph break (\par), as macOS TextEdit writes every line break.
+    if(next==='\n'||next==='\r'){text('\n');continue;}
     if(!/[a-z]/i.test(next))continue;
     const start=i-1;while(i<raw.length&&/[a-z]/i.test(raw[i]))i++;
     const word=raw.slice(start,i);const match=/^-?\d+/.exec(raw.slice(i));const num=match?Number(match[0]):undefined;if(match)i+=match[0].length;

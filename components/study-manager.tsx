@@ -11,6 +11,8 @@ type Action='new'|'update'|'load'|'rename'|'delete';
 export type OpenStudyDraft = RefObject<{texts?:Record<string,unknown>;knowledge?:Record<string,unknown>}>;
 type Fresh='blank'|'settings'|'texts';
 const UNTITLED='Untitled working copy';
+// Shown inside another site's page (the ASCA page), where a browser may refuse the Lab its storage.
+const embedded=()=>{try{return window.parent!==window;}catch{return true;}};
 // compact (research mode): the menu button shows the study's name without the word “Studies,” which stays its accessible name.
 // duplicates (research mode): More options also offers Duplicate settings & prompt and Duplicate with texts & subjects.
 export function StudyManager({children,compact,duplicates}:{children:(study:Study,controls:ReactNode,onReady:(ready:boolean)=>void,version:number,draftRef:OpenStudyDraft,onRecoveryChange:(available:boolean)=>void)=>ReactNode;compact?:boolean;duplicates?:boolean}){
@@ -138,6 +140,6 @@ export function StudyManager({children,compact,duplicates}:{children:(study:Stud
    {message&&<p className="hint" role="status">{message}</p>}{error&&<p className="message" role="alert">{error}</p>}
   </PopoverContent>
  </Popover></div>;
- if(!loaded)return <main><div className="study-loading">{error?<><p role="alert">{error}</p><Button onClick={()=>window.location.reload()}>Reload</Button></>:<p role="status">Opening working copy...</p>}</div></main>;
+ if(!loaded)return <main><div className="study-loading">{error?<><p role="alert">{error}</p><Button onClick={()=>window.location.reload()}>Reload</Button>{embedded()&&<p>This page shows the Lab inside another site, and the browser may keep it from saving here. <a href="https://text-annotation-lab.github.io/" target="_blank" rel="noreferrer">Open the Lab in a new tab</a>.</p>}</>:<p role="status">Opening working copy...</p>}</div></main>;
  return children({id:WORKING_STUDY_ID,name:source?.name||draft.name},controls,setAvailable,version,draftRef,setCanRecover);
 }

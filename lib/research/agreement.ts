@@ -164,7 +164,9 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
  // Numbers: a declared scale, or the run's single answers are mostly numbers (every value of a column), and at
  // least half of the labels they are compared with are (missing-value markers aside).
  const real=labels.filter(label=>!isMissingLabel(label));
- p.numeric=type==='ordinal'||Boolean(studyScale)||(type!=='category'&&answers.length>0&&(answering?scored(answering.single):answers.every(isNumber))&&real.filter(isNumber).length*2>=real.length);
+ // Two columns: a missing-value marker in either is no label, so the order of the two does not change the level.
+ const realAnswers=answers.filter(value=>!isMissingLabel(value));
+ p.numeric=type==='ordinal'||Boolean(studyScale)||(type!=='category'&&answers.length>0&&(answering?scored(answering.single):realAnswers.length>0&&realAnswers.every(isNumber))&&real.filter(isNumber).length*2>=real.length);
  // Each run's fixed scale, when it has one: the values its ordinal field allows, or the study's scale for the scores.
  const fixed=sides.map(side=>side.own?(type==='ordinal'&&declared.length?declared:undefined):onStudy(side)?scalePoints(scale!):undefined);
  if(p.numeric&&studyScale){
@@ -258,10 +260,12 @@ export function statLines(stats:Agreement,ci:Agreement['ci']|undefined,unit='tex
  return lines;
 }
 export type Disagreement={id:string;name:string;a:string;b:string;gap:number|null};
-export function disagreements(p:Pairing):Disagreement[]{
+// compared: whether a value counts in the figures (`comparableValues`), so that a pair the figures leave out (an
+// INSUFFICIENT_KNOWLEDGE, a tie, a 99 next to a scale, a value that is not a category) is not listed.
+export function disagreements(p:Pairing,compared:(value:string)=>boolean=()=>true):Disagreement[]{
  const out:Disagreement[]=[];
  p.ids.forEach((id,i)=>{
-  if(p.a[i]===p.b[i])return;
+  if(p.a[i]===p.b[i]||!compared(p.a[i])||!compared(p.b[i]))return;
   const gap=isNumber(p.a[i])&&isNumber(p.b[i])?Math.abs(Number(p.a[i])-Number(p.b[i])):null;
   out.push({id,name:p.names[i],a:p.rawA[i],b:p.rawB[i],gap});
  });

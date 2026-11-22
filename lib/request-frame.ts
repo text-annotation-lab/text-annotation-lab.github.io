@@ -62,7 +62,7 @@ export function providerBody(o:BodyOptions,doc:RequestDocument):Record<string,un
  const message=(part:(text:string)=>object,file:object,mark?:object):object[]=>{
   const base=placed?o.prompt:o.prompt.trimEnd(),tags=documentTags(knowledge);let whole=pdf===undefined?base+tags.open+text+tags.close:base;
   if(placed){whole='';let from=0;for(const spot of spots){whole+=base.slice(from,spot)+(pdf===undefined?text:'');from=spot;}whole+=base.slice(from);}
-  const at=fixed!==undefined&&fixed<base.length?fixed:placed?whole.length:pdf===undefined?base.length+tags.open.length:base.length;
+  const at=fixed!==undefined&&fixed<=base.length?fixed:placed?whole.length:pdf===undefined?base.length+tags.open.length:base.length;
   const parts=mark&&whole.slice(0,at).trim()?[{...part(whole.slice(0,at)),...mark},...(at<whole.length?[part(whole.slice(at))]:[])]:[part(whole)];
   return pdf===undefined?parts:[...parts,file];
  };

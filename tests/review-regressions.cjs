@@ -18,7 +18,7 @@ const {POST}=load('app/api/annotate/route.ts');
 function request(file,provider='openai',prompt='Classify'){
  const model=defaultModel(provider),form=new FormData();
  for(const [name,value] of Object.entries({provider,model,effort:defaultEffort(provider,model),prompt,file}))form.set(name,value);
- return new Request('http://localhost/api/annotate',{method:'POST',headers:{origin:'http://localhost',authorization:'Bearer sk-review-test'},body:form});
+ return new Request('http://localhost/api/annotate',{method:'POST',headers:{origin:'http://localhost',authorization:'Bearer '+({anthropic:'sk-ant-review-test',gemini:'AIza-review-test'}[provider]||'sk-review-test')},body:form});
 }
 function unreadableBody(headers){
  const req=new Request('http://localhost/api/annotate',{method:'POST',headers:{origin:'http://localhost',...headers}});

@@ -12,8 +12,8 @@ const oa=(input:number,output:number,cacheRead?:number):Price=>({provider:'opena
 const cl=(input:number,output:number,cacheRead=.1):Price=>({provider:'anthropic',input,output,batch:true,tokenMultiplier:1.3,cacheRead});
 const gg=(input:number,output:number,cacheRead?:number):Price=>({provider:'gemini',input,output,batch:true,...(cacheRead?{cacheRead}:{})});
 const flash:Price={...gg(.75,3.75,.1),changes:[{from:'2027-01-01',input:1.5,output:7.5}]};
-// OpenRouter catalogue checked 2026-11-18. Credit-purchase fees are not inference usage.
-const or=(input:number,output:number):Price=>({provider:'openrouter',input,output,batch:false,note:'OpenRouter catalogue rates checked November 18, 2026. Routing and price changes can affect actual usage.'});
+// OpenRouter catalog checked 2026-11-18. Credit-purchase fees are not inference usage.
+const or=(input:number,output:number):Price=>({provider:'openrouter',input,output,batch:false,note:'OpenRouter catalog rates checked November 18, 2026. Routing and price changes can affect actual usage.'});
 export const PRICES:Record<string,Price>={
  'openai/gpt-6-luna':{...or(.1,.5),threshold:272000,longInput:.2,longOutput:.75},
  'anthropic/claude-haiku-5.5':{...or(.1,.5),threshold:100000,longInput:.5,longOutput:2.5,tokenMultiplier:1.3},
@@ -56,7 +56,8 @@ export function contextWindow(provider:Provider,model:string):number|undefined{
  return undefined;
 }
 export function priceFor(provider:Provider,model:string,date=new Date().toISOString().slice(0,10)):Price|undefined{
- const key=PRICES[model]?model:model.replace(/-\d{4}-\d{2}-\d{2}$/,'');
+ // A dated snapshot has its model's price: OpenAI dates it -2026-01-31, Anthropic -20260131.
+ const key=PRICES[model]?model:model.replace(/-(?:\d{4}-\d{2}-\d{2}|20\d{6})$/,'');
  const p=PRICES[key];if(!p||p.provider!==provider)return;
  const change=p.changes?.filter(c=>c.from<=date).at(-1);return change?{...p,input:change.input,output:change.output}:p;
 }

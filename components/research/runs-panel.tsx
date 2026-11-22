@@ -9,6 +9,7 @@ import {PROVIDERS,modelName,reasoningOptionLabel,type Provider} from '@/lib/prov
 import {defaultOutputLimit} from '@/lib/request-settings';
 import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSources,runJob,sourceFields,sourceLabel,statLines,type LevelChoice} from '@/lib/research/agreement';
 import {computeIntervals,intervalsOf} from '@/lib/research/intervals';
+import {comparableValues} from '@/lib/research/comparable';
 import {comparisonReport,groupColumns} from '@/lib/research/comparison-report';
 import {dateStamp,exportStem,runLines,sourceOf,unitOf,type Dataset,type RunLine} from '@/lib/research/export';
 import {scaleText} from '@/lib/research/score-scale';
@@ -167,7 +168,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
  const tol=Math.max(0,Number(tolerance)||0);
  const job=useMemo(()=>pairing?agreementJob(pairing,level,tol):undefined,[pairing,level,tol]);
  const stats=useMemo(()=>job?runJob(job,false):undefined,[job]);
- const jobKey=job?JSON.stringify([dataset.kind,a&&sourceKey(a),b&&sourceKey(b),fieldA,fieldB,job.level,job.tolerance,job.a.length,job.a.join('\u0001'),job.b.join('\u0001')]):'';
+ const jobKey=job?JSON.stringify([dataset.kind,a&&sourceKey(a),b&&sourceKey(b),fieldA,fieldB,job.level,job.tolerance,job.allowed,job.scaleSeen??false,job.range??null,job.known??null,job.a.length,job.a.join('\u0001'),job.b.join('\u0001')]):'';
  useEffect(()=>{
   if(!job||!stats||stats.n<10)return;
   let stop=()=>{};
@@ -175,7 +176,8 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
   return()=>{clearTimeout(timer);stop();};
  },[jobKey]);
  const ci=intervals?.key===jobKey?intervals.ci:undefined;
- const differing=useMemo(()=>pairing?disagreements(pairing):[],[pairing]);
+ // Only the pairs the figures compare (lib/research/comparable.ts).
+ const differing=useMemo(()=>pairing&&job?disagreements(pairing,comparableValues(job.a.map((x,i)=>[x,job.b[i]]),job.level,job.allowed,{scaleSeen:job.scaleSeen,range:job.range,known:job.known})):[],[pairing,job]);
  const [showAll,setShowAll]=useState(false);
  // The comparison report of two runs (an Excel file): the column it is broken down by, how far it has got while
  // it is built, and what went wrong.

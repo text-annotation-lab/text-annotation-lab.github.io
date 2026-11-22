@@ -6,6 +6,7 @@ import {buildBatchBody} from '@/lib/batch-provider';
 import {readInserts,fillInserts,placesText,fillPlaces,insertMap} from '@/lib/prompt-inserts';
 import {readRequestSettings,type RequestSettings} from '@/lib/request-settings';
 import {supportedFile} from '@/lib/extract-text';
+import {keyProvider} from '@/lib/workflow-safety';
 import {knowledgeAddition,knowledgeItemText,validKnowledgeFields} from '@/lib/model-knowledge';
 const reply=(x:unknown,status=200)=>Response.json(x,{status,headers:{'Cache-Control':'no-store'}});
 const MAX_BYTES=22*1024*1024;
@@ -22,6 +23,8 @@ export async function POST(request:Request){try{
  if(provider==='openrouter')return reply({error:'This operation is not available through OpenRouter. Use Instant processing and the rough cost estimate.'},400);
  if(key.startsWith('sk-or-'))return reply({error:'This is an OpenRouter key. Select OpenRouter as the provider.'},401);
  if(!Object.hasOwn(PROVIDERS,provider)||provider==='gemini'&&!GEMINI_ENABLED)return reply({error:'Unsupported provider.'},400);
+ // A key is sent only to its own provider.
+ {const recognized=keyProvider(key);if(recognized&&recognized!=='openrouter'&&recognized!==provider)return reply({error:`This key appears to be for ${PROVIDERS[recognized].label}. Select that provider or enter a ${PROVIDERS[provider as Provider].label} key.`},401);}
  if(!validModelId(provider,model)||!reasoningOptions(provider,model).includes(effort))return reply({error:'Unsupported model or reasoning setting.'},400);
  if(provider==='openai'&&(!/^sk-[\w-]+$/.test(key)||key.startsWith('sk-ant-')))return reply({error:'Use an OpenAI key for OpenAI input counting.'},401);
  if(!prompt.trim()||prompt.length>100000)return reply({error:'Provide your annotation prompt first.'},400);

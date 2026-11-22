@@ -1,11 +1,12 @@
 import {allowedOrigin,requestBody} from '@/lib/request-guards';
+import {keyProvider} from '@/lib/workflow-safety';
 import {annotateOpenRouter,openRouterKey} from '@/lib/openrouter';
 import {annotationValidationError} from '@/lib/answer-validation';
 import {annotationFormatRecord,readAnswerFields,readAnswerSettings,answerInstructions,readReply,plainAnswer,EMPTY_REPLY,type AnswerSettings} from '@/lib/answer-fields';
 import {connectionFailure,providerFailure,providerJson,incompleteAnnotation} from '@/lib/provider-errors';
 import { extractText, TextEncodingError, supportedFile as supported } from "@/lib/extract-text";
 
-import {GEMINI_ENABLED,validModelId,reasoningOptions} from '@/lib/providers';
+import {GEMINI_ENABLED,PROVIDERS,validModelId,reasoningOptions,type Provider} from '@/lib/providers';
 import {annotateGemini} from '@/lib/gemini';
 import {annotateAnthropic} from '@/lib/anthropic';
 import {knowledgeAddition,knowledgeDocumentText,validKnowledgeFields,type KnowledgeFields,type KnowledgeResearch} from '@/lib/model-knowledge';
@@ -67,6 +68,8 @@ export async function POST(request:Request){
  }
  const provider=f.get('provider')||'openai';
  if(provider!=='openai'&&provider!=='gemini'&&provider!=='anthropic'&&provider!=='openrouter')return json({error:'Unsupported provider.'},400);
+ // A key is sent only to its own provider.
+ {const recognized=keyProvider(auth.slice(7));if(recognized&&recognized!=='openrouter'&&recognized!==provider)return json({error:`This key appears to be for ${PROVIDERS[recognized].label}. Select that provider or enter a ${PROVIDERS[provider as Provider].label} key.`},401);}
  if(provider!=='openrouter'&&auth.startsWith('Bearer sk-or-'))return json({error:'This is an OpenRouter key. Select OpenRouter as the provider.'},401);
  if(provider==='openrouter'&&!openRouterKey(auth.slice(7)))return json({error:'Select OpenRouter and enter an OpenRouter API key.'},401);
  if(provider==='openrouter'&&webSearch)return json({error:'Web search is not available through OpenRouter in this Lab. Turn it off to continue.'},400);
@@ -79,7 +82,7 @@ export async function POST(request:Request){
  // Any model of the provider, by its ID (research mode offers models outside the Lab's lists).
  if(!validModelId(provider,model)||!reasoningOptions(provider,model).includes(String(effort)))return json({error:'Unsupported model or reasoning setting.'},400);
  if(!(file instanceof File)||!file.size||file.size>20*1024*1024||!supported.test(file.name))return json({error:'Choose a PDF, DOCX, TXT, MD, HTML, or RTF file up to 20 MB.'},400);
- if(webSearch&&subjectFields){research=await researchKnowledge(provider,String(model),String(effort),auth.slice(7),subjectFields,writtenPrompt,earlier);file=new File([knowledgeDocumentText(subjectFields,research,earlier)],'subject.txt',{type:'text/plain'});}
+ if(webSearch&&subjectFields){research=await researchKnowledge(provider,String(model),String(effort),auth.slice(7),subjectFields,writtenPrompt,earlier,requestSettings?.store!==false);file=new File([knowledgeDocumentText(subjectFields,research,earlier)],'subject.txt',{type:'text/plain'});}
  prompt+=answerInstructions(answerFields,answerSettings);
  const sent=sentRequestSettings(provider,String(model),requestSettings,String(effort));
  const finish=async(response:Response)=>{const result=await response.json() as {tokens?:number;[key:string]:any};const error=response.ok?annotationValidationError(result,answerFields,annotationPrompt,knowledge,answerSettings):undefined;if(response.ok&&!error)delete result.rawResponse;
