@@ -28,7 +28,10 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
   assert.deepEqual(rs.sentRequestSettings('anthropic',model,{temperature:1.4},effort),takes?{temperature:1}:undefined,model+' '+effort);
  }
  assert.equal(rs.takesTemperature('anthropic','claude-haiku-4-5-20251001','4096'),false);assert.equal(rs.temperatureCeiling('anthropic'),1);assert.equal(rs.temperatureCeiling('openai'),2);
- for(const model of providers.PROVIDERS.openrouter.models)assert.equal(rs.takesTemperature('openrouter',model,'medium'),!model.startsWith('anthropic/'),model);
+ for(const model of providers.PROVIDERS.openrouter.models)assert.equal(rs.takesTemperature('openrouter',model,'medium'),!model.startsWith('anthropic/')&&!model.startsWith('openai/gpt-6.2-'),model);
+ // OpenAI models from GPT-6.2 on take no temperature (OpenAI's GPT-6.2 migration guide).
+ for(const model of providers.PROVIDERS.openai.models)assert.equal(rs.takesTemperature('openai',model,'medium'),!model.startsWith('gpt-6.2-'),model);
+ assert.equal(rs.sentRequestSettings('openai','gpt-6.2-sol',{temperature:0.5},'medium'),undefined);assert.equal(rs.takesTemperature('openai','gpt-7-sol','medium'),false);assert.equal(rs.takesTemperature('openai','gpt-6.12','medium'),false);assert.equal(rs.takesTemperature('openai','gpt-6-sol','medium'),true);
  // The output limit: the Lab's own is not a setting; a fixed reasoning budget needs room above it.
  for(const [provider,spec] of Object.entries(providers.PROVIDERS))for(const model of spec.models){
   assert.equal(rs.defaultOutputLimit(provider,model),providers.annotationOutputLimit(provider,model),`${provider} ${model}: one limit, wherever it is read`);

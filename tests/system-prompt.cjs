@@ -62,6 +62,12 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.deepEqual(b.system[0].cache_control,{type:'ephemeral',ttl:'1h'});assert.deepEqual(b.messages[0].content[0].cache_control,{type:'ephemeral',ttl:'1h'},'A batch keeps both for an hour');
  b=body('openai','gpt-6-luna',{system:SYSTEM,cache:true});
  assert.equal(b.instructions,SYSTEM);assert.deepEqual(b.input[0].content[0],{type:'input_text',text:OPEN,prompt_cache_breakpoint:{mode:'explicit'}});assert.equal(JSON.stringify(b).split('prompt_cache_breakpoint').length-1,1,'OpenAI gets one mark');
+ // GPT-6.2 and later read top-level instructions after the input, so the system prompt opens the input as a developer message.
+ b=body('openai','gpt-6.2-sol',{system:SYSTEM,cache:true});
+ assert.equal(b.instructions,undefined);assert.deepEqual(b.input[0],{role:'developer',content:SYSTEM});assert.deepEqual(b.input[1].content[0],{type:'input_text',text:OPEN,prompt_cache_breakpoint:{mode:'explicit'}});assert.equal(JSON.stringify(b).split('prompt_cache_breakpoint').length-1,1);
+ b=body('openai','gpt-6.2-astra',{system:SYSTEM});
+ assert.equal(b.instructions,undefined);assert.deepEqual(b.input[0],{role:'developer',content:SYSTEM});assert.equal(b.input[1].role,'user');
+ assert.equal(body('openai','gpt-6.2-sol',undefined).input[0].role,'user','Without a system prompt nothing is added');
  const placed='{{meta.year}} Classify the tone.',filled='1999 Classify the tone.';
  b=body('openai','gpt-6-luna',{system:SYSTEM,cache:true},{prompt:filled,schemaPrompt:placed,inserts:true});
  assert.equal(b.instructions,undefined);assert.deepEqual(b.input[0],{role:'developer',content:[{type:'input_text',text:SYSTEM,prompt_cache_breakpoint:{mode:'explicit'}}]});assert.deepEqual(b.input[1].content,[{type:'input_text',text:filled+'\n\n<text>\n'+REST}]);
@@ -91,6 +97,8 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.equal(shown.system,SYSTEM);assert.equal(shown.systemCached,true);assert(shown.message.startsWith(PROMPT)&&shown.message.includes('JSON')&&shown.message.endsWith('\n\n<text>\nDoc\n</text>'),'The message: the prompt with the Lab’s instructions, then the text');assert.equal(shown.cached,true);
  shown=view.previewRequest({...settings,provider:'openai',model:'gpt-6-luna',requestSettings:{system:SYSTEM}},{filename:'a.txt',text:'Doc'});
  assert.equal(shown.system,SYSTEM);assert.equal(shown.systemCached,false);assert(shown.message.startsWith(PROMPT));assert.equal(shown.cached,false);
+ shown=view.previewRequest({...settings,provider:'openai',model:'gpt-6.2-sol',requestSettings:{system:SYSTEM}},{filename:'a.txt',text:'Doc'});
+ assert.equal(shown.system,SYSTEM,'GPT-6.2: the developer message shows as the system prompt');assert(shown.message.startsWith(PROMPT));
  shown=view.previewRequest({...settings,provider:'openrouter',model:'openai/gpt-6-luna',requestSettings:{system:SYSTEM,cache:true},prompt:split,inserts:true},{filename:'a.txt',text:'Doc',inserts:new Map([['meta.year','1999']])});
  assert.equal(shown.message.split('Rate the tone. 1999').length,2,'A message sent in two parts reads as one');assert.equal(shown.cached,true);
  const without=view.previewRequest({...settings,requestSettings:undefined},{filename:'a.txt',text:'Doc'});
