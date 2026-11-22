@@ -327,10 +327,14 @@ function fakeStorage(){const items=new Map();return {items,getItem:key=>items.ha
   let at=0;const varied=harness(five(),async()=>{},async()=>Response.json({error:'OpenAI rejected the request.',shared:'same:'+(at++%2?'aaaaaaaa':'bbbbbbbb')},{status:400}));
   await research(varied);varied.button('Remaining').props.onClick();await until(varied,()=>statuses(varied).every(status=>status==='error'));await until(varied,ended(varied));
   assert.equal(varied.calls.length,5);assert(notices(varied).includes('All 5 requests failed. “Remaining” sends them again.'));
-  // One result among the first requests: the failures are not about every request, and the run goes through.
+  // One result among the first requests, then the key stops working: three failures in a row stop the run.
   at=0;const mixed=harness(five(),async()=>{},async()=>at++===0?fine():refusal());
-  await research(mixed);mixed.button('Remaining').props.onClick();await until(mixed,()=>statuses(mixed).join()==='done,error,error,error,error');await until(mixed,ended(mixed));
-  assert.equal(mixed.calls.length,5);assert(notices(mixed).includes('4 of 5 requests failed, and the run carried on. “Remaining” sends them again.'));
+  await research(mixed);mixed.button('Remaining').props.onClick();await until(mixed,()=>statuses(mixed).filter(status=>status==='error').length===3);await until(mixed,ended(mixed));
+  assert.equal(mixed.calls.length,4);assert(notices(mixed).some(text=>text.startsWith('Stopped: the last 3 requests failed for the account')));
+  // A failure about one text between them starts the count again, and the run goes through.
+  at=0;const between=harness(five(),async()=>{},async()=>{at++;return at===1?fine():at===3?Response.json({error:'Too long.'},{status:400}):refusal();});
+  await research(between);between.button('Remaining').props.onClick();await until(between,()=>statuses(between).join()==='done,error,error,error,error');await until(between,ended(between));
+  assert.equal(between.calls.length,5);assert(notices(between).includes('4 of 5 requests failed, and the run carried on. “Remaining” sends them again.'));
   // Several annotations of one text never stop a run: three failures of the first text, and the second text is still sent.
   const repeated=harness(five({repeats:3}),async()=>{},async()=>refusal());
   await research(repeated);repeated.button('Remaining').props.onClick();await until(repeated,()=>notices(repeated).some(text=>text.startsWith('Stopped:')));await until(repeated,ended(repeated));

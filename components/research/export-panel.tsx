@@ -135,7 +135,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
     {option(options.explanations,explanations=>setOptions(now=>({...now,explanations})),'Include the model’s explanations','The explanation written before the answers. An answer field of your own that holds an explanation is always included.')}
     {option(options.logs,logs=>setOptions(now=>({...now,logs})),'Include request and response logs',`These contain the ${unit}s.`)}
     {offered.length>0&&<details className="research-export-columns"><summary>Label and metadata columns: {shownColumns.length} of {offered.length} included</summary>
-     <p className="hint">In results.csv and data/corpus.csv. A column left out stays out of both, also when the prompt’s placeholders read it (the README then says the script needs it); the logs, when included, hold the requests as sent.</p>
+     <p className="hint">In results.csv, data/corpus.csv, and the agreement figures. A column left out stays out of all three, also when the prompt’s placeholders read it (the README then says the script needs it); the logs, when included, hold the requests as sent.</p>
      {offered.map(name=><label key={name} className="research-check research-export-option"><input type="checkbox" checked={shownColumns.includes(name)} disabled={busy} onChange={()=>toggleColumn(name)}/><span>{name}</span></label>)}
     </details>}
     <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!run} onClick={()=>{void supplementary();}} aria-label="Download supplementary repository (.zip)"><Download size={16}/>{here('supplementary')?'Building…':'Download .zip'}</Button>{stepLine('supplementary')}</div>

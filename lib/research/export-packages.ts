@@ -327,13 +327,13 @@ function agreementSection(study:ExportStudy,report:RunReport):string[]{
  const unit=unitOf(study.dataset),ci=(range:[number,number]|null|undefined,percent=false)=>range?` [${percent?(range[0]*100).toFixed(1):fixed(range[0],2)}, ${percent?(range[1]*100).toFixed(1):fixed(range[1],2)}]`:'';
  const lines=['## Agreement with human labels',''];
  if(report.agreement.length){
-  lines.push(tableRow(['Field','Annotations','Compared with','N compared (of labelled)','% agreement','Cohen’s κ','Krippendorff’s α','Gwet’s AC1']),'|---|---|---|---|---|---|---|---|');
+  lines.push(tableRow(['Field','Annotations','Compared with','N compared (of labeled)','% agreement','Cohen’s κ','Krippendorff’s α','Gwet’s AC1']),'|---|---|---|---|---|---|---|---|');
   for(const a of report.agreement){
    const s=a.stats;
    lines.push(tableRow([fieldLabel(a.field),a.source,a.comparedWith,`${s.n} (of ${a.withLabel}${s.leftOut.n?`; ${s.leftOut.n} left out`:''})`,s.percentAgreement===null?'—':(s.percentAgreement*100).toFixed(1)+'%'+ci(s.ci.percentAgreement,true),fmtStat(s.cohenKappa)+ci(s.ci.cohenKappa),`${fmtStat(s.krippendorffAlpha)}${ci(s.ci.krippendorffAlpha)} (${s.level})`,fmtStat(s.gwetAC1)+ci(s.ci.gwetAC1)]));
   }
   const withIntervals=report.agreement.filter(a=>Object.values(a.stats.ci).some(Boolean)).length;
-  lines.push('',(withIntervals?`Brackets: 95% intervals: Wilson intervals for % agreement, bootstrap intervals (${count(BOOTSTRAP_RESAMPLES)} resamples of ${unit}s) for the coefficients.${withIntervals<report.agreement.length?` A comparison of fewer than 10 ${unit}s has no intervals.`:''}`:`No 95% intervals are given: they need at least 10 compared ${unit}s.`)+` “Of labelled”: this run’s ${unit}s with a value in the “Compared with” column (a missing-value marker such as NA counts as no value). Not compared: ${unit}s without a usable value under Annotations (no usable answer from the model, or no label in that column), and pairs with a value that does not fit the field (“left out”: a word where numbers are compared, such as an answer of NA, a number off the scale, a value that is not one of the field’s categories, or a tie between a text’s annotations with no majority, such as “a | b”). Their number is n_left_out_not_on_scale in agreement.csv.`+(report.agreement.some(a=>a.source!=='model')?` Rows with a column name under Annotations compare two columns of human labels (human–human baseline) on this run’s ${unit}s.`:''));
+  lines.push('',(withIntervals?`Brackets: 95% intervals: Wilson intervals for % agreement, bootstrap intervals (${count(BOOTSTRAP_RESAMPLES)} resamples of ${unit}s) for the coefficients.${withIntervals<report.agreement.length?` A comparison of fewer than 10 ${unit}s has no intervals.`:''}`:`No 95% intervals are given: they need at least 10 compared ${unit}s.`)+` “Of labeled”: this run’s ${unit}s with a value in the “Compared with” column (a missing-value marker such as NA counts as no value). Not compared: ${unit}s without a usable value under Annotations (no usable answer from the model, or no label in that column), and pairs with a value that does not fit the field (“left out”: a word where numbers are compared, such as an answer of NA, a number off the scale, a value that is not one of the field’s categories, or a tie between a text’s annotations with no majority, such as “a | b”). Their number is n_left_out_not_on_scale in agreement.csv.`+(report.agreement.some(a=>a.source!=='model')?` Rows with a column name under Annotations compare two columns of human labels (human–human baseline) on this run’s ${unit}s.`:''));
  }
  if(report.skipped.length)lines.push('',`Label columns not used for agreement: ${report.skipped.map(skip=>`${skip.column} (${skip.reason})`).join(', ')}.`);
  return [...lines,''];
@@ -388,7 +388,10 @@ export type SupplementaryOptions={texts:boolean;explanations:boolean;logs:boolea
 export async function buildSupplementary(ctx:ExportContext,run:number,options:SupplementaryOptions):Promise<Package>{
  const {study}=ctx,{dataset}=study,exportedAt=(ctx.now||new Date()).toISOString(),name=`${exportStem(study.name,dataset)}_supplementary_${dateStamp(ctx.now||new Date())}`;
  const files:PackageFile[]=[],add=async(path:string,data:PackageFile['data'])=>{await ctx.onProgress?.('Writing '+path);files.push({path:name+'/'+path,data});};
- const hashes=await promptHashes(dataset),find=requestFinder(study),report=await reportRun(ctx,run,hashes,find),record=runRecord(study,report.facts,report.hash,report.sent,exportedAt);
+ const hashes=await promptHashes(dataset),find=requestFinder(study),full=await reportRun(ctx,run,hashes,find),record=runRecord(study,full.facts,full.hash,full.sent,exportedAt);
+ // A label column left out of the package is left out of its agreement too (agreement.csv and the README).
+ const shown=(column:string)=>!options.columns||options.columns.includes(column);
+ const report:RunReport={...full,agreement:full.agreement.filter(line=>shown(line.comparedWith)&&(line.source==='model'||shown(line.source))),pairs:full.pairs.filter(pair=>shown(pair.column)),skipped:full.skipped.filter(skip=>shown(skip.column))};
  const ids=new Set(requestLines(dataset).filter(line=>line.run===run).map(line=>line.row.id)),rows=dataset.rows.filter(row=>ids.has(row.id));
  const reps=report.facts.run.repeats||1,corpus=options.texts?await readCorpus(ctx,rows,name+'/data',true):undefined;
  // The label and metadata columns chosen, in results.csv and data/corpus.csv alike. A metadata column the prompt's

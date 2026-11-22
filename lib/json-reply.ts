@@ -44,7 +44,7 @@ export function jsonAnswers(answers:Record<string,string>|undefined):Record<stri
 export const jsonValue=(flat:Record<string,string>|null,key:string)=>flat&&Object.hasOwn(flat,key)?flat[key]:'';
 
 // The model writes its reasoning first, but a reader wants the scores first.
-export const isExplanationKey=(key:string)=>/(^|_)(explanation|reasoning)$/.test(key);
+export const isExplanationKey=(key:string)=>/(^|_)(explanation|reasoning)$/i.test(key);
 // The order of the columns over all the replies of a table, so every row has the same columns in the same order,
 // whichever text comes first: keys as first seen, grouped by what stands before their last "_" (a nested
 // object), the reasoning last in its group; with flat names ("race", "race_explanation") each explanation

@@ -206,7 +206,7 @@ export function resumable(docs:Row[],runs:RunRecord[]|undefined,setup:Setup):Set
 export function remainingFor<T extends Row>(docs:T[],setup:Setup,resume?:Set<string>):T[]{
  const fields=fieldsKey(setup),prompts=new Map<string,boolean>();
  const samePrompt=(prompt:string)=>{let same=prompts.get(prompt);if(same===undefined){same=prompt===setup.prompt;prompts.set(prompt,same);}return same;};
- const made=(result:ResultFields)=>{const s=setupOf(result);return s.provider===setup.provider&&s.model===setup.model&&s.effort===setup.effort&&fieldsKey(s)===fields&&samePrompt(s.prompt)&&(s.system||'')===(setup.system||'');};
+ const made=(result:ResultFields)=>{const s=setupOf(result);return s.provider===setup.provider&&s.model===setup.model&&s.effort===setup.effort&&fieldsKey(s)===fields&&samePrompt(s.prompt)&&(s.system||'')===(setup.system||'')&&s.temperature===setup.temperature&&s.maxOutput===setup.maxOutput;};
  return docs.filter(doc=>doc.status==='pending'||doc.status==='error'||(doc.status==='done'&&(!completedResults(doc).some(made)||Boolean(resume?.has(doc.id)))));
 }
 

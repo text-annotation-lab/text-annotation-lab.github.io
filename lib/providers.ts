@@ -161,4 +161,4 @@ export function modelAccessHint(provider:Provider,model:string):string{
 export function isGemini4(model:string):boolean{return model.startsWith('gemini-4-');}
 // The thinkingLevel Google documents as each Gemini 4 model's default.
 export function gemini4DefaultLevel(model:string):string{return model==='gemini-4-hydrogen'||model==='gemini-4-neon'?'HIGH':'MEDIUM';}
-export function annotationOutputLimit(provider:string,model:string):number{return provider==='gemini'&&isGemini4(model)?32768:16000;}
+export function annotationOutputLimit(provider:string,model:string):number{return provider==='gemini'&&isGemini4(model)||provider==='openrouter'&&model.startsWith('google/gemini-4-')?32768:16000;}

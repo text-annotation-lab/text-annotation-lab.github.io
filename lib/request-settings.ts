@@ -63,7 +63,10 @@ export const marksCache=(provider:string,model:string,request?:RequestSettings)=
 
 // The most output tokens the Lab allows a reply when no other limit is set (reasoning included). Gemini 4
 // models think at length and get more room.
-export const defaultOutputLimit=(provider:string,model:string)=>provider==='gemini'&&model.startsWith('gemini-4-')?32768:16000;
+// Gemini 4 models get 32,768 output tokens; through OpenRouter since November 23, 2026 (`startedAt`: the run's start,
+// so earlier OpenRouter runs, which were sent 16,000, still report the limit they had).
+export const OPENROUTER_GEMINI4_LIMIT_FROM='2026-11-23';
+export const defaultOutputLimit=(provider:string,model:string,startedAt?:string)=>gemini4(provider,model)&&!(provider==='openrouter'&&startedAt&&startedAt<OPENROUTER_GEMINI4_LIMIT_FROM)?32768:16000;
 // A Gemini 4 model, also through OpenRouter (google/gemini-4-…): it may think for minutes.
 const gemini4=(provider:string,model:string)=>provider==='gemini'&&model.startsWith('gemini-4-')||provider==='openrouter'&&model.startsWith('google/gemini-4-');
 // A model with a fixed reasoning budget (Claude Haiku 4.5 and earlier) needs a limit above that budget.
