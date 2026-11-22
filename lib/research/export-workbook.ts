@@ -9,13 +9,15 @@ export type Sheet={name:string;table:Table;numbers?:(column:string,index:number)
 const CELL_LIMIT=32000;
 const numeric=(value:string)=>/^-?(0|[1-9]\d*)(\.\d+)?$/.test(value)&&value.replace(/\D/g,'').length<=15;
 // Carriage returns would show as _x000D_ in Excel, and a cell holds at most 32,767 characters.
-const clean=(value:string)=>{const text=value.replace(/\r\n?/g,'\n');return text.length>CELL_LIMIT?text.slice(0,CELL_LIMIT)+' …[truncated]':text;};
+// (A cut never falls inside a character written as two code units, such as an emoji.)
+const cut=(text:string,end:number)=>{const code=text.charCodeAt(end-1);return text.slice(0,code>=0xd800&&code<=0xdbff?end-1:end);};
+const clean=(value:string)=>{const text=value.replace(/\r\n?/g,'\n');return text.length>CELL_LIMIT?cut(text,CELL_LIMIT)+' …[truncated]':text;};
 export const isProse=(column:string)=>/(^|_)(explanation|reasoning)$/i.test(column)||column==='rationale'||column==='prompt'||column==='reasoning_summary';
 // A name Excel accepts: none of [ ] : * ? / \, at most 31 characters, and not the name of another sheet.
 function sheetName(taken:Set<string>,wanted:string):string{
- const tidy=(name:string)=>name.replace(/[[\]:*?/\\]/g,'_').slice(0,31).replace(/^'+|'+$/g,'')||'Sheet';
+ const tidy=(name:string)=>cut(name.replace(/[[\]:*?/\\]/g,'_'),31).replace(/^'+|'+$/g,'')||'Sheet';
  let name=tidy(wanted);
- for(let n=2;taken.has(name.toLowerCase());n++)name=tidy(wanted).slice(0,31-`_${n}`.length)+'_'+n;
+ for(let n=2;taken.has(name.toLowerCase());n++)name=cut(tidy(wanted),31-`_${n}`.length)+'_'+n;
  taken.add(name.toLowerCase());return name;
 }
 export async function buildWorkbook(sheets:Sheet[]):Promise<ArrayBuffer>{

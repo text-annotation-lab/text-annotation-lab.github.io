@@ -9,6 +9,8 @@ import {canCheckKey} from '@/lib/workflow-safety';
 const OTHER='other-model-id',REFRESH='refresh-model-list',MENU_LIMIT=150;
 // A provider's list is asked for once per key and kept while this page is open; "refresh" asks again.
 const lists=new Map<string,Promise<AccountModel[]>>();
+// "Forget all keys": the lists go too, since each is kept under its key.
+export function forgetModelLists(){lists.clear();}
 function accountModels(provider:Provider,key:string):Promise<AccountModel[]>{
  const tag=provider+'\n'+key,kept=lists.get(tag);
  if(kept)return kept;

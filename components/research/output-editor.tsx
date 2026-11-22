@@ -23,13 +23,16 @@ export function fieldsFromDrafts(drafts:Draft[]):{names:string[];fields:FieldSpe
   const name=draft.name.trim();
   if(!name||name.length>60||names.length>=MAX_ANSWER_FIELDS||names.some(other=>other.toLowerCase()===name.toLowerCase()))continue;
   names.push(name);
-  if(draft.type!=='text'||draft.description.trim())fields.push({name,type:draft.type,values:takesValues(draft.type)?listed(draft.values):[],description:draft.description});
+  // (At most 100 values of at most 200 characters each, as a study and a backup keep them.)
+  if(draft.type!=='text'||draft.description.trim())fields.push({name,type:draft.type,values:takesValues(draft.type)?listed(draft.values).filter(value=>value.length<=200).slice(0,100):[],description:draft.description});
  }
  return {names,fields};
 }
 const problemOf=(drafts:Draft[],index:number)=>{
- const name=drafts[index].name.trim().toLowerCase();
+ const name=drafts[index].name.trim().toLowerCase(),values=takesValues(drafts[index].type)?listed(drafts[index].values):[];
  if(!name)return 'Name this field; a field without a name is not sent.';
+ if(values.length>100)return `A field takes at most 100 values; the ${values.length-100} after the 100th are not sent.`;
+ if(values.some(value=>value.length>200))return 'A value takes at most 200 characters; a longer one is not sent.';
  return drafts.slice(0,index).some(other=>other.name.trim().toLowerCase()===name)?'That field name is already in use; this field is not sent.':'';
 };
 

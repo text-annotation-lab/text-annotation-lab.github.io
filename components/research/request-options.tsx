@@ -1,7 +1,7 @@
 'use client';
 // Research mode: the request settings in Processing options, the system prompt under the annotation prompt, and
 // "Preview request".
-import {useEffect,useState} from 'react';
+import {useEffect,useId,useState} from 'react';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {PROVIDERS,type Provider} from '@/lib/providers';
 import {MAX_OUTPUT_TOKENS,MAX_SYSTEM_PROMPT,budgetedClaude,cleanRequestSettings,defaultOutputLimit,outputFloor,plainOpenAI,sentRequestSettings,summarizesReasoning,takesTemperature,temperatureCeiling,type RequestSettings} from '@/lib/request-settings';
@@ -29,15 +29,17 @@ function NumberBox({id,value,placeholder,min,max,step,disabled,describedBy,onCom
 // emptied box changes nothing, and shows the price again when it is left. The boxes show by themselves only where
 // the Lab has no price or your own is in use; for a model with the Lab's price, a link opens them.
 function PriceBoxes({provider,model}:{provider:Provider;model:string}){
+ // Both tabs (texts and Model knowledge) show these boxes at once: each copy has its own IDs.
+ const uid=useId();
  const own=ownPrice(provider,model,useOwnPrices()),listed=priceFor(provider,model),shown=own??listed,[asked,setAsked]=useState(false);
  const typed=(which:'input'|'output')=>(value:number|undefined)=>{if(value!==undefined)setOwnPrice(provider,model,{input:shown?.input??0,output:shown?.output??0,[which]:value});};
  if(listed&&!own&&!asked)return <button type="button" className="textbutton research-own-price" onClick={()=>setAsked(true)}>Use your own price</button>;
  return <>
   <div className="research-prices">
-   <div><label htmlFor="price-input">Price per million input tokens ($)<SettingInfo topic="prices"/></label><NumberBox id="price-input" value={shown?.input} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy="price-help" onCommit={typed('input')}/></div>
-   <div><label htmlFor="price-output">Price per million output tokens ($)</label><NumberBox id="price-output" value={shown?.output} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy="price-help" onCommit={typed('output')}/></div>
+   <div><label htmlFor={uid+'price-input'}>Price per million input tokens ($)<SettingInfo topic="prices"/></label><NumberBox id={uid+'price-input'} value={shown?.input} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy={uid+'price-help'} onCommit={typed('input')}/></div>
+   <div><label htmlFor={uid+'price-output'}>Price per million output tokens ($)</label><NumberBox id={uid+'price-output'} value={shown?.output} placeholder="Unknown" min={0} max={MAX_OWN_PRICE} step="any" describedBy={uid+'price-help'} onCommit={typed('output')}/></div>
   </div>
-  {(!listed||own)&&<p id="price-help" className="hint batch-explainer research-price-help">{!listed&&!own?'The Lab has no price for this model; type its price to have its cost estimated.':''}{own&&<>Your own price is in use and is kept in this browser. <button type="button" className="textbutton" onClick={()=>setOwnPrice(provider,model,null)}>{listed?'Use the Lab’s price':'Remove your price'}</button></>}</p>}
+  {(!listed||own)&&<p id={uid+'price-help'} className="hint batch-explainer research-price-help">{!listed&&!own?'The Lab has no price for this model; type its price to have its cost estimated.':''}{own&&<>Your own price is in use and is kept in this browser. <button type="button" className="textbutton" onClick={()=>setOwnPrice(provider,model,null)}>{listed?'Use the Lab’s price':'Remove your price'}</button></>}</p>}
  </>;
 }
 
@@ -47,14 +49,15 @@ function PriceBoxes({provider,model}:{provider:Provider;model:string}){
 // other models. `prompt` is the prompt as a request sends it; `fixed` is the length of its part before the
 // first placeholder, where it has placeholders that are filled in for each text.
 export function RequestOptions({part,provider,model,effort,prompt,fixed,value,disabled,onChange}:{part:'cache'|'sampling';provider:Provider;model:string;effort:string;prompt:string;fixed?:number;value?:RequestSettings;disabled?:boolean;onChange:(value:RequestSettings|undefined)=>void}){
+ const uid=useId();
  const sent=sentRequestSettings(provider,model,value,effort),set=(changes:Partial<RequestSettings>)=>onChange(cleanRequestSettings({...value,...changes}));
  const takes=takesTemperature(provider,model,effort),ceiling=temperatureCeiling(provider),usual=defaultOutputLimit(provider,model),floor=outputFloor(provider,model,effort),reasons=summarizesReasoning(effort,provider,model);
  if(part==='cache')return <CacheOption provider={provider} model={model} prompt={prompt} fixed={fixed} value={value} disabled={disabled} onChange={next=>set({cache:next?.cache})}/>;
  return <>
-  <div className="processing-choice research-first-option"><label htmlFor="request-temperature">Temperature</label><NumberBox id="request-temperature" value={takes?sent?.temperature:undefined} placeholder={takes?'Model default':'Not sent'} min={0} max={ceiling} step={0.1} disabled={disabled||!takes} describedBy="request-temperature-help" onCommit={temperature=>set({temperature})}/></div>
-  {!takes&&<p id="request-temperature-help" className="hint batch-explainer">{provider==='openai'||model.startsWith('openai/')?'OpenAI models from GPT-6.2 on take no temperature, so none is sent.':provider==='openrouter'?'Claude models that reason take no temperature, so none is sent.':`Claude models that reason take no temperature, so none is sent. ${budgetedClaude(model)&&!model.startsWith('claude-haiku-4-5')?'This model':'Claude Haiku 4.5'} takes one with reasoning off.`}</p>}
-  <div className="processing-choice"><label htmlFor="request-max-output">Max output tokens</label><NumberBox id="request-max-output" value={sent?.maxOutput??usual} placeholder={String(usual)} min={floor} max={MAX_OUTPUT_TOKENS} step={1} disabled={disabled} describedBy="request-max-output-help" onCommit={maxOutput=>set({maxOutput})}/></div>
-  <p id="request-max-output-help" className="hint batch-explainer">A reply that reaches it counts as failed. The Lab’s own limit for this model is {count(usual)}.{floor>16?` This reasoning setting needs at least ${count(floor)}.`:''}</p>
+  <div className="processing-choice research-first-option"><label htmlFor={uid+'request-temperature'}>Temperature</label><NumberBox id={uid+'request-temperature'} value={takes?sent?.temperature:undefined} placeholder={takes?'Model default':'Not sent'} min={0} max={ceiling} step={0.1} disabled={disabled||!takes} describedBy={uid+'request-temperature-help'} onCommit={temperature=>set({temperature})}/></div>
+  {!takes&&<p id={uid+'request-temperature-help'} className="hint batch-explainer">{provider==='openai'||model.startsWith('openai/')?'OpenAI models from GPT-6.2 on take no temperature, so none is sent.':provider==='openrouter'?'Claude models that reason take no temperature, so none is sent.':`Claude models that reason take no temperature, so none is sent. ${budgetedClaude(model)&&!model.startsWith('claude-haiku-4-5')?'This model':'Claude Haiku 4.5'} takes one with reasoning off.`}</p>}
+  <div className="processing-choice"><label htmlFor={uid+'request-max-output'}>Max output tokens</label><NumberBox id={uid+'request-max-output'} value={sent?.maxOutput??usual} placeholder={String(usual)} min={floor} max={MAX_OUTPUT_TOKENS} step={1} disabled={disabled} describedBy={uid+'request-max-output-help'} onCommit={maxOutput=>set({maxOutput})}/></div>
+  <p id={uid+'request-max-output-help'} className="hint batch-explainer">A reply that reaches it counts as failed. The Lab’s own limit for this model is {count(usual)}.{floor>16?` This reasoning setting needs at least ${count(floor)}.`:''}</p>
   <PriceBoxes provider={provider} model={model}/>
   <label className="research-check research-output-check research-request-option"><input type="checkbox" checked={reasons&&Boolean(value?.summary)} disabled={disabled||!reasons} onChange={event=>set({summary:event.target.checked?true:undefined})}/><span>Record the model’s reasoning summary{!reasons&&<small>{provider==='openai'&&plainOpenAI(model)?'This model has no reasoning to summarize.':'Reasoning is switched off for this model, so there is nothing to summarize.'}</small>}</span></label>
   {provider==='openai'&&<label className="research-check research-output-check research-request-option"><input type="checkbox" checked={value?.store!==false} disabled={disabled} onChange={event=>set({store:event.target.checked?undefined:false})}/><span>Show requests in OpenAI’s logs<small>OpenAI keeps them for a limited time; switch this off for confidential texts.</small></span></label>}

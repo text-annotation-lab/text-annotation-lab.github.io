@@ -46,12 +46,13 @@ export function knowledgeAssessment(row:NamedAnswers&{score?:string}){
  const missing=values.filter(isInsufficient).length;
  return missing===values.length?'Insufficient knowledge':missing?'Partly assessed':'Assessed';
 }
-export function repeatKnowledgeItems(items:KnowledgeItem[],selectedId?:string):KnowledgeItem[]{
+// removed: subjects deleted from the workspace whose runs are kept; a new run never takes one of their numbers.
+export function repeatKnowledgeItems(items:KnowledgeItem[],selectedId?:string,removed:KnowledgeItem[]=[]):KnowledgeItem[]{
  const latest=new Map<string,KnowledgeItem>();
  for(const item of items)latest.set(item.subjectId||item.id,item);
  const selected=selectedId?items.find(item=>item.id===selectedId):undefined;
  const originals=selectedId?(selected?[selected]:[]):Array.from(latest.values());
- const runNumber=Math.max(1,...items.map(item=>item.runNumber||1))+1;
+ const runNumber=Math.max(1,...[...items,...removed].map(item=>item.runNumber||1))+1;
  return originals.map(item=>({id:newId(),subjectId:item.subjectId||item.id,runNumber,name:item.name,fields:item.fields.map(field=>({...field})),status:'pending'}));
 }
 
@@ -61,7 +62,8 @@ function records(text:string,delimiter:string):string[][]{
  for(let i=0;i<text.length;i++){
   const c=text[i];
   if(quoted){if(c==='"'){if(text[i+1]==='"'){value+='"';i++;}else{quoted=false;closed=true;}}else value+=c;continue;}
-  if(c==='"'){if(value||closed)throw Error('A quotation mark must begin a field. Use double quotation marks around fields containing commas or tabs.');quoted=true;continue;}
+  // (Spaces before an opening quotation mark, as in `Pride, "Austen, Jane"`, are not part of the field.)
+  if(c==='"'){if(!closed&&!value.trim())value='';if(value||closed)throw Error('A quotation mark must begin a field. Use double quotation marks around fields containing commas or tabs.');quoted=true;continue;}
   if(c===delimiter){row.push(value);value='';closed=false;continue;}
   if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(value);if(row.some(v=>v.trim()))rows.push(row);row=[];value='';closed=false;continue;}
   if(closed){if(c===' ')continue;throw Error('Unexpected text after a closing quotation mark.');}

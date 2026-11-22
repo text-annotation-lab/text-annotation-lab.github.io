@@ -152,7 +152,7 @@ const base64=async file=>Buffer.from(await file.arrayBuffer()).toString('base64'
   assert(NOTES.every(key=>!(key in bare)),provider+': a batch collected by the standard Lab carries no record');
   assert.deepEqual(Object.fromEntries(Object.entries(noted).filter(([key])=>!NOTES.includes(key))),bare);
   const cut=batch.parseBatchAnnotation(provider,providerReply(provider,{stop:truncated[provider][0]}),false,true);
-  assert(cut.error);assert.equal(cut.stopReason,truncated[provider][1]);assert(!('output' in cut));
+  assert(cut.error);assert.equal(cut.stopReason,truncated[provider][1]);assert.equal(cut.output,answerText,provider+': a cut-off reply keeps the text it returned, as in Instant processing');
   assert(!('output' in batch.parseBatchAnnotation(provider,providerReply(provider,{text:'Mostly hopeful.'}),true,true)));
   assert.equal(batch.parseBatchAnnotation(provider,providerReply(provider,{text:' Mostly hopeful.'}),true,true).output,' Mostly hopeful.');
  }

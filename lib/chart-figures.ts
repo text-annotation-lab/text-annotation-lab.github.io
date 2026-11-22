@@ -63,7 +63,7 @@ export type ViewOptions={width:number;interactive:boolean;noun:string};
 export function distributionScale(units:Unit[],scale:Scale,o:ViewOptions):Figure{
  const points=scalePoints(scale),bins=points.map(()=>[] as Unit[]),notes:string[]=[];
  let rounded=false;
- for(const unit of units){const v=unit.number!;const r=Math.round(v);if(r!==v)rounded=true;const i=Math.max(0,Math.min(points.length-1,r-scale.min));bins[i].push(unit);}
+ for(const unit of units){const v=unit.number!;const r=Math.sign(v)*Math.round(Math.abs(v));if(r!==v)rounded=true;const i=Math.max(0,Math.min(points.length-1,r-scale.min));bins[i].push(unit);}
  if(rounded)notes.push(`Averages across runs or chunks are rounded to the nearest score in this chart.`);
  const W=o.width,l=48,r=W-8,t=34,b=250,H=b+34,max=Math.max(...bins.map(x=>x.length),1),axis=countAxis(max),Y=(v:number)=>b-v/axis.upper*(b-t),slot=(r-l)/points.length;
  let s='';
@@ -184,7 +184,7 @@ export function timeShares(units:Unit[],scale:Scale|undefined,categories:string[
  const periods=periodsFor(dated.map(u=>u.year!),length);
  const keys=scale?scalePoints(scale).map(String):[...categories!,...(units.some(u=>!categories!.includes(u.value))?[REST]:[])];
  const colorOf=(k:string)=>scale?scaleColor(scale,Number(k)):categoryColors(categories!).get(k)||OTHER;
- const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.round(u.number!)))):(categories!.includes(u.value)?u.value:REST);
+ const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.sign(u.number!)*Math.round(Math.abs(u.number!))))):(categories!.includes(u.value)?u.value:REST);
  const W=o.width,l=44,r=W-6,t=10,b=250,H=b+46,slot=(r-l)/periods.length,bw=Math.min(84,slot*.7),Y=(p:number)=>b-p*(b-t);
  let s='';const picks:Pick[]=[],notes:string[]=[];
  for(const p of [0,.25,.5,.75,1])s+=line(l,Y(p),r,Y(p),p?GRID:AXIS)+text(l-8,Y(p)+4,Math.round(p*100)+'%',{anchor:'end'});
@@ -204,7 +204,7 @@ export function timeShares(units:Unit[],scale:Scale|undefined,categories:string[
   }
   if(!total)s+=text(x+bw/2,b-8,'none',{anchor:'middle',fill:'#9aa6b6'});
   const end=Math.min(period.end,Math.max(...dated.map(u=>u.year!)));
-  s+=text(x+bw/2,b+17,slot<70?`${period.start}s`:`${period.start}–${end}`,{anchor:'middle',fill:INK,size:12})+text(x+bw/2,b+32,`${total} ${total===1?o.noun.replace(/s$/,''):o.noun}`,{anchor:'middle',size:11});
+  s+=text(x+bw/2,b+17,slot<70?(period.end-period.start===9&&period.start%10===0?`${period.start}s`:`${period.start}–${String(end).slice(-2)}`):`${period.start}–${end}`,{anchor:'middle',fill:INK,size:12})+text(x+bw/2,b+32,`${total} ${total===1?o.noun.replace(/s$/,''):o.noun}`,{anchor:'middle',size:11});
  });
  if(Number.isFinite(smallest)&&smallest<8)notes.push(`The smallest period holds only ${smallest} ${smallest===1?o.noun.replace(/s$/,''):o.noun}, so one of them moves its column by ${Math.round(100/smallest)} percentage points.`);
  return {svg:svgDoc(W,H,s,'Share of each score per period',o.interactive),width:W,height:H,picks,notes};
@@ -220,7 +220,7 @@ export function groupsView(units:Unit[],groups:string[],scale:Scale|undefined,ca
  let s='';
  const keys=scale?scalePoints(scale).map(String):[...categories!,...(units.some(u=>!categories!.includes(u.value))?[REST]:[])];
  const colorOf=(k:string)=>scale?scaleColor(scale,Number(k)):categoryColors(categories!).get(k)||OTHER;
- const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.round(u.number!)))):(categories!.includes(u.value)?u.value:REST);
+ const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.sign(u.number!)*Math.round(Math.abs(u.number!))))):(categories!.includes(u.value)?u.value:REST);
  const diverging=scale?.type==='diverging';
  // Diverging bars are centered on the neutral point; others start at the left edge.
  const center=diverging?barL+(barR-barL)*.5:barL,U=diverging?(barR-barL)/2:(barR-barL);

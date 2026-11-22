@@ -89,7 +89,7 @@ export async function POST(request:Request){
   // The reply as returned is not stored a second time where the result already holds it whole: a plain-text
   // answer, or the reply kept with a rejected result.
   if(result.output!==undefined&&(result.output===result.rawResponse||answerSettings?.plain&&result.output===result.answers?.f0))delete result.output;
-  return json({...result,responseFormat:annotationFormatRecord(answerFields,annotationPrompt,knowledge,answerSettings),...(error?{error}:{}),...(knowledge?{webUsed:Boolean(research)}:{}),...(research?{research,...(response.ok?{tokens:(result.tokens||0)+(research.tokens||0)}:{})}:{})},error?422:response.status);};
+  return json({...result,responseFormat:annotationFormatRecord(answerFields,annotationPrompt,knowledge,answerSettings),...(error?{error}:{}),...(knowledge?{webUsed:Boolean(research)}:{}),...(research?{research,tokens:(result.tokens||0)+(research.tokens||0)}:{})},error?422:response.status);};
  if(provider==='openrouter')return finish(await annotateOpenRouter(file,prompt,String(model),String(effort),auth.slice(7),knowledge,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier,spots));
  if(provider==='anthropic')return finish(await annotateAnthropic(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier,spots));
  if(provider==='gemini')return finish(await annotateGemini(file,prompt,String(model),String(effort),auth.slice(7),knowledge,webSearch,answerFields,annotationPrompt,answerSettings,sent,record,Boolean(inserts),earlier,spots));

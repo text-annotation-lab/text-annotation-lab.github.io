@@ -29,8 +29,10 @@ export function flattenJsonReply(raw:unknown):Record<string,string>|null{
   return Object.fromEntries(entries);
  }catch{return null;}
 }
-// The reply contains JSON, but the reply as a whole could not be read as one JSON object.
-export const unreadableJson=(raw:string)=>looksLikeJson(raw)&&!flattenJsonReply(raw);
+// The reply contains JSON, but the reply as a whole could not be read as JSON. (A whole reply that is valid JSON
+// but no object, such as a list of objects, is kept as it is, in one column.)
+const validJson=(raw:string)=>{try{JSON.parse(unfenced(raw));return true;}catch{return false;}};
+export const unreadableJson=(raw:string)=>looksLikeJson(raw)&&!flattenJsonReply(raw)&&!validJson(raw);
 
 // The same reply is read once, however often a table or a comparison asks for it: results keep their
 // `answers` object for as long as they exist, and a result that is replaced gets a new one.

@@ -28,7 +28,7 @@ export function SavedPrompts({disabled,prompt,answerFields,answerSettings,system
   {chosen&&<div className="saved-prompt-actions"><Button type="button" variant="outline" disabled={locked} onClick={()=>{
    const differs=prompt!==chosen.prompt||JSON.stringify(answerFields)!==JSON.stringify(chosen.answerFields)||JSON.stringify(answerSettings||null)!==JSON.stringify(chosen.answerSettings||null)||system!==undefined&&system.trim()!==(chosen.system??'').trim();
    const use=()=>{onUse(chosen.prompt,[...chosen.answerFields],chosen.answerSettings,chosen.system);setMessage('Prompt loaded.');};
-   if(differs&&(prompt.trim()||answerFields.length))askThen(system!==undefined?'Replace your current prompt, system prompt, and answer fields with this saved prompt?':'Replace your current prompt and answer fields with this saved prompt?',use,{yes:'Replace'});
+   if(differs&&(prompt.trim()||answerFields.length||system?.trim()||answerSettings))askThen(system!==undefined?'Replace your current prompt, system prompt, and answer fields with this saved prompt?':'Replace your current prompt and answer fields with this saved prompt?',use,{yes:'Replace'});
    else use();
   }}>Use prompt</Button><button type="button" className="textbutton" disabled={locked} onClick={()=>void remove()}>Delete</button></div>}
   {message&&<p role="status">{message}</p>}

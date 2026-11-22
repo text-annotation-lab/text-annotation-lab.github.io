@@ -7,7 +7,7 @@
 import {PLAIN_FIELD,slugKey} from '../answer-types';
 import {columnIndex,type CellRow,type Column,type Sheet} from './columns';
 import {rowForRun,type Row} from './runs';
-import {valueOf} from './fields';
+import {fieldsOf,valueOf} from './fields';
 
 const fold=(value:unknown)=>String(value??'').normalize('NFC').trim().toLowerCase();
 // Columns of the results tables that hold no answers and no labels.
@@ -19,8 +19,9 @@ function runFields(rows:Row[]):Map<number,{field:string;names:Set<string>}[]>{
  for(const row of rows)for(const run of [row.runNo,...(row.earlier||[]).map(earlier=>earlier.runNo)]){
   if(typeof run!=='number'||runs.has(run))continue;
   const result=rowForRun(row,run);if(result.status!=='done')continue;
-  const plain=Boolean(result.answerSettings?.plain),fields:string[]=plain?[PLAIN_FIELD]:result.answerFields?.length?result.answerFields:[''];
-  runs.set(run,fields.map(field=>({field:plain?PLAIN_FIELD:field,names:new Set(field?[fold(field),fold(slugKey(field)),'answer_'+fold(slugKey(field))]:['score'])})));
+  // A plain-text run: the reply, and each value of replies that are JSON under its own name (as the tables give them).
+  const plain=Boolean(result.answerSettings?.plain),fields:string[]=plain?fieldsOf(rows.map(other=>rowForRun(other,run))).filter(Boolean):result.answerFields?.length?result.answerFields:[''];
+  runs.set(run,(plain&&!fields.length?[PLAIN_FIELD]:fields).map(field=>({field,names:new Set(field?[fold(field),'answer_'+fold(field),fold(slugKey(field)),'answer_'+fold(slugKey(field))]:['score'])})));
  }
  return runs;
 }
@@ -43,7 +44,8 @@ export function copiedAnswers(rows:(Row&CellRow)[],columns:Column[],sheet:Sheet,
   if(!copied.length)continue;
   const own=sheet.header.every((name,i)=>{
    if(i===keyIndex||copied.includes(i)||OWN.has(fold(name)))return true;
-   const at=columnIndex(columns,name);
+   // (A results table names a label or metadata column meta_<name> where its name is taken by a column of its own.)
+   const at=columnIndex(columns,name)>=0||!fold(name).startsWith('meta_')?columnIndex(columns,name):columnIndex(columns,name.slice(5));
    return at>=0&&matched.every(row=>!cell(row,i)||cell(row,i)===fold(row.cells?.[at]));
   });
   if(own)return copied.map(i=>sheet.header[i]);

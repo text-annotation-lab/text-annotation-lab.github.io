@@ -8,6 +8,7 @@ import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {GEMINI_ENABLED,PROVIDERS,type Provider} from '@/lib/providers';
 import {cleanKeyring,type Keyring} from '@/lib/research/mode';
+import {forgetModelLists} from './model-choice';
 
 const ORDER:Provider[]=(['openai','gemini','anthropic','openrouter'] as Provider[]).filter(p=>p!=='gemini'||GEMINI_ENABLED);
 
@@ -33,7 +34,7 @@ export function KeysControl({keyring,remember,provider,open,onOpenChange,onSave,
      <div className="research-dialog-actions">
       <Button type="submit" disabled={disabled}>Save</Button>
       <Button type="button" variant="outline" onClick={()=>onOpenChange(false)}>Cancel</Button>
-      {(count>0||remember)&&<button type="button" className="textbutton research-forget" disabled={disabled} onClick={()=>{onSave({},false);onOpenChange(false);}}>Forget all keys</button>}
+      {(count>0||remember)&&<button type="button" className="textbutton research-forget" disabled={disabled} onClick={()=>{forgetModelLists();onSave({},false);onOpenChange(false);}}>Forget all keys</button>}
      </div>
     </form>
    </DialogContent>

@@ -113,7 +113,8 @@ export const addRetry=(runs:RunRecord[],number:number,retry:Retry):RunRecord[]=>
 
 function withoutResult<T extends Row>(doc:T):T{
  const rest:Row={...doc};
- for(const key of RESULT_KEYS)delete rest[key];
+ // (Also what a Model knowledge result says about its web research: an earlier run keeps only its own.)
+ for(const key of [...RESULT_KEYS,'webSearch','webUsed','research','instructions'])delete rest[key];
  return rest as T;
 }
 
