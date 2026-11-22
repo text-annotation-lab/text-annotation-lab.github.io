@@ -82,7 +82,7 @@ function nonZeroSentence(s:Stats,unit:string):string{
 }
 
 // Categories in the Review sheet, in the order the sheet is sorted by.
-const RANK:Record<string,number>={'tie (no majority)':5,'opposite direction':0,'2+ points':1,differ:1,'between 1 and 2 points':2,'1 point':2,'less than 1 point':2,agree:3,'agree (non-zero)':3,'agree (zero)':4,'not on the scale':5,'not a number':5,'not a category':5};
+const RANK:Record<string,number>={'tie (no majority)':5,abstained:5,'opposite direction':0,'2+ points':1,differ:1,'between 1 and 2 points':2,'1 point':2,'less than 1 point':2,agree:3,'agree (non-zero)':3,'agree (zero)':4,'not on the scale':5,'not a number':5,'not a category':5};
 
 // The sheets of the report (also used by the tests, which read them without Excel).
 export async function comparisonSheets(dataset:Dataset,first:number,second:number,options:ReportOptions):Promise<Sheet[]>{
@@ -150,7 +150,8 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
    // By the size of the difference, as in the Summary. Combined answers from an even number of annotations can be
    // half points: 0.5 is “less than 1 point”, 1.5 “between 1 and 2 points”.
    const size=diff===null?null:Math.abs(diff);
-   const category=leftOut&&(isTie(x)||isTie(y))?'tie (no majority)':leftOut?(!onNumbers?'not a category':isNum(x)&&isNum(y)?'not on the scale':'not a number')
+   const abstained=(v:string)=>v.trim().toUpperCase()==='INSUFFICIENT_KNOWLEDGE';
+   const category=leftOut&&(abstained(x)||abstained(y))?'abstained':leftOut&&(isTie(x)||isTie(y))?'tie (no majority)':leftOut?(!onNumbers?'not a category':isNum(x)&&isNum(y)?'not on the scale':'not a number')
     :x===y?(numeric?(Number(x)===0?'agree (zero)':'agree (non-zero)'):'agree')
     :opposite?'opposite direction'
     :size===null?'differ'
@@ -194,10 +195,10 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
   const state=runState(dataset.rows,run),unfinished=state==='running'?'not finished: it was still running':state==='submitted'?'not finished: its batch was still being processed':'';
   return {
    run:`#${run.number}${run.label?` (${run.label})`:''}`,provider:run.provider||'',model:run.model||'',model_reported_by_api:facts.models.join(', '),
-   effort:run.effort||'model default',max_output_tokens:String(run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt)),
-   prompt_version:`v${run.promptVersion} (${hashOf(hashes,run.prompt,run.system)})`,
+   effort:run.effort||'model default',temperature:run.temperature===undefined?'model default':String(run.temperature),max_output_tokens:String(run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt)),
+   prompt_version:`v${run.promptVersion} (${hashOf(hashes,run.prompt,run.system)})`,system_prompt:run.system?'yes':'none',prompt_caching:run.caching,
    mode:facts.processing==='batch'?'batch API':facts.processing==='instant and batch'?'immediate requests and batch API':'immediate requests',
-   started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(facts.texts-facts.active),
+   started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(Math.max(0,facts.texts-facts.active-removedIn(run.number))),
    ...(removed?{texts_removed_from_study_since:String(removedIn(run.number))}:{}),
    annotations_per_text:String(run.repeats||1),
   };

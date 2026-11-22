@@ -18,9 +18,10 @@ async function boundedText(response:Response,limit=MAX_RESULT_BYTES){
 }
 // limit: the most a reply may hold (a Gemini batch holds its results in its own record, so asking how far it has
 // come reads them too).
-async function call(provider:Provider,key:string,url:string,init:RequestInit={},creating=false,limit=MAX_RESULT_BYTES):Promise<any>{
+// upload: the bytes sent, which lengthen the wait by a second for each 100 KB (a large batch file on a slow line).
+async function call(provider:Provider,key:string,url:string,init:RequestInit={},creating=false,limit=MAX_RESULT_BYTES,upload=0):Promise<any>{
  let response:Response;
- try{response=await fetch(url,{...init,headers:{...headers(provider,key),...init.headers},signal:AbortSignal.timeout(90000)});}catch{throw new BatchError(creating?'Submission was not confirmed. Check your provider’s console before trying again.':'Could not reach your provider. Your batch is still saved; try checking again.',502,creating);}
+ try{response=await fetch(url,{...init,headers:{...headers(provider,key),...init.headers},signal:AbortSignal.timeout(90000+Math.ceil(upload/100000)*1000)});}catch{throw new BatchError(creating?'Submission was not confirmed. Check your provider’s console before trying again.':'Could not reach your provider. Your batch is still saved; try checking again.',502,creating);}
  let text:string;try{text=await boundedText(response,limit);}catch(error){if(creating)throw new BatchError('Submission was not confirmed. Check your provider’s console before trying again.',502,true);throw error;}
  if(response.ok&&!text.trim())return {};
  let out;try{out=JSON.parse(text);}catch{out=null;}
@@ -101,13 +102,13 @@ export function validBatchId(provider:Provider,id:unknown):id is string{return t
 export async function createBatch(provider:Provider,key:string,model:string,runId:string,payload:Blob,part?:{index:number;of:number}){
  if(provider==='openai'){
   const form=new FormData();form.set('purpose','batch');form.set('file',new File([payload],'annotation-batch.jsonl',{type:'application/jsonl'}));
-  const upload=await call(provider,key,'https://api.openai.com/v1/files',{method:'POST',body:form});
+  const upload=await call(provider,key,'https://api.openai.com/v1/files',{method:'POST',body:form},false,MAX_RESULT_BYTES,payload.size);
   if(typeof upload.id!=='string'||!/^file-[\w-]+$/.test(upload.id))throw new BatchError('The batch input upload could not be confirmed. No batch was submitted.',502);
   const out=await call(provider,key,'https://api.openai.com/v1/batches',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input_file_id:upload.id,endpoint:'/v1/responses',completion_window:'24h',metadata:{lab_run_id:runId,...(part?{lab_batch:`${part.index+1} of ${part.of}`}:{})}})},true);
   if(!validBatchId(provider,out.id))throw new BatchError('Batch creation was not confirmed. Check OpenAI before retrying.',502,true);return out.id as string;
  }
  const url=provider==='anthropic'?'https://api.anthropic.com/v1/messages/batches':`https://generativelanguage.googleapis.com/v1beta/models/${model}:batchGenerateContent`;
- const out=await call(provider,key,url,{method:'POST',headers:{'Content-Type':'application/json'},body:payload},true);const id=provider==='anthropic'?out.id:out.name;
+ const out=await call(provider,key,url,{method:'POST',headers:{'Content-Type':'application/json'},body:payload},true,MAX_RESULT_BYTES,payload.size);const id=provider==='anthropic'?out.id:out.name;
  if(!validBatchId(provider,id))throw new BatchError('Batch creation was not confirmed. Check your provider before retrying.',502,true);return id;
 }
 // record (research mode): a result also carries the model the provider names, why it stopped, and the text it
@@ -125,15 +126,20 @@ export function parseBatchAnnotation(provider:Provider,out:any,plain=false,recor
  const metadata:Omit<BatchResult,'id'>={...noted,usage,...(typeof tokens==='number'?{tokens}:{}),...(typeof responseId==='string'?{responseId}:{})};
  let raw:string;
  if(provider==='openai'){
-  if(out?.status!=='completed')return {...metadata,error:incompleteAnnotation(provider,out?.incomplete_details?.reason)};
-  raw=(out.output||[]).flatMap((x:any)=>x.content||[]).filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join('');
+  // As in Instant processing: a reply cut off keeps the text it returned (research mode), a refusal says so.
+  const parts=(out?.output||[]).flatMap((x:any)=>x.content||[]),text=parts.filter((x:any)=>x.type==='output_text').map((x:any)=>x.text).join('');
+  if(out?.status!=='completed')return {...metadata,...(record&&text?{output:replyText(text)}:{}),error:incompleteAnnotation(provider,out?.incomplete_details?.reason)};
+  if(parts.some((x:any)=>x.type==='refusal'))return {...metadata,...(record?{stopReason:'refusal'}:{}),error:incompleteAnnotation(provider,'refusal')};
+  raw=text;
  }else if(provider==='anthropic'){
-  if(out?.stop_reason!=='end_turn')return {...metadata,error:incompleteAnnotation(provider,out?.stop_reason)};
-  raw=(out.content||[]).filter((x:any)=>x.type==='text').map((x:any)=>x.text).join('');
+  const text=(out?.content||[]).filter((x:any)=>x.type==='text').map((x:any)=>x.text).join('');
+  if(out?.stop_reason!=='end_turn')return {...metadata,...(record&&text?{output:replyText(text)}:{}),error:incompleteAnnotation(provider,out?.stop_reason)};
+  raw=text;
  }else{
   const candidate=out?.candidates?.[0];
-  if(out?.promptFeedback?.blockReason||candidate?.finishReason!=='STOP')return {...metadata,error:incompleteAnnotation(provider,out?.promptFeedback?.blockReason||candidate?.finishReason)};
-  raw=(candidate.content?.parts||[]).filter((x:any)=>!x.thought&&typeof x.text==='string').map((x:any)=>x.text).join('');
+  const text=(candidate?.content?.parts||[]).filter((x:any)=>!x.thought&&typeof x.text==='string').map((x:any)=>x.text).join('');
+  if(out?.promptFeedback?.blockReason||candidate?.finishReason!=='STOP')return {...metadata,...(record&&text?{output:replyText(text)}:{}),error:incompleteAnnotation(provider,out?.promptFeedback?.blockReason||candidate?.finishReason)};
+  raw=text;
  }
  if(plain){const answer=plainAnswer(raw);if(record&&raw!==answer?.answers.f0)metadata.output=replyText(raw);return answer?{...metadata,answers:answer.answers,score:'',explanation:''}:{...metadata,error:EMPTY_REPLY};}
  if(record)metadata.output=replyText(raw);

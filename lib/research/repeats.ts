@@ -206,8 +206,11 @@ export function annotationFrom(n:number,done:boolean,got:Record<string,any>):Ann
 }
 // A text whose requests were not sent after all (a batch that was not submitted): as it was, with the
 // annotations it already had; a text without any waits again.
+// (Without any, it keeps none of what the claim wrote: the run, the settings, the model, or the request's record.)
+const CLAIM_KEYS=['runNo','runId','runStartedAt','runSize','startedAt','usage','error','answerFields','answerSettings','requestSettings','answers','provider','model','prompt','effort','layout','concurrency','processing','batchId','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts'];
 export function unclaimed<T extends Result>(result:T):T{
  if(annotationsOf(result).length)return {...result,...settle(result)};
- const {repeats,annotations,consistency,...rest}=result;
- return {...rest,status:'pending'} as unknown as T;
+ const {repeats,annotations,consistency,...rest}=result,left:Record<string,unknown>={...rest};
+ for(const key of CLAIM_KEYS)delete left[key];
+ return {...left,status:'pending'} as unknown as T;
 }

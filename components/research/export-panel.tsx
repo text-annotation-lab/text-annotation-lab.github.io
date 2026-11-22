@@ -142,7 +142,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
    </section>
   </div>
   {backup&&<section className="research-export-backup">
-   <div><strong>Study backup</strong><span>One file with the whole study: both data sets, the uploaded files, every run, labels, and samples. Studies → Import backup reads it again, on this or another computer.</span>{stepLine('backup')}</div>
+   <div><strong>Study backup</strong><span>One file with the whole study: both data sets, the uploaded files, every run, labels, and samples. Studies → More options → Import backup reads it again, on this or another computer.</span>{stepLine('backup')}</div>
    <Button type="button" variant="outline" disabled={busy} onClick={()=>{void studyBackup();}}><Download size={16}/>{here('backup')?'Building…':'Download backup'}</Button>
   </section>}
   {error&&<p className="message" role="alert">{error}</p>}

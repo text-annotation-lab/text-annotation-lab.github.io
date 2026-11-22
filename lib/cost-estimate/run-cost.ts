@@ -45,8 +45,10 @@ function requestsOf(row:CostRecord):CostRecord[]{
  for(let n=1;n<=planned;n++)if(!made.some(a=>a.n===n&&(a.status==='done'||a.runId===row.runId)))list.push(shared);
  return list;
 }
+// rows: also texts deleted from the study since (their requests were paid for); a text's earlier results count
+// too (a run whose failed requests were sent again later may no longer be the text's current one).
 export function latestRunCost(rows:CostRecord[]){
- const attempts=rows.flatMap(row=>[...(row.history||[]),...requestsOf(row)]).filter(row=>['done','error','running','queued'].includes(row.status));
+ const attempts=rows.flatMap(row=>[row,...(((row as {earlier?:CostRecord[]}).earlier)||[])]).flatMap(row=>[...(row.history||[]),...requestsOf(row)]).filter(row=>['done','error','running','queued'].includes(row.status));
  const tracked=attempts.filter(row=>row.runId&&row.runStartedAt);
  const latest=tracked.reduce<CostRecord|undefined>((a,b)=>!a||b.runStartedAt!>=a.runStartedAt!?b:a,undefined);
  const selected=latest?attempts.filter(row=>row.runId===latest.runId):attempts;

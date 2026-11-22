@@ -142,7 +142,7 @@ export function studySnapshot(action: 'initialize'|'save-new'|'save-and-blank'|'
       if(action==='save-new'||action==='save-and-blank'||action==='save-and-duplicate'||action==='update'){
        const target=action==='update'?studies.find(s=>s.id===options.id):{id:newId(),name:studyName(options.name||'')};
        if(!target)throw Error('This saved study no longer exists. Save as a new study instead.');
-       if(action!=='update'&&studies.some(s=>s.name.toLocaleLowerCase()===target.name.toLocaleLowerCase()))throw Error('A study already has that name. Choose another name or use Update saved study.');
+       if(action!=='update'&&studies.some(s=>s.name.toLocaleLowerCase()===target.name.toLocaleLowerCase()))throw Error('A study already has that name. Choose another name.');
        const previous=await readPair(target.id);
        // Do not overwrite another study's outstanding provider job.
        if(hasBatch(previous)&&working.sourceId!==target.id)throw Error('That saved study has an unresolved batch. Load and resolve it before updating it.');

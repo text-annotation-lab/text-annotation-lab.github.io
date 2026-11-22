@@ -1,4 +1,5 @@
 import {answerInstructions,type AnswerSettings} from './answer-fields';
+import {isExplanationField} from './answer-types';
 import {remainingEstimateNotice} from './annotation-feedback';
 import {estimate,textTokens,usageSample,add,money,type Input,type EstimateConfig} from './cost-estimate/engine';
 import {contextWindow,ownRates,priceFor,type OwnPrice} from './cost-estimate/pricing';
@@ -50,7 +51,7 @@ export async function studentEstimate({provider,model,effort,prompt,system,rows,
  if(!validModelId(provider,model))throw Error('Choose a supported model.');
  const pending=rows.filter(r=>r.status==='pending'),inputs:Input[]=[];
  for(const row of pending){signal?.throwIfAborted();const count=countFromCache(row,{provider,model,effort,prompt,system,answerFields,answerSettings,knowledge,webSearch,inserts,placeText});const input:Input=count!==undefined?{tokens:{low:0,high:0},requestTokens:count}:asSent(knowledge?{tokens:textTokens(documentTags(true).open+knowledgeItemText(row.fields)+documentTags(true).close)}:await fileInput(row.file),row,{prompt,inserts,placeText});for(let n=times?Math.max(1,times(row)):1;n>0;n--)inputs.push(input);}
- const config:EstimateConfig={provider,model,effort,...(ownPrice?{rates:ownRates(provider,model,ownPrice)}:{}),...(cache?{cache,batch}:{}),...(system?{system}:{}),prompt:prompt.trim()?prompt+answerInstructions(answerFields,answerSettings)+(knowledge?knowledgeAddition(webSearch,answerSettings):''):'',defaultExplanation:answerSettings?.plain||answerSettings?.rationale===false?false:true,webSearch,maxTokens:maxOutput??annotationOutputLimit(provider,model),fields:answerSettings?.plain?[{name:'response',type:'string'}]:[...(answerFields.length?answerFields.map(name=>{const spec=answerSettings?.fields?.find(f=>f.name===name);return {name,type:spec?.type==='text'?'string':'category',...(spec?.description?{description:spec.description}:{})};}):[{name:'score',type:'category'}]),...(answerSettings?.rationale===false?[]:[{name:'explanation',type:'string'}])]};
+ const config:EstimateConfig={provider,model,effort,...(ownPrice?{rates:ownRates(provider,model,ownPrice)}:{}),...(cache?{cache,batch}:{}),...(system?{system}:{}),prompt:prompt.trim()?prompt+answerInstructions(answerFields,answerSettings)+(knowledge?knowledgeAddition(webSearch,answerSettings):''):'',defaultExplanation:answerSettings?.plain||answerSettings?.rationale===false?false:true,webSearch,maxTokens:maxOutput??annotationOutputLimit(provider,model),fields:answerSettings?.plain?[{name:'response',type:'string'}]:[...(answerFields.length?answerFields.map(name=>{const spec=answerSettings?.fields?.find(f=>f.name===name);return {name,type:spec?(spec.type==='text'?'string':'category'):answerSettings?'string':'category',...(spec?.description?{description:spec.description}:{})};}):[{name:'score',type:'category'}]),...(answerSettings?.rationale===false||answerFields.some(isExplanationField)?[]:[{name:'explanation',type:'string'}])]};
  const samples=rows.filter(r=>r.status==='done'&&r.provider===provider&&!(provider==='openrouter'&&r.file&&/\.pdf$/i.test(r.file.name)&&r.inputMode!=='pdf-native')&&r.model===model&&r.effort===effort&&r.prompt===prompt&&JSON.stringify(r.answerFields||[])===JSON.stringify(answerFields)&&JSON.stringify(r.answerSettings||null)===JSON.stringify(answerSettings||null)&&Boolean(r.webSearch)===webSearch&&(r.requestSettings?.system||'')===(system||'')).flatMap(r=>(Array.isArray(r.annotations)&&r.annotations.length?r.annotations.filter((a:any)=>a?.status==='done'):[r]).flatMap((request:any)=>{const sample=usageSample(provider,request.usage);return sample?[sample]:[];}));
  const result=estimate(config,inputs,samples);
  if(ownPrice)result.ownPrice=ownPrice;else if(research&&!priceFor(provider,model))result.unknown='The Lab has no price for this model. Type its price under Sampling & limits to have its cost estimated.';
@@ -89,9 +90,10 @@ export async function tooLongTexts({provider,model,prompt,system,rows,knowledge=
  const room=window-middle(textTokens((system||'')+'\n'+prompt))-(maxOutput??annotationOutputLimit(provider,model)),names:string[]=[];
  for(const row of rows){
   signal?.throwIfAborted();
-  // A text file has at most as many characters as bytes: one that short cannot be too long, and is not read.
+  // A text file has at most as many characters as bytes: one that short cannot be too long, and is not read. A
+  // compressed file (DOCX) can hold many more characters than bytes, so it is always read.
   const copies=placeText?Math.max(1,fillPlaces(prompt,(_,whole)=>whole).spots.length):1,extra=inserts?.(row)?.join('\n').length??0;
-  if(!knowledge&&row.file&&(/\.pdf$/i.test(row.file.name)?!pdfs:(row.file.size*copies+extra)*multiplier/3.2<room))continue;
+  if(!knowledge&&row.file&&(/\.pdf$/i.test(row.file.name)?!pdfs:!/\.docx$/i.test(row.file.name)&&(row.file.size*copies+extra)*multiplier/3.2<room))continue;
   const found=knowledge?{tokens:textTokens(knowledgeItemText(row.fields))}:await fileInput(row.file).catch(()=>undefined),tokens=found?asSent(found,row,{prompt,inserts,placeText}).tokens:undefined;
   if(tokens&&middle(tokens)>room)names.push(String(row.name));
  }

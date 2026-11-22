@@ -7,7 +7,7 @@ import {fieldSpec,isExplanationField,slugKey,wireKeys,RATIONALE_KEY,PLAIN_FIELD,
 import {fieldsOf,valueOf} from './view';
 import {docIdOf,docIds,explanationOf,runLines,subjectField,subjectHeadings,uniqueNames,type Dataset,type RunLine} from './export';
 import {costOf,latencyOf,requestLines,rowForRun,shortHash,tokensOf,type ExportStudy,type RequestLine} from './export-data';
-import {promptKey,setupOf,type Row} from './runs';
+import {promptKey,runState,setupOf,type Row} from './runs';
 import {removedOn} from './removed';
 import {consistencyOf} from './repeats';
 import {budgetedClaude,defaultOutputLimit} from '../request-settings';
@@ -41,15 +41,17 @@ function textExtras(dataset:Dataset){
 // words (Word count → word_count), never `rationale` (rationale_field), and _2, _3, … for a key another field
 // has. The single score is `score`; a plain-text reply is `response`, and each value of a reply that is JSON
 // keeps its own name. A field or value named like one of the tables' own columns gets answer_ before it.
+// Names are compared without case ("Status" is taken by status), so no two columns differ only in case.
 export function fieldKeys(fields:string[],answerFields:Set<string>):string[]{
- const keys:string[]=[];
+ const keys:string[]=[],taken=new Set<string>(),own=(name:string)=>OWN_COLUMNS.includes(name.toLowerCase());
+ const unique=(name:string)=>{let out=name;for(let n=2;taken.has(out.toLowerCase());n++)out=name+'_'+n;taken.add(out.toLowerCase());return out;};
  return fields.map(field=>{
-  if(!field)return 'score';
-  if(field===PLAIN_FIELD&&!answerFields.has(field))return field;
-  if(!answerFields.has(field))return OWN_COLUMNS.includes(field)?'answer_'+field:field;
+  if(!field)return unique('score');
+  if(field===PLAIN_FIELD&&!answerFields.has(field))return unique(field);
+  if(!answerFields.has(field))return unique(own(field)?'answer_'+field:field);
   let key=slugKey(field);if(key===RATIONALE_KEY)key+='_field';
   const base=key;for(let n=2;keys.includes(key);n++)key=base+'_'+n;
-  keys.push(key);return OWN_COLUMNS.includes(key)?'answer_'+key:key;
+  keys.push(key);return unique(own(key)?'answer_'+key:key);
  });
 }
 // The answer fields of a set of results with their columns, each <field>_explanation (or _reasoning) right after
@@ -69,7 +71,7 @@ const asksRationale=(result:Row)=>!result.answerSettings?.plain&&result.answerSe
 // Why a request failed: error (the request failed, or the reply was cut off, refused, or empty) or parse_error
 // (a complete reply that could not be read as the answers asked for).
 const NORMAL_STOP=/^(end_turn|stop_sequence|stop|completed|tool_use)$/i;
-const READING=/^(The response has an invalid answer format|The answer for “|Invalid answer for “|The reply contains JSON that could not be read|The response is missing its explanation|Unexpected response format|(Claude|Gemini|OpenRouter) returned an unexpected annotation format)/;
+const READING=/^(The response has an invalid answer format|The answer for “|Invalid answer for “|The reply contains JSON that could not be read|The response is missing its explanation|Unexpected response format|(Claude|Gemini|OpenRouter) returned an unexpected annotation format|No valid annotation returned|(The provider|Claude|Gemini|OpenRouter) did not return a valid annotation|The model returned an empty reply)/;
 export function failureOf(result:Row):{error:string;parseError:string}{
  if(result.status==='done')return {error:'',parseError:''};
  const message=String(result.error??''),stop=String(result.stopReason??'');
@@ -185,12 +187,12 @@ export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:M
 // run has a value in is left out.
 export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
  const {dataset}=study,knowledge=dataset.kind==='knowledge',lines=requestLines(dataset);
- const header=['run','label','started_at','finished_at','status','mode','batch_id','scope','n_texts','replicates','requests_ok','requests_failed','requests_retried','requests_replaced_by_retries','provider','model_requested','models_reported','effort','thinking','temperature','max_output_tokens','caching','prompt_version','prompt_hash','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','error','notes',
+ const header=['run','label','started_at','finished_at','status','mode','batch_id','scope','n_texts','replicates','requests_ok','requests_failed','requests_replaced_by_retries','provider','model_requested','models_reported','effort','thinking','temperature','max_output_tokens','caching','prompt_version','prompt_hash','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','error','notes',
   ...(knowledge?['web_search']:[])];
  return withoutBlankColumns([header,...runLines(dataset).map(run=>{
   const facts=runFacts(dataset,run,lines),known=facts.tokens.knownFor>0,sum=(n:number)=>known?n:'';
   const notes=run.mixed?'Settings vary within this run; see the table of requests.':run.recorded?'':'Settings read from the run’s results (the run has no record of its own).';
-  return [run.number,run.label??'',run.startedAt,facts.finished,run.active?(facts.processing==='instant'?'running':'submitted'):'completed',modeOf(facts.processing),facts.batchIds.join('; '),run.scope??'',facts.texts,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,facts.requests.replaced,
+  return [run.number,run.label??'',run.startedAt,facts.finished,runState(dataset.rows,run),modeOf(facts.processing),facts.batchIds.join('; '),run.scope??'',facts.texts,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,
    run.provider,run.model,facts.models.join('; '),run.effort||'default',thinkingOf(run),run.temperature??'default',run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt),run.caching,run.promptVersion,hashOf(hashes,run.prompt,run.system),
    sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),'',notes,
    ...(knowledge?[run.webSearch?'yes':'no']:[])];
@@ -212,7 +214,7 @@ function corpusHeader(dataset:Dataset,withFiles:boolean,kept:number[]=dataset.co
  return {extra,removed,header:uniqueNames(['doc_id','text','n_characters',...(source?['source']:[]),...(removed?['removed_from_study']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_').filter((_,c)=>kept.includes(c)),...extra.header,...(withFiles?['file']:[])])};
 }
 // The names the corpus table gives the study's label and metadata columns, in the columns' order.
-export const corpusColumnNames=(dataset:Dataset):string[]=>{if(!dataset.columns.length)return [];const {header,removed}=corpusHeader(dataset,false),from=4+(removed?1:0);return header.slice(from,from+dataset.columns.length);};
+export const corpusColumnNames=(dataset:Dataset,withFiles=false):string[]=>{if(!dataset.columns.length)return [];const {header,removed}=corpusHeader(dataset,withFiles),from=4+(removed?1:0);return header.slice(from,from+dataset.columns.length);};
 // options.columns: the places of the label and metadata columns to include (all by default); options.source: false
 // leaves out `source` (the supplementary repository, where it only repeats the doc_id with the file's extension).
 export function corpusTable(dataset:Dataset,rows:Row[],texts:Map<string,string>,files:Map<string,string>,options:{columns?:number[];source?:boolean}={}):Table{

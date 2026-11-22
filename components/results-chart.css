@@ -29,6 +29,8 @@
 .chart-seg button+button{border-left:1px solid #c4cfdc}
 .chart-seg button.on{background:#003d73;color:#fff}
 .chart-seg button:not(.on):hover{background:#f1f5fa}
+/* The group clips its corners, so a focused button shows its ring inside. */
+.chart-seg button:focus-visible{outline:2px solid #003d73;outline-offset:-3px}.chart-seg button.on:focus-visible{outline-color:#fff}
 
 .chart-tabs{display:flex;gap:2px;margin-top:16px;border-bottom:1px solid #dce2ec;overflow-x:auto;scrollbar-width:none}
 .chart-tabs::-webkit-scrollbar{display:none}

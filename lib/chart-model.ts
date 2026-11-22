@@ -248,7 +248,10 @@ export function mostCommon(values:string[]){
 /** Two-sided 95% t quantile; exact enough for display. */
 export function t95(df:number){
  const table=[12.71,4.30,3.18,2.78,2.57,2.45,2.36,2.31,2.26,2.23,2.20,2.18,2.16,2.14,2.13,2.12,2.11,2.10,2.09,2.09];
- if(df<1)return NaN;if(df<=20)return table[df-1];if(df<=30)return 2.06-(df-20)*.0016;if(df<=60)return 2.04-(df-30)*.00067;return df<=120?2.0-(df-60)*.00033:1.98;
+ if(df<1)return NaN;if(df<=20)return table[df-1];
+ // Beyond the table: the Cornish–Fisher expansion around z = 1.96 (within 0.001 of the exact value from 21 on).
+ const z=1.959964,z3=z**3,z5=z**5,z7=z**7;
+ return z+(z3+z)/(4*df)+(5*z5+16*z3+3*z)/(96*df**2)+(3*z7+19*z5+17*z3-15*z)/(384*df**3);
 }
 export function meanInterval(values:number[]){
  const m=mean(values);if(values.length<2)return {mean:m,low:NaN,high:NaN};

@@ -277,11 +277,13 @@ def parse_answer(text):
         reply = text.strip()
         if not reply:
             return {}, "The reply is empty"
-        # A reply that holds JSON among other words cannot be split into columns, so it counts as failed.
+        # A reply that holds JSON among other words cannot be split into columns, so it counts as failed. (A whole
+        # reply that is valid JSON but no object, such as a list, is kept in one column.)
         if re.search(r'\{\s*"', reply):
             fenced = FENCE.match(reply)
             try:
-                readable = isinstance(read_json(fenced.group(1) if fenced else reply), dict)
+                read_json(fenced.group(1) if fenced else reply)
+                readable = True
             except ValueError:
                 readable = False
             if not readable:
@@ -398,10 +400,17 @@ def main():
     answers = ["response"] if PLAIN_TEXT else (FIELDS or ["score"])
     explained = not PLAIN_TEXT and "explanation" not in [name.lower() for name in answers]
     own = ["doc_id", "replicate", "status", "error", "model_reported", "stop_reason", "input_tokens", "output_tokens", "latency_s", "completed_at", "response_id"]
-    # As in the original results: a field named like one of these columns is written as answer_<name>.
-    column_of = {name: "answer_" + name if name in own else name for name in answers}
-    if explained:
-        column_of["explanation"] = "explanation"
+    # As in the original results: a field named like one of these columns is written as answer_<name>, and no two
+    # columns have names that differ only in case (a second one gets _2, _3, ...).
+    taken = {name.lower() for name in own}
+    column_of = {}
+    for name in answers + (["explanation"] if explained else []):
+        column = "answer_" + name if name.lower() in own else name
+        base, n = column, 2
+        while column.lower() in taken:
+            column, n = base + "_" + str(n), n + 1
+        taken.add(column.lower())
+        column_of[name] = column
     columns = [*own[:3], *column_of.values(), *own[3:]]
     now = lambda: dt.datetime.now(dt.timezone.utc).isoformat()
     # With a byte-order mark, so Excel reads letters such as æ, ø, and å correctly.
@@ -409,12 +418,17 @@ def main():
         writer = csv.DictWriter(out_file, fieldnames=columns, extrasaction="ignore")
         writer.writeheader()
         for number, row in enumerate(rows, 1):
-            doc_id, body, data = build_request(row, args, folder, number)
+            missing = None
+            try:
+                doc_id, body, data = build_request(row, args, folder, number)
+            except OSError as e:  # a PDF that cannot be read: record it and go on with the next document
+                doc_id, body, data = row.get(args.id_column) or str(number), None, ""
+                missing = "The document's file could not be read: " + str(e)
             for replicate in range(1, REPLICATES + 1):
                 record = {"doc_id": doc_id, "replicate": replicate}
                 started = time.time()
                 if body is None:
-                    record.update(status="error", error="No document to send (an empty text, or a kind of document the run did not send)")
+                    record.update(status="error", error=missing or "No document to send (an empty text, or a kind of document the run did not send)")
                 else:
                     try:
                         status, out = send(url, body, key)
