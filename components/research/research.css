@@ -18,7 +18,7 @@
 /* On one row just above that, a long study name is cut short sooner, so that it never reaches the site name. */
 @media(min-width:1241px) and (max-width:1500px){header.research-header .study-controls .study-menu-trigger{max-width:min(420px,calc(100vw - 940px))}}
 @media(max-width:600px){header .mode-switch{top:15px;right:16px;font-size:11px;gap:6px}}
-@media(max-width:374px){header .mode-switch-label{width:min-content;white-space:normal;text-align:left;line-height:1.15}}
+@media(max-width:400px){header .mode-switch-label{width:min-content;white-space:normal;text-align:left;line-height:1.15}}
 @media(max-width:344px){header .mode-switch{flex-direction:column;gap:2px;padding:0;top:11px;font-size:10px}header .mode-switch-label{width:auto}.mode-switch-more{display:none}}
 /* Standard Lab: “What changes?” sits under the switch's label and opens a short list of what research mode adds. Where
    the switch is placed at the top right, the two go there together; phones leave the link out. */

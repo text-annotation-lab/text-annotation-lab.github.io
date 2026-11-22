@@ -191,7 +191,7 @@ export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
   const facts=runFacts(dataset,run,lines),known=facts.tokens.knownFor>0,sum=(n:number)=>known?n:'';
   const notes=run.mixed?'Settings vary within this run; see the table of requests.':run.recorded?'':'Settings read from the run’s results (the run has no record of its own).';
   return [run.number,run.label??'',run.startedAt,facts.finished,run.active?(facts.processing==='instant'?'running':'submitted'):'completed',modeOf(facts.processing),facts.batchIds.join('; '),run.scope??'',facts.texts,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,facts.requests.replaced,
-   run.provider,run.model,facts.models.join('; '),run.effort||'default',thinkingOf(run),run.temperature??'default',run.maxOutput??defaultOutputLimit(run.provider,run.model),run.caching,run.promptVersion,hashOf(hashes,run.prompt,run.system),
+   run.provider,run.model,facts.models.join('; '),run.effort||'default',thinkingOf(run),run.temperature??'default',run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt),run.caching,run.promptVersion,hashOf(hashes,run.prompt,run.system),
    sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),'',notes,
    ...(knowledge?[run.webSearch?'yes':'no']:[])];
  })]);

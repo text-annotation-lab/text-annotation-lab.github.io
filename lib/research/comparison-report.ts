@@ -52,7 +52,7 @@ const num2=(x:number|null)=>{
  if(x===null)return '—';
  let d=2;
  while(d<4&&x!==0&&Math.abs(x)<0.5*10**-d)d++;
- return x.toFixed(d).replace(/^-/,'−');
+ return x.toFixed(d).replace(/^-(0\.0+)$/,'$1').replace(/^-/,'−');
 };
 // A draft sentence for a paper on how well two runs agree on one field.
 export function comparisonSentence(label:string,a:string,b:string,s:Stats,nBoth:number,unit='text'):string{
@@ -71,7 +71,8 @@ export function comparisonSentence(label:string,a:string,b:string,s:Stats,nBoth:
  const d=s.meanDifference,ci=s.ci.meanDifference;
  const shift=ci&&(ci[0]>0||ci[1]<0)
   ?` ${b} scored on average ${num2(Math.abs(d))} points ${d>0?'higher':'lower'} than ${a} (95% CI ${num2(ci[0])} to ${num2(ci[1])}).`
-  :` There was no clear systematic difference between the two (mean difference ${num2(d)}${ci?`, 95% CI ${num2(ci[0])} to ${num2(ci[1])}`:''}).`;
+  :ci?` There was no clear systematic difference between the two (mean difference ${num2(d)}, 95% CI ${num2(ci[0])} to ${num2(ci[1])}).`
+  :` The mean difference was ${num2(d)}; with fewer than 10 ${many}, no interval was computed to test for a systematic difference.`;
  return first+serious+shift;
 }
 // The same figures on the texts where at least one run gave a score other than 0.
@@ -193,7 +194,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
   const state=runState(dataset.rows,run),unfinished=state==='running'?'not finished: it was still running':state==='submitted'?'not finished: its batch was still being processed':'';
   return {
    run:`#${run.number}${run.label?` (${run.label})`:''}`,provider:run.provider||'',model:run.model||'',model_reported_by_api:facts.models.join(', '),
-   effort:run.effort||'model default',max_output_tokens:String(run.maxOutput??defaultOutputLimit(run.provider,run.model)),
+   effort:run.effort||'model default',max_output_tokens:String(run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt)),
    prompt_version:`v${run.promptVersion} (${hashOf(hashes,run.prompt,run.system)})`,
    mode:facts.processing==='batch'?'batch API':facts.processing==='instant and batch'?'immediate requests and batch API':'immediate requests',
    started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(facts.texts-facts.active),

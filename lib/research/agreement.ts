@@ -213,7 +213,7 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
     // of both, and every whole number between them when the range of both is at most 100 wide.
     const points=each.map(numbers=>{const least=Math.min(...numbers),most=Math.max(...numbers);return numbers.length&&most-least<=100?Array.from({length:most-least+1},(_,i)=>least+i):[];});
     if(range&&whole&&points.every(list=>list.length))p.allowed=(range[1]-range[0]<=100?Array.from({length:range[1]-range[0]+1},(_,i)=>range[0]+i):[...new Set(points.flat())].sort((x,y)=>x-y)).map(String);
-    p.basis=range?`Scale: read from ${twoRuns?'the two runs’':'the run’s'} answers, ${range[0]} to ${range[1]}; no allowed values are declared for this field.`:'';
+    p.basis=range?`Scale: read from ${twoRuns?'the two runs’':'the run’s'} answers, ${range[0]} to ${range[1]}; no allowed values are declared for this field.${whole&&range[1]-range[0]<=100?'':' The scores are not a scale of whole numbers, so Gwet’s AC1 and AC2 are not given.'}`:'';
    }
   }
  }else{

@@ -118,11 +118,15 @@ function harness(initial,fetcher=async()=>Response.json({score:'INSUFFICIENT_KNO
   assert.equal(refused.requests.length,3);assert.deepEqual(refused.latest().items.map(item=>item.status),['error','error','error','pending','pending']);
   said(refused,'Stopped: the first 3 requests all failed the same way, which points to the settings or the account rather than the subjects. Requests under way will finish, and completed results are kept. See the error of a failed subject before running again.');
   assert(refused.latest().items.every(item=>!('shared' in item)&&!JSON.stringify(item).includes('"shared"')),'The mark is never kept with a result');
-  // One result among the first requests: the failures are not about every request, and the run goes through.
+  // One result among the first requests, then the key stops working: three failures in a row stop the run.
   nth=0;const mixed=harness(five(),async()=>++nth===1?fine():refusal());mixed.props.research=true;await mixed.flush();
   await mixed.button('Run all').props.onClick();await mixed.flush();
-  assert.equal(mixed.requests.length,5);assert.deepEqual(mixed.latest().items.map(item=>item.status),['done','error','error','error','error']);
-  said(mixed,'4 of 5 requests failed, and the run carried on. “Queue failed items for retry” makes them ready to run again.');
+  assert.equal(mixed.requests.length,4);assert.deepEqual(mixed.latest().items.map(item=>item.status),['done','error','error','error','pending']);
+  said(mixed,'Stopped: the last 3 requests failed for the account (the credit or quota may have run out, or the key no longer works), so the rest would fail too. Requests under way will finish, and completed results are kept. See the error of a failed subject, and send the rest again once the account works.');
+  // A failure about one subject between them starts the count again, and the run goes through.
+  nth=0;const between=harness(five(),async()=>{nth++;return nth===1?fine():nth===3?Response.json({error:'Too long.'},{status:400}):refusal();});between.props.research=true;await between.flush();
+  await between.button('Run all').props.onClick();await between.flush();
+  assert.equal(between.requests.length,5);assert.deepEqual(between.latest().items.map(item=>item.status),['done','error','error','error','error']);
   // "Annotate next" sends one request and says that it failed.
   const next=harness(five(),async()=>refusal());next.props.research=true;await next.flush();
   await next.button('Annotate next').props.onClick();await next.flush();assert.equal(next.requests.length,1);said(next,'The request failed. “Queue failed items for retry” makes it ready to run again.');

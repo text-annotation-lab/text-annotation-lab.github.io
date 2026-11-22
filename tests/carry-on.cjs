@@ -69,9 +69,13 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.deepEqual(run(['a','account'],['a','account'],['b','account']).at(-1),{answered:3,connection:false});
  // The annotations of one text never stop a run; the next text does.
  assert.deepEqual(run(['a','account'],['a','account'],['a','account'],['a','account'],['b','account']),[undefined,undefined,undefined,undefined,{answered:5,connection:false}]);
- // A result, or a failure that may be about its text, among the requests so far: the run goes on, whatever follows.
- assert(run(['a'],...Array.from({length:20},(_,i)=>['t'+i,'account'])).every(stop=>stop===undefined));
- assert(run(['a','account'],['b'],...Array.from({length:20},(_,i)=>['t'+i,'account'])).every(stop=>stop===undefined));
+ // After a result: failures that may be about their text never stop the run; three for the account in a row, for
+ // two texts or more, do (the credit ran out mid-run), and any other reply starts the count again.
+ assert.deepEqual(run(['a'],...Array.from({length:20},(_,i)=>['t'+i,'account'])).findIndex(Boolean),3);
+ assert.deepEqual(run(['a'],['t1','account'],['t2','account'],['t3','account'])[3],{answered:4,connection:false,account:3});
+ assert(run(['a'],['t1','account'],['t2','account'],['t3'],['t4','account'],['t5','account'],['t6','same:1']).every(stop=>stop===undefined));
+ assert(run(['a'],['t1','account'],['t1','account'],['t1','account']).every(stop=>stop===undefined));
+ assert(run(['a'],...Array.from({length:20},(_,i)=>['t'+i])).every(stop=>stop===undefined));
  // HTTP 400s count only with one and the same message; they count together with the other marks.
  assert.deepEqual(run(['a','same:1'],['b','same:1'],['c','same:1']).at(-1),{answered:3,connection:false});
  assert(run(['a','same:1'],['b','same:2'],['c','same:1'],['d','same:2']).every(stop=>stop===undefined));

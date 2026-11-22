@@ -649,7 +649,11 @@ export function agreement(
   // still counts in the weights and in Gwet's q, and a value between whole numbers (a 1.5 median, or a 2.5 answer
   // that made the field interval) is split between them, as on a codebook scale. Without a range, the range of the
   // values here (whole numbers only).
+  // Scores that are themselves decimals (the model answered 0.73, not a median of whole numbers): a continuous
+  // quantity, with no points of a scale, so no Gwet's AC1 or AC2 (they need categories).
+  const continuous = scaleSeen && level === 'interval' && pairs.some(([x, y]) => (isNum(x) && !Number.isInteger(Number(x))) || (isNum(y) && !Number.isInteger(Number(y))));
   const seenScale = (): string[] => {
+    if (continuous) return [];
     const vals = block ? [...block, ...allowedNums] : [...allowedNums, ...pairs.flat().map(Number)];
     const whole = !!block || level === 'ordinal' || allowedNums.length > 0 || vals.every(Number.isInteger);
     if (!vals.length || !whole) return allowedNums.map(String);
@@ -671,7 +675,8 @@ export function agreement(
   const midpoint = numeric ? scaleMidpoint(scaleSeen ? [] : (range ?? scale.map(Number)), [...xs, ...ys]) : null;
   // Numbers with no scale (a Number field): Gwet's AC1/AC2 need a fixed set of points (their q), which free numbers
   // don't have (each distinct value would be a category, and one far value would change AC2): not given.
-  const unbounded = numeric && !scaleSeen && !range && !allowedNums.length;
+  // Plain-text scores with no scale of at most 100 whole numbers (years, counts, decimals): the same.
+  const unbounded = numeric && (scaleSeen ? points.length < 2 : !range && !allowedNums.length);
   // Bootstrap intervals for the coefficients and differences; shares get Wilson intervals (see `wilsonCI`).
   const stats = {
     cohenKappa: (p: [string, string][], times?: PairCounts) => cohenKappa(p, 'none', [], times),
@@ -746,8 +751,13 @@ export type Aggregation = 'majority' | 'median' | 'mean';
 export function aggregate(values: string[], method: Aggregation): string {
   const v = values.filter((x) => x !== '');
   if (!v.length) return '';
-  if (method !== 'majority' && v.every(isNum)) {
-    const xs = v.map(Number).sort((a, b) => a - b);
+  // Numbers (a leading − or – read as a minus): an abstention among them is set aside, so "2, 4, INSUFFICIENT_KNOWLEDGE"
+  // is 3, not a tie of three; most of them abstaining is an abstention.
+  const abstained = v.filter((x) => x.trim().toUpperCase() === 'INSUFFICIENT_KNOWLEDGE');
+  const given = v.filter((x) => !abstained.includes(x));
+  if (method !== 'majority' && given.length && given.every((x) => !Number.isNaN(toNumber(x)))) {
+    if (abstained.length * 2 > v.length) return abstained[0];
+    const xs = given.map(toNumber).sort((a, b) => a - b);
     const mid = Math.floor(xs.length / 2);
     const value = method === 'mean' ? xs.reduce((s, x) => s + x, 0) / xs.length : xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
     return String(Math.round(value * 1000) / 1000);
