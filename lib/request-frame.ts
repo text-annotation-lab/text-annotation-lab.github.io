@@ -3,7 +3,7 @@
 // what a run sent: the same body with marks where the document goes.
 import {annotationSchema,answerInstructions,type AnswerSettings} from './answer-fields';
 import type {Provider} from './providers';
-import {anthropicMark,anthropicSystem,cachedParts,openaiPrompt,openRouterSystem,OPENAI_CACHE_MODE,OPENAI_MARK,sentRequestSettings,outputLimit,budgetedClaude,marksOpenAICache,type RequestSettings} from './request-settings';
+import {anthropicMark,anthropicSystem,cachedParts,openaiPrompt,openRouterSystem,OPENAI_CACHE_MODE,OPENAI_MARK,sentRequestSettings,outputLimit,budgetedClaude,marksOpenAICache,openaiFrom62,type RequestSettings} from './request-settings';
 import {knowledgeAddition} from './model-knowledge';
 import {fixedLength,markInserts,fillPlaces,INSERT_MARK} from './prompt-inserts';
 
@@ -77,13 +77,15 @@ export function providerBody(o:BodyOptions,doc:RequestDocument):Record<string,un
   // OpenAI caches up to one mark: at the end of the part of the prompt that every text shares, with the system
   // prompt sent as instructions before it; or, where the prompt begins with a placeholder, at the end of the system
   // prompt, which then goes as a developer message.
-  const prompted=!earlier?(!system?{input:[{role:'user',content:sent}]}:markedIn(sent)||!request?.cache?{instructions:system,input:[{role:'user',content:sent}]}:openaiPrompt(system,[{role:'user',content:sent}],request))
+  let prompted:any=!earlier?(!system?{input:[{role:'user',content:sent}]}:markedIn(sent)||!request?.cache?{instructions:system,input:[{role:'user',content:sent}]}:openaiPrompt(system,[{role:'user',content:sent}],request))
    :!system?openaiPrompt(o.prompt,[{role:'user',content}],request,fixed):head?{instructions:system,input:[{role:'user',content:[...head,...content]}]}:openaiPrompt(system,[{role:'user',content:[input(o.prompt),...content]}],request),thought={...(effort==='default'?{}:{effort}),...(request?.summary?{summary:'auto'}:{})},reasoning=Object.keys(thought).length?{reasoning:thought}:{},store=request?.store!==false,format=plain?{}:{text:{format:{type:'json_schema',name:'annotation',strict:true,schema:schema(false)}}};
   // Explicit mode without breakpoints disables cache reads and writes on all
   // supported OpenAI models (GPT-5.6 and later). Each document is new input.
   // With prompt caching on (research mode), the prompt carries the breakpoint. Earlier models cache by
   // themselves and take no cache mode.
   const cacheMode=marksOpenAICache(model)?OPENAI_CACHE_MODE:{};
+  // GPT-6.2 and later would read `instructions` after the input: the system prompt opens the input instead.
+  if(openaiFrom62(model)&&typeof prompted.instructions==='string')prompted={input:[{role:'developer',content:prompted.instructions},...prompted.input]};
   return o.batch?{model,...prompted,...reasoning,...cacheMode,store,max_output_tokens:limit,...format,...temperature}:{model,...cacheMode,...prompted,...reasoning,store,max_output_tokens:limit,...format,...temperature};
  }
  if(provider==='anthropic'){

@@ -1,11 +1,11 @@
-// Model/API contract audit, checked against first-party docs on 2026-10-29; model lists updated 2026-11-15.
+// Model/API contract audit, checked against first-party docs on 2026-10-29; model lists updated 2026-11-22.
 // All fetches are intercepted; these are not live account-access tests.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),ts=require('typescript');
 const full=['none','low','medium','high','xhigh','max'],thinking=['low','medium','high','xhigh','max'],levels=['minimal','low','medium','high'];
 const contracts={
- openai:{'gpt-6-luna':full,'gpt-5.6-luna':full,'gpt-6.1-terra':full,'gpt-6.1-sol':thinking,'gpt-6-sol':full,'gpt-5.6-terra':full,'gpt-5.6-sol':full,'gpt-6-astra':thinking},
+ openai:{'gpt-6-luna':full,'gpt-5.6-luna':full,'gpt-6.1-terra':full,'gpt-6.2-sol':thinking,'gpt-6.1-sol':thinking,'gpt-6-sol':full,'gpt-5.6-terra':full,'gpt-5.6-sol':full,'gpt-6.2-astra':thinking,'gpt-6-astra':thinking},
  anthropic:{'claude-haiku-5-5':thinking,'claude-haiku-4-5-20251001':['off','1024','4096','8192'],'claude-sonnet-5-5':thinking,'claude-opus-5-5':thinking,'claude-fable-5-2':thinking},
- gemini:{'gemini-2.5-flash-lite':['off','dynamic','1024','4096','8192'],'gemini-3.1-flash-lite':levels,'gemini-3.5-flash-lite':levels,'gemini-3.8-flash':['low','medium','high'],'gemini-3.6-flash':levels,'gemini-4-hydrogen':['low','medium','high','xhigh'],'gemini-4-argon':['low','medium','high'],'gemini-4-carbon':['low','medium','high'],'gemini-3.1-pro-preview':['low','medium','high']}
+ gemini:{'gemini-2.5-flash-lite':['off','dynamic','1024','4096','8192'],'gemini-3.1-flash-lite':levels,'gemini-3.5-flash-lite':levels,'gemini-3.8-flash':['low','medium','high'],'gemini-3.6-flash':levels,'gemini-4-hydrogen':['low','medium','high','xhigh'],'gemini-4-neon':['low','medium','high','xhigh'],'gemini-4-argon':['low','medium','high'],'gemini-4-carbon':['low','medium','high'],'gemini-3.1-pro-preview':['low','medium','high']}
 };
 let calls=[],mock;const cache=new Map();
 function load(file){file=path.resolve(file);if(cache.has(file))return cache.get(file);const exports={};cache.set(file,exports);const code=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;new Function('exports','require','fetch',code)(exports,id=>id.startsWith('@/')?load(id.slice(2)+'.ts'):id.startsWith('.')?load(path.join(path.dirname(file),id)+'.ts'):require(id),async(url,options)=>{const body=typeof options.body==='string'?JSON.parse(options.body):options.body;calls.push({url,body,headers:options.headers});return mock(url,body);});return exports;}
@@ -39,7 +39,7 @@ function headers(provider,h){assert.equal(Boolean(h.Authorization),provider==='o
    }
    // Model-knowledge research must use the same selected model as scoring.
    mock=async(url,b)=>Response.json(good(provider,Boolean(b.tools)));const n=calls.length,r=await annotate(req(provider,model,efforts.at(-1),undefined,true,true));assert.equal(r.status,200,model+' research');const result=await r.json();assert.equal(calls.length,n+2);for(const call of calls.slice(n)){assert.equal(call.url,endpoint(provider,model));headers(provider,call.headers);if(provider!=='gemini')assert.equal(call.body.model,model);}
-   assert.equal(result.research.model,model);if(model.startsWith('gemini-4-')){const level=model==='gemini-4-hydrogen'?'HIGH':'MEDIUM';assert.equal(calls[n].body.generationConfig.thinkingConfig.thinkingLevel,level);assert.equal(result.research.effort,level.toLowerCase());assert.equal(calls[n+1].body.generationConfig.thinkingConfig.thinkingLevel,efforts.at(-1).toUpperCase());}
+   assert.equal(result.research.model,model);if(model.startsWith('gemini-4-')){const level=model==='gemini-4-hydrogen'||model==='gemini-4-neon'?'HIGH':'MEDIUM';assert.equal(calls[n].body.generationConfig.thinkingConfig.thinkingLevel,level);assert.equal(result.research.effort,level.toLowerCase());assert.equal(calls[n+1].body.generationConfig.thinkingConfig.thinkingLevel,efforts.at(-1).toUpperCase());}
    // Wrong-provider identifiers and invalid efforts are rejected before fetch.
    const n2=calls.length;assert.equal((await annotate(req(provider,model,'invalid',new File(['x'],'a.txt')))).status,400);const other=provider==='openai'?'gemini-3.8-flash':'gpt-6-luna';assert.equal((await annotate(req(provider,other,'medium',new File(['x'],'a.txt')))).status,400);assert.equal(calls.length,n2);
   }

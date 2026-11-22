@@ -38,6 +38,10 @@ export function readRequestSettings(raw:FormDataEntryValue|null):RequestSettings
 // Claude models decide how much to reason by themselves, guided by an effort.
 export const budgetedClaude=(id:string)=>/^claude-(?:\d|instant)/.test(id)||/^claude-(?:opus|sonnet|haiku)-4(?:-[0-5])?(?:-\d{8}|-latest)?$/.test(id);
 // OpenAI models that cache up to a mark (GPT-5.6 and later). Earlier ones cache repeated prompts by themselves.
+// OpenAI models from GPT-6.2 on: they take no temperature, and the Responses API places top-level `instructions`
+// after the input (OpenAI's GPT-6.2 migration guide, checked November 22, 2026), so a system prompt goes first as
+// a developer message instead.
+export const openaiFrom62=(id:string)=>/^gpt-(?:6\.(?:[2-9]|\d{2})|[7-9]|\d{2})(?:\b|[-.])/.test(id);
 export const marksOpenAICache=(id:string)=>/^gpt-(?:5\.(?:[6-9]|\d{2})|[6-9]|\d{2})(?:\b|[-.])/.test(id);
 // OpenAI models without a reasoning setting.
 export const plainOpenAI=(id:string)=>/^(?:gpt-3|gpt-4|chatgpt)/i.test(id);
@@ -64,10 +68,11 @@ export const defaultOutputLimit=(provider:string,model:string)=>provider==='gemi
 export const outputFloor=(provider:string,model:string,effort?:string)=>provider==='anthropic'&&budgetedClaude(model)&&/^\d+$/.test(effort||'')?Number(effort)+1:MIN_OUTPUT_TOKENS;
 // Whether a model takes a temperature. Claude models from Opus 4.7 on reject one, and a Claude model that
 // reasons accepts none, so of the Lab's Claude models only Haiku 4.5 with reasoning off gets it, like the
-// earlier Claude models (never through OpenRouter, which offers no "off"). Other providers are sent the
-// temperature, and reject it for a model that takes none. Anthropic's scale ends at 1.
+// earlier Claude models (never through OpenRouter, which offers no "off"). OpenAI models from GPT-6.2 on take
+// none either. Other models are sent the temperature, and reject it where they take none. Anthropic's scale ends at 1.
 export function takesTemperature(provider:string,model:string,effort?:string){
  const routed=provider==='openrouter',vendor=routed?model.split('/')[0]:provider;
+ if(vendor==='openai'&&openaiFrom62(routed?model.slice(model.indexOf('/')+1):model))return false;
  return vendor!=='anthropic'||!routed&&budgetedClaude(model)&&effort==='off';
 }
 export const temperatureCeiling=(provider:string)=>provider==='anthropic'?1:MAX_TEMPERATURE;

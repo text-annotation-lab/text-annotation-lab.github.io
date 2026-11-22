@@ -1,6 +1,6 @@
 // Text Annotation Lab estimator. Jens’s Annotation Lab retains its earlier version.
 // USD per million tokens, first-party Standard APIs. No subscription/free credits.
-export const PRICE_DATE='2026-11-15';
+export const PRICE_DATE='2026-11-22';
 export const OPENROUTER_PRICE_DATE='2026-11-18';
 export const SOURCES={openrouter:'https://openrouter.ai/models',openai:'https://developers.openai.com/api/docs/pricing',anthropic:'https://platform.claude.com/docs/en/about-claude/pricing',gemini:'https://ai.google.dev/gemini-api/docs/pricing'};
 export type Provider=keyof typeof SOURCES;
@@ -28,8 +28,8 @@ export const PRICES:Record<string,Price>={
  'google/gemini-3.8-flash':or(.825,4.125),
  'anthropic/claude-sonnet-5.5':{...or(2,10),tokenMultiplier:1.3},
  'anthropic/claude-fable-5.2':{...or(8,40),tokenMultiplier:1.3},
- 'gpt-6-luna':oa(.1,.5,.1),'gpt-6.1-terra':oa(1,5,.05),'gpt-6.1-sol':oa(2,10,.05),'gpt-6-sol':oa(2,10),'gpt-6-astra':oa(10,50,.1),
- 'gpt-5.6-luna':oa(.2,1.2),'gpt-5.6-terra':oa(2,12),'gpt-5.6-sol':{...oa(4,20),note:'GPT-5.6 Sol promotional rates are confirmed through at least November 21, 2026.'},
+ 'gpt-6-luna':oa(.1,.5,.1),'gpt-6.1-terra':oa(1,5,.05),'gpt-6.2-sol':oa(2,10,.05),'gpt-6.1-sol':oa(2,10,.05),'gpt-6-sol':oa(2,10),'gpt-6.2-astra':oa(8,40,.05),'gpt-6-astra':oa(10,50,.1),
+ 'gpt-5.6-luna':oa(.2,1.2),'gpt-5.6-terra':oa(2,12),'gpt-5.6-sol':{...oa(4,20),note:'GPT-5.6 Sol promotional rates are available until November 30, 2026.'},
  'claude-haiku-5-5':{...cl(.1,.5),threshold:100000,longInput:.5,longOutput:2.5},
  'claude-haiku-4-5-20251001':{...cl(1,5),tokenMultiplier:1},
  'claude-sonnet-5-5':cl(2,10,.05),'claude-opus-5-5':cl(4,20,.05),'claude-fable-5-2':cl(8,40,.025),'claude-fable-5-1':cl(10,50,.025),
@@ -41,6 +41,7 @@ export const PRICES:Record<string,Price>={
  'gemini-3.5-flash':{...flash,note:'Google routes this legacy identifier to Gemini 3.6 Flash; its tariff is used.'},
  'gemini-2.5-pro':{...gg(1.25,10),threshold:200000,longInput:2.5,longOutput:15},
  'gemini-4-hydrogen':gg(1.5,7.5),
+ 'gemini-4-neon':gg(3,15,.05),
  'gemini-4-argon':{...gg(2,10,.05),changes:[{from:'2026-12-01',input:4,output:20}]},
  'gemini-4-carbon':{...gg(2,10),changes:[{from:'2026-12-01',input:4,output:20}]},
  'gemini-3.1-pro-preview':{...gg(2,12,.1),cacheReadBatch:.1,threshold:200000,longInput:4,longOutput:18},
