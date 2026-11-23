@@ -24,7 +24,8 @@ function hexToRgb(hex:string){const v=parseInt(hex.slice(1),16);return [v>>16,(v
 function mix(a:string,b:string,t:number){const x=hexToRgb(a),y=hexToRgb(b);return '#'+x.map((v,i)=>Math.round(v+(y[i]-v)*t).toString(16).padStart(2,'0')).join('');}
 function ramp(stops:string[],t:number){if(stops.length===1)return stops[0];const p=Math.max(0,Math.min(1,t))*(stops.length-1),i=Math.min(stops.length-2,Math.floor(p));return mix(stops[i],stops[i+1],p-i);}
 export function luminance(hex:string){const c=hexToRgb(hex).map(v=>{v/=255;return v<=.03928?v/12.92:((v+.055)/1.055)**2.4;});return .2126*c[0]+.7152*c[1]+.0722*c[2];}
-export const inkOn=(fill:string)=>luminance(fill)<.3?'#ffffff':INK;
+// White or ink on a coloured bar: whichever contrasts more with the fill.
+export const inkOn=(fill:string)=>(luminance(fill)+.05)**2<=1.05*(luminance(INK)+.05)?'#ffffff':INK;
 export const signed=(v:number)=>v>0?'+'+formatNumber(v):formatNumber(v);
 export function scaleLabel(scale:Scale,value:number){return scale.type==='diverging'&&scale.min<0?signed(value):formatNumber(value);}
 
@@ -77,7 +78,7 @@ export function distributionScale(units:Unit[],scale:Scale,o:ViewOptions):Figure
   if(c)s+=`<path d="M${n(x)},${b} V${n(b-h+4)} Q${n(x)},${n(b-h)} ${n(x+4)},${n(b-h)} H${n(x+w-4)} Q${n(x+w)},${n(b-h)} ${n(x+w)},${n(b-h+4)} V${b}Z" fill="${scaleColor(scale,point)}"/>`;
   else s+=line(x+8,b-1,x+w-8,b-1,'#cfd8e3',2);
   if(c){s+=text(x+w/2,b-h-20,String(c),{anchor:'middle',fill:INK,size:13,weight:700})+text(x+w/2,b-h-7,pct(c,units.length),{anchor:'middle',size:11});}
-  else s+=text(x+w/2,b-9,'0',{anchor:'middle',fill:'#9aa6b6'});
+  else s+=text(x+w/2,b-9,'0',{anchor:'middle',fill:MUTED});
   s+=text(x+w/2,b+20,label,{anchor:'middle',fill:INK,size:13,weight:700})+'</g>';
  });
  return {svg:svgDoc(W,H,s,'Distribution of scores',o.interactive),width:W,height:H,picks,notes};
@@ -202,7 +203,7 @@ export function timeShares(units:Unit[],scale:Scale|undefined,categories:string[
     s+=`<text x="${n(x+bw/2)}" y="${n(top+h/2+4)}" font-size="11.5" text-anchor="middle" fill="${ink}">${short?`<tspan font-weight="700">${esc(short)}</tspan><tspan dx="5" opacity=".85">${pct(c,total)}</tspan>`:esc(pct(c,total))}</text>`;}
    s+='</g>';acc+=c;
   }
-  if(!total)s+=text(x+bw/2,b-8,'none',{anchor:'middle',fill:'#9aa6b6'});
+  if(!total)s+=text(x+bw/2,b-8,'none',{anchor:'middle',fill:MUTED});
   const end=Math.min(period.end,Math.max(...dated.map(u=>u.year!)));
   s+=text(x+bw/2,b+17,slot<70?(period.end-period.start===9&&period.start%10===0?`${period.start}s`:`${period.start}–${String(end).slice(-2)}`):`${period.start}–${end}`,{anchor:'middle',fill:INK,size:12})+text(x+bw/2,b+32,`${total} ${total===1?o.noun.replace(/s$/,''):o.noun}`,{anchor:'middle',size:11});
  });
