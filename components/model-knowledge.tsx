@@ -95,7 +95,8 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  const subjectIds=()=>{const study={kind:'knowledge',rows:knowledgeRows(withRemoved(latest.current,removed) as Row[])};return (item:Item)=>docIdOf(study,{id:item.subjectId||item.id,name:item.name});};
  const insertsOf=(item:Item,idOf=subjectIds()):{inserts?:string[]}=>insertNames.length?{inserts:insertValues(insertNames,item,columns,idOf(item))}:{};
  // What the cost estimate, the provider's count, and the cost question need to measure a subject's request as sent.
- const perText={inserts:insertNames.length?(item:Item)=>insertsOf(item).inserts:undefined,placeText:Boolean(placed)};
+ // The subjects' IDs are worked out once per estimate or check, not once per subject.
+ const perText={inserts:insertNames.length?(()=>{let idOf:((item:Item)=>string)|undefined;return (item:Item)=>insertsOf(item,idOf??=subjectIds()).inserts;})():undefined,placeText:Boolean(placed)};
  // Research mode: the requests the runs sent, each kept once (lib/research/requests.ts).
  const [requests,setRequests]=useState<RecordedRequest[]|undefined>(),requestsNow=useRef<RecordedRequest[]|undefined>(undefined);requestsNow.current=requests;
  const [processing,setProcessing]=useState('instant'),[batchJob,setBatchJob]=useState<BatchJob|null>(null),[batchBusy,setBatchBusy]=useState(false),[recoverId,setRecoverId]=useState('');
@@ -237,7 +238,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
     taken.add(item.id);claimed++;
     // n: the number of the annotation; 0 for a subject's single annotation, which is written on the subject itself.
     const ns=times===1?[0]:item.status==='pending'?Array.from({length:times},(_,i)=>i+1):missingRepeats(item);
-    update(item.id,{status:'running',runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,effort,prompt,layout:LAYOUT,webSearch,processing:'instant',concurrency:all?parallel:1,batchId:undefined,instructions:knowledgeAddition(webSearch,sentSettings).trim(),research:undefined,webUsed:undefined,time:undefined,score:undefined,explanation:undefined,...noted,...insertsOf(item),...claimRepeats(item,times)});
+    update(item.id,{status:'running',runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,effort,prompt,layout:LAYOUT,webSearch,processing:'instant',concurrency:all?parallel:1,batchId:undefined,instructions:knowledgeAddition(webSearch,sentSettings).trim(),research:undefined,webUsed:undefined,time:undefined,score:undefined,explanation:undefined,...noted,...insertsOf(item,idOf),...claimRepeats(item,times)});
     if(times>1){open.set(item.id,{before:item,left:ns.length,came:0});waitingTasks.push(...ns.slice(1).map(n=>({item,n})));}
     if(claimed===1)setSelected(item.id);
     return {item,n:ns[0]};
@@ -245,7 +246,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
    perform:async({item,n},place)=>{
    // A subject's single annotation is written on the subject. With several, each one is gathered in `got` and
    // kept as an annotation of its own.
-   const got:Record<string,any>=n?{runId,runStartedAt,runSize,startedAt:new Date().toISOString(),processing:'instant',concurrency:all?parallel:1,...noted,...insertsOf(item)}:{};
+   const got:Record<string,any>=n?{runId,runStartedAt,runSize,startedAt:new Date().toISOString(),processing:'instant',concurrency:all?parallel:1,...noted,...insertsOf(item,idOf)}:{};
    const write=n?(changes:Partial<Item>)=>{Object.assign(got,changes);}:(changes:Partial<Item>)=>update(item.id,changes);
    // The mark of a failure every request of the run would meet. It is read off the reply and never kept.
    // back: a reply came back (a request that did not get as far as a reply may have had no connection).
@@ -295,7 +296,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   lock.current=true;setBatchBusy(true);setNotice('');
   const job:BatchJob={responseFormat:annotationFormatRecord(sentFields,prompt,true,sentSettings),answerFields:sentFields,...(sentSettings?{answerSettings:sentSettings}:{}),...(sentRequest?{requestSettings:sentRequest}:{}),runId:'lab_'+newId(),provider,model,prompt,effort,layout:LAYOUT,docIds:pending.map(d=>d.id),createdAt:new Date().toISOString(),state:'submitting',...(times>1?{repeats:times,...(ns.some(list=>list.length!==times)?{ns}:{})}:{})};
   const queuedIds=new Set(job.docIds),noted=recorded(true);
-  const queued=latest.current.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout:LAYOUT,processing:'batch',concurrency:undefined,webSearch:false,webUsed:false,instructions:knowledgeAddition(false,sentSettings).trim(),research:undefined,score:undefined,explanation:undefined,time:undefined,tokens:undefined,responseId:undefined,...noted,...insertsOf(d),...claimRepeats(d,times)}:d);
+  const queued=latest.current.map(d=>queuedIds.has(d.id)?{...d,status:'queued',runId:job.runId,runStartedAt:job.createdAt,runSize:count,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout:LAYOUT,processing:'batch',concurrency:undefined,webSearch:false,webUsed:false,instructions:knowledgeAddition(false,sentSettings).trim(),research:undefined,score:undefined,explanation:undefined,time:undefined,tokens:undefined,responseId:undefined,...noted,...insertsOf(d,idOf),...claimRepeats(d,times)}:d);
   const form=new FormData();form.set('model',model);form.set('effort',effort);form.set('prompt',prompt);form.set('answerFields',JSON.stringify(sentFields));if(sentSettings)form.set('answerSettings',JSON.stringify(sentSettings));if(sentRequest)form.set('requestSettings',JSON.stringify(sentRequest));form.set('runId',job.runId);form.set('ids',JSON.stringify(Array.from({length:count},(_,i)=>job.runId+'_'+i)));if(times>1)form.set('copies',JSON.stringify(ns.map(list=>list.length)));form.set('mode','model-knowledge');form.set('webSearch','false');form.set('subjects',JSON.stringify(pending.map(d=>d.fields)));if(insertNames.length)form.set('inserts',JSON.stringify(pending.map(d=>insertValues(insertNames,d,columns,idOf(d)))));if(placed)form.set('placeText','true');
   // Research mode: one batch of the prepared run goes up.
   const partForm=(k:number)=>{const f=new FormData();f.set('model',model);f.set('runId',job.runId);f.set('part',String(k));return f;};

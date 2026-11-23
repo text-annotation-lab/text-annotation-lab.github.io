@@ -513,9 +513,11 @@ export async function buildResearchRepository(ctx:ExportContext,options:Research
 }
 
 // A package as one .zip file.
+const STORED=/\.(pdf|xlsx|docx|zip|png|jpe?g)$/i;
 export async function zipPackage(pack:Package,onProgress?:Progress):Promise<Uint8Array>{
  const JSZip=(await import('jszip')).default,zip=new JSZip();
- for(const file of pack.files)zip.file(file.path,file.data instanceof Blob?new Uint8Array(await file.data.arrayBuffer()):file.data);
+ // PDFs and Excel files are usually compressed already: stored as they are, which is many times faster and hardly larger.
+ for(const file of pack.files)zip.file(file.path,file.data instanceof Blob?new Uint8Array(await file.data.arrayBuffer()):file.data,STORED.test(file.path)?{compression:'STORE'}:{});
  await onProgress?.('Compressing the files');
  let shown=-1;
  return zip.generateAsync({type:'uint8array',compression:'DEFLATE',compressionOptions:{level:6}},update=>{const percent=Math.floor(update.percent/5)*5;if(percent!==shown){shown=percent;void onProgress?.(`Compressing the files (${percent}%)`);}});

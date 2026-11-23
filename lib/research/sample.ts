@@ -57,7 +57,7 @@ export function drawStratifiedSample(docs:SampleRow[],columns:Column[],o:SampleO
   const name=strata.map(c=>value(d,c).trim()||'(none)').join(' · ')||'all';
   const key=(o.method??2)>=2?JSON.stringify(strata.map(c=>value(d,c).trim())):name;
   nameOf.set(key,name);
-  groups.set(key,[...(groups.get(key)??[]),d]);
+  const group=groups.get(key);if(group)group.push(d);else groups.set(key,[d]);
  }
  const byName=(a:string,b:string)=>byCode(nameOf.get(a)!,nameOf.get(b)!)||byCode(a,b);
  const keys=[...groups.keys()].sort(byName);
