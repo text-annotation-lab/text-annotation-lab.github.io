@@ -362,8 +362,13 @@ select:disabled{opacity:.55;cursor:not-allowed}
 .prompt-editor-foot button{height:38px;padding:0 20px;font-size:14px}
 @media(max-width:780px){.prompt-editor-dialog{width:calc(100vw - 24px);height:calc(100dvh - 24px);max-height:none;padding:18px 16px 14px}.prompt-editor-dialog textarea{font-size:15px;padding:12px}}
 /* Scrollbars inside text boxes stay clear of the rounded corners (Windows draws square ones over the border). */
-textarea::-webkit-scrollbar{width:14px;height:14px}
+textarea::-webkit-scrollbar{width:10px;height:10px}
 textarea::-webkit-scrollbar-track{background:transparent;margin:8px 0}
-textarea::-webkit-scrollbar-thumb{background:#c4cedc;border-radius:7px;border:4px solid transparent;background-clip:padding-box;min-height:36px}
+textarea::-webkit-scrollbar-thumb{background:#c4cedc;border-radius:5px;border:2px solid transparent;background-clip:padding-box;min-height:36px}
 textarea::-webkit-scrollbar-thumb:hover{background-color:#9fadc2}
 textarea::-webkit-scrollbar-corner,textarea::-webkit-resizer{background:transparent}
+/* The scrollbar's room is always kept and counted in the right padding, so the text sits as far from the right edge as from the left. */
+.setup textarea,.prompt-editor-dialog textarea{scrollbar-gutter:stable}
+.setup textarea{padding-right:4px}
+.prompt-editor-dialog textarea{padding-right:10px}
+@media(max-width:780px){.prompt-editor-dialog textarea{padding-right:4px}}

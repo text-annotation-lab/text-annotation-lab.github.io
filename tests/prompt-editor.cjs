@@ -8,4 +8,5 @@ assert.match(system,/<ExpandPrompt target=\{id\} title="System prompt"[^>]*onCha
 assert.match(editor,/onChange=\{event=>onChange\(event\.target\.value\)\}/,'edits in the window go straight back');
 assert(!/confirm\(/.test(editor),'never the browser’s own box');
 assert.match(css,/textarea::-webkit-scrollbar-track\{background:transparent;margin:8px 0\}/,'scrollbar track stays off the corners');
+assert.match(css,/\.setup textarea\{padding-right:4px\}/,'right padding counts the scrollbar room');
 console.log('PASS: Expand opens the prompt in a large window that edits the same prompt; scrollbars keep off the corners.');
