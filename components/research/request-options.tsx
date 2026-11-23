@@ -11,6 +11,7 @@ import {priceFor} from '@/lib/cost-estimate/pricing';
 import {MAX_OWN_PRICE,ownPrice,setOwnPrice,useOwnPrices} from '@/lib/own-prices';
 import {CacheOption} from './cache-option';
 import {SettingInfo} from '@/components/setting-info';
+import {ExpandPrompt} from '@/components/prompt-editor';
 
 const count=(n:number)=>n.toLocaleString('en-US');
 // What the Lab adds after the prompt of these settings: on the answer format (the standard Lab's format), and on
@@ -64,6 +65,7 @@ export function RequestOptions({part,provider,model,effort,prompt,fixed,value,di
  </>;
 }
 
+const SYSTEM_PLACEHOLDER="Rarely needed. Standing instructions sent separately from the prompt, e.g. a role: “You are an expert in educational assessment.”";
 // A system prompt of the researcher's own (lib/request-settings.ts), under the annotation prompt. It opens by itself
 // when the study has one, and stays as the researcher leaves it while they type.
 export function SystemPrompt({id,unit,value,disabled,onChange}:{id:string;unit:'text'|'subject';value:string;disabled?:boolean;onChange:(value:string)=>void}){
@@ -71,7 +73,8 @@ export function SystemPrompt({id,unit,value,disabled,onChange}:{id:string;unit:'
  useEffect(()=>{if(filled)setOpen(true);},[filled]);
  return <details className="research-system-prompt" open={open} onToggle={event=>setOpen(event.currentTarget.open)}>
   <summary>System prompt (optional)</summary>
-  <textarea id={id} aria-label="System prompt" rows={4} maxLength={MAX_SYSTEM_PROMPT} value={value} disabled={disabled} placeholder="Rarely needed. Standing instructions sent separately from the prompt, e.g. a role: “You are an expert in educational assessment.”" onChange={event=>onChange(event.target.value)}/>
+  <ExpandPrompt target={id} title="System prompt" maxLength={MAX_SYSTEM_PROMPT} value={value} disabled={disabled} placeholder={SYSTEM_PLACEHOLDER} onChange={onChange}/>
+  <textarea id={id} aria-label="System prompt" rows={4} maxLength={MAX_SYSTEM_PROMPT} value={value} disabled={disabled} placeholder={SYSTEM_PLACEHOLDER} onChange={event=>onChange(event.target.value)}/>
  </details>;
 }
 

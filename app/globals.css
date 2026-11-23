@@ -347,3 +347,23 @@ select:disabled{opacity:.55;cursor:not-allowed}
 .actions .research-try input[type=number]{border-left:0}
 [data-slot=button][data-variant=outline]:not(:hover){background-color:#fff}
 .mode-switch:not(.on) .mode-switch-track{background:var(--control-edge)}
+/* "Expand" beside a prompt's label, and the large window it opens (components/prompt-editor.tsx). */
+.prompt-label-row{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:20px 0 8px}
+.prompt-label-row>label{margin:0}
+.prompt-expand{display:inline-flex;align-items:center;gap:5px;background:none;border:0;padding:2px 0;color:#003d73;font-size:13px;line-height:1.4;text-decoration:underline;text-underline-offset:3px;white-space:nowrap}
+.prompt-expand:disabled{color:#8b97aa;text-decoration:none}
+.prompt-expand:focus-visible{outline:2px solid #003d73;outline-offset:2px;border-radius:3px}
+.prompt-editor-dialog{background:#fff;color:#1b2942;font-family:inherit;width:min(1100px,calc(100vw - 48px));max-width:none!important;height:calc(100dvh - 64px);max-height:900px;display:flex;flex-direction:column;gap:14px;border-radius:12px;padding:24px 28px 20px}
+.prompt-editor-head{display:flex;flex-direction:column;gap:4px;padding-right:32px}
+.prompt-editor-dialog [data-slot=dialog-title]{font-size:19px;line-height:1.35;font-weight:700;margin:0}
+.prompt-editor-dialog [data-slot=dialog-description]{font-size:13px;color:#5f6d85;margin:0}
+.prompt-editor-dialog textarea{flex:1;min-height:0;resize:none;font-size:16px;line-height:1.7;padding:16px 18px}
+.prompt-editor-foot{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.prompt-editor-foot button{height:38px;padding:0 20px;font-size:14px}
+@media(max-width:780px){.prompt-editor-dialog{width:calc(100vw - 24px);height:calc(100dvh - 24px);max-height:none;padding:18px 16px 14px}.prompt-editor-dialog textarea{font-size:15px;padding:12px}}
+/* Scrollbars inside text boxes stay clear of the rounded corners (Windows draws square ones over the border). */
+textarea::-webkit-scrollbar{width:14px;height:14px}
+textarea::-webkit-scrollbar-track{background:transparent;margin:8px 0}
+textarea::-webkit-scrollbar-thumb{background:#c4cedc;border-radius:7px;border:4px solid transparent;background-clip:padding-box;min-height:36px}
+textarea::-webkit-scrollbar-thumb:hover{background-color:#9fadc2}
+textarea::-webkit-scrollbar-corner,textarea::-webkit-resizer{background:transparent}
