@@ -304,7 +304,7 @@ footer .footer-cookie-link{align-self:flex-start;font-size:13px;padding:2px 0}
 /* One look for menus: every menu is drawn as the Provider menu is (white, rounded, a thin gray arrow), at whatever
    size its place gives it. The arrow and the room for it are marked important because the older rules for single
    menus set a background and a padding of their own. */
-select{appearance:none!important;-webkit-appearance:none!important;border:1px solid #dce2ec;border-color:#dce2ec!important;border-radius:8px!important;background-color:#fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2398a4b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 9px center!important;padding-right:30px!important;text-overflow:ellipsis;cursor:pointer}
+select{appearance:none!important;-webkit-appearance:none!important;border:1px solid #dce2ec;border-color:#dce2ec!important;border-radius:8px!important;background-color:#fff;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235f6d85' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 9px center!important;padding-right:30px!important;text-overflow:ellipsis;cursor:pointer}
 select:disabled{opacity:.55;cursor:not-allowed}
 /* Setup column: menus at the Provider menu's size, and one look for fold-outs, in both modes: a bold dark title
    behind a small arrow that turns down when open. */
@@ -336,3 +336,14 @@ select:disabled{opacity:.55;cursor:not-allowed}
 @media(max-width:780px){.study-tabs [data-slot=tabs-trigger]:focus-visible{outline-offset:-2px}}
 /* A long provider name ends in an ellipsis instead of being cut mid-letter. */
 .research-provider-pair [data-slot=select-value]{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Controls get a clear edge (3:1 against white and the page background), while cards and table lines stay light.
+   Gemini design review, item A, chosen by Jens on 2026-11-23. Disabled fields keep the light edge. */
+:root{--control-edge:#7d8ea5}
+:is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=range]),textarea,select):not(:disabled):not([aria-invalid=true]),
+[data-slot=select-trigger]:not(:disabled):not([aria-invalid=true]),
+.research-search,.research-key-line.research-key-box,.research-seg,.research-segment,.chart-seg,
+[data-slot=button][data-variant=outline]:not(.clear-workspace){border-color:var(--control-edge)!important}
+.research-search input{border-color:transparent!important}
+.actions .research-try input[type=number]{border-left:0}
+[data-slot=button][data-variant=outline]:not(:hover){background-color:#fff}
+.mode-switch:not(.on) .mode-switch-track{background:var(--control-edge)}

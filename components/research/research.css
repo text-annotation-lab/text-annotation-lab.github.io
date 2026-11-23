@@ -578,3 +578,5 @@
 /* Answer fields: the allowed values get a line of their own, so a list like “positive, neutral, negative” stays readable in the setup column (Gemini design review, Nov 23). */
 .research-field-row:has(>input[aria-label="Allowed values"]){flex-wrap:wrap}
 .research-field-row:has(>input[aria-label="Allowed values"])>*{flex:1 1 100%}
+/* Phones: the Clear menu now sits in the filter row; it keeps to the right edge and its list opens leftward, so the list stays on screen. */
+@media(max-width:780px){.research-filters .research-result-actions{margin-left:auto}.research-filters .research-menu-list{left:auto;right:0}}
