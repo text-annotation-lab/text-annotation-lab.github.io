@@ -172,7 +172,8 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  const insertNames=research?promptInserts(prompt):[],placed=research&&placesText(prompt),promptFixed=insertNames.length||placed?fixedLength(prompt,placed):undefined;
  // Research mode: what the cost estimate, the provider's count, and the length check need to measure a text's request
  // as the run sends it: the values of its placeholders, and its text where the prompt places it.
- const perText={inserts:insertNames.length?(d:Doc)=>insertValues(insertNames,d,columns,studyIds()(d)):undefined,placeText:Boolean(placed)};
+ // The texts' IDs are worked out once per estimate or check, not once per text.
+ const perText={inserts:insertNames.length?(()=>{let idOf:((d:Doc)=>string)|undefined;return (d:Doc)=>insertValues(insertNames,d,columns,(idOf??=studyIds())(d));})():undefined,placeText:Boolean(placed)};
  // Research mode: your own price for the model, for the cost estimate before a run.
  const ownPrices=useOwnPrices(),typedPrice=research?ownPrice(provider,model,ownPrices):undefined;
  const sentRequest=research?sentRequestSettings(provider,model,promptFixed!==undefined&&!prompt.slice(0,promptFixed).trim()&&!requestSettings?.system?.trim()?{...requestSettings,cache:undefined}:requestSettings,effort):undefined;
@@ -335,7 +336,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // leaves the Workspace and is never annotated again; one no run used is deleted outright.
  function deleteTexts(ids:string[],how:'selected'|'all'|'one'){
   if(lock.current||batchJob||exporting||!ready||storageConflict)return;
-  const chosen=new Set(ids.filter(id=>latest.current.some(d=>d.id===id))),n=chosen.size,one=n===1;if(!n)return;
+  const present=new Set(latest.current.map(d=>d.id)),chosen=new Set(ids.filter(id=>present.has(id))),n=chosen.size,one=n===1;if(!n)return;
   const used=latest.current.some(d=>chosen.has(d.id)&&usedByRuns(d));
   const kept=used?` Results already made for ${one?'this text':'these texts'} stay with their runs (Runs & agreement and Export), and adding the same ${one?'text':'texts'} again connects ${one?'it':'them'} to those results again.`:'';
   const remove=()=>{

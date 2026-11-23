@@ -30,7 +30,7 @@ export default defineConfig([
     },
   },
   {
-    files: ["components/ui/**/*.{ts,tsx}", "hooks/use-mobile.ts"],
+    files: ["components/ui/**/*.{ts,tsx}"],
     rules: {
       // These files are vendored verbatim from shadcn@4.17.0.
       "@typescript-eslint/no-unused-vars": "off",
