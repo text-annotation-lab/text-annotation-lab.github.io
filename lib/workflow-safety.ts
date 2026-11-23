@@ -32,6 +32,13 @@ export function queueRetries<T extends RetryRecord>(records:T[],id?:string,noted
  });
 }
 export function retryMessage(count:number){return `Queue ${count} failed item${count===1?'':'s'} for retry? Retries use the current prompt, provider, model, reasoning, and processing options when you start them. Previous attempts remain in the backup and Excel history; successful results stay unchanged. Check provider usage first: an interrupted or unreadable request may already have completed and been charged. This only queues retries; it does not send requests.`;}
+// The texts of the run under way, or of the last run started on this page: the progress line counts only these.
+// Without such a run, or when none of its texts is left, it counts them all.
+export function inRun<T extends {id:string}>(records:T[],ids?:readonly string[]|null):T[]{
+ if(!ids?.length)return records;
+ const set=new Set(ids),list=records.filter(r=>set.has(r.id));
+ return list.length?list:records;
+}
 // collected: false while a batch that has ended waits to be collected, so its texts are not called in progress.
 export function queueSummary(records:RetryRecord[],unit='text',insufficient=0,collected=true){
  if(!records.length)return '';
