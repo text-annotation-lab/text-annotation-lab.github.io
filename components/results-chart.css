@@ -1,4 +1,4 @@
-/* Results chart dialog. Colors follow the Lab: navy #003d73, ink #1b2942, muted #64728b, borders #dce2ec. */
+/* Results chart dialog. Colors follow the Lab: navy #003d73, ink #1b2942, muted #5f6d85, borders #dce2ec. */
 .results-chart-dialog{width:min(1080px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 32px);overflow:auto;display:block;padding:26px 30px 22px;background:#fff;color:#1b2942;font-family:Arial,Helvetica,sans-serif;border:1px solid #d6dee8;border-radius:14px;box-shadow:0 18px 70px #102c4730}
 .results-chart-dialog h2{display:block;margin:0 36px 16px 0;font-size:22px;font-weight:600;line-height:1.25;letter-spacing:0}
 .results-chart-dialog h2:focus{outline:none}
@@ -7,7 +7,7 @@
 .results-chart-dialog textarea{min-height:0;resize:vertical;line-height:1.5}
 .results-chart-dialog input:focus-visible,.results-chart-dialog select:focus-visible,.results-chart-dialog textarea:focus-visible,.results-chart-dialog button:focus-visible{outline:2px solid #003d73;outline-offset:2px}
 .results-chart-dialog input[type=checkbox]{width:16px;height:16px;margin:0;accent-color:#003d73}
-.results-chart-dialog .hint{font-size:13px;color:#64728b;margin:6px 0 0}
+.results-chart-dialog .hint{font-size:13px;color:#5f6d85;margin:6px 0 0}
 
 .chart-top{display:flex;align-items:center;justify-content:space-between;gap:12px 20px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid #e7ecf2}
 .chart-field{display:flex;align-items:center;gap:10px;min-width:0;font-weight:600}
@@ -22,7 +22,7 @@
 .chart-notice label{display:flex;align-items:center;gap:8px;font-weight:600;color:#1b2942}
 .chart-count-choice{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-top:14px;font-size:13px}
 .chart-count-choice>span{font-weight:600}
-.chart-count-choice small{color:#64728b;font-size:12px;flex-basis:100%}
+.chart-count-choice small{color:#5f6d85;font-size:12px;flex-basis:100%}
 
 .chart-seg{display:inline-flex;border:1px solid #c4cfdc;border-radius:7px;overflow:hidden;background:#fff}
 .chart-seg button{border:0;background:none;padding:6px 12px;font:inherit;font-size:13px;color:#425775;min-height:32px}
@@ -38,12 +38,12 @@
 .chart-tabs button:hover{color:#1b2942}
 .chart-tabs button.on{color:#003d73;font-weight:700;border-bottom-color:#003d73}
 
-.chart-scale{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;margin-top:14px;font-size:12px;color:#64728b}
+.chart-scale{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;margin-top:14px;font-size:12px;color:#5f6d85}
 .chart-key{display:inline-flex;align-items:center;gap:6px;color:#425775}
 .chart-key>span{display:inline-flex;border-radius:3px;overflow:hidden}
 .chart-key i{display:block;width:18px;height:12px}
 .chart-key small{font-size:12px}
-.chart-scale-meta{color:#64728b}
+.chart-scale-meta{color:#5f6d85}
 .chart-scale-editor{margin-top:14px;padding:14px 16px;border:1px solid #dce2ec;border-radius:10px;background:#f7f9fc}
 .chart-scale-editor .row{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-bottom:10px}
 .chart-scale-editor .row input{width:70px}
@@ -60,9 +60,9 @@
 
 .chart-stats{display:flex;flex-wrap:wrap;gap:10px 28px;margin:16px 0 0;padding:0}
 .chart-stats div{min-width:0}
-.chart-stats dt{font-size:12px;color:#64728b;margin:0 0 2px}
+.chart-stats dt{font-size:12px;color:#5f6d85;margin:0 0 2px}
 .chart-stats dd{margin:0;font-size:18px;font-weight:700;color:#1b2942;font-variant-numeric:tabular-nums}
-.chart-stats small{font-size:12px;font-weight:400;color:#64728b;margin-left:4px}
+.chart-stats small{font-size:12px;font-weight:400;color:#5f6d85;margin-left:4px}
 
 .chart-plot{width:100%;margin-top:14px;min-height:60px}
 .chart-svg svg{display:block;width:100%;height:auto;overflow:visible}
@@ -72,7 +72,7 @@
 .chart-legend{display:flex;flex-wrap:wrap;gap:6px 16px;list-style:none;margin:10px 0 0;padding:0;font-size:12px;color:#425775}
 .chart-legend li{display:flex;align-items:center;gap:6px}
 .chart-legend i{display:block;width:11px;height:11px;border-radius:2px}
-.chart-note{font-size:12px;line-height:1.5;color:#64728b;margin:8px 0 0}
+.chart-note{font-size:12px;line-height:1.5;color:#5f6d85;margin:8px 0 0}
 
 .chart-matches{margin-top:16px;padding:12px 16px;border:1px solid #dce2ec;border-left:3px solid #003d73;border-radius:0 8px 8px 0;background:#fbfcfe}
 .chart-matches-head{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:14px;padding-bottom:6px}
@@ -88,7 +88,7 @@
 .chart-table table{width:100%;border-collapse:collapse;font-size:13px}
 .chart-table th{position:sticky;top:0;background:#f3f6fb;text-align:left;font-weight:600}
 .chart-table th,.chart-table td{padding:7px 10px;border-bottom:1px solid #e7ecf2;overflow-wrap:anywhere}
-.chart-table small{color:#64728b}
+.chart-table small{color:#5f6d85}
 .chart-empty{padding:48px 0;color:#52617c;text-align:center;font-size:14px}
 .chart-empty-state{margin:8px 0;padding:32px 24px;text-align:center;border:1px dashed #c4cfdc;border-radius:10px;background:#fbfcfe}
 .chart-empty-state strong{display:block;font-size:16px;margin-bottom:6px}

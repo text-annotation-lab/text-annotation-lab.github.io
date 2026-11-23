@@ -90,8 +90,8 @@
 .research-table th,.research-table td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid #e3e9f1}
 .research-table thead th{font-size:12px;font-weight:600;color:#53657a;white-space:nowrap;border-bottom-color:#cfd9e5}
 .research-table select{font:inherit;font-size:13px;padding:6px 26px 6px 8px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#19334f;width:auto;min-height:0}
-.research-table caption{caption-side:top;text-align:left;font-size:13px;color:#64728b;padding:0 0 8px}
-.research-muted{color:#64728b}
+.research-table caption{caption-side:top;text-align:left;font-size:13px;color:#5f6d85;padding:0 0 8px}
+.research-muted{color:#5f6d85}
 .research-tag{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:4px;background:#eef1f6;color:#53657a;font-size:11px;font-weight:400;white-space:nowrap;vertical-align:middle}
 .research-tag.warn{background:#fff3da;color:#805719}
 .status.partial{background:#fff3da;color:#805719}
@@ -114,7 +114,7 @@
 .research-add-field{display:inline-flex;align-items:center;gap:5px;margin:2px 0 6px}
 .research-output-check{align-items:flex-start!important;margin:10px 0 4px!important}
 .research-output-check input[type=checkbox]{margin-top:2px}
-.research-output-check small{display:block;font-size:12.5px;line-height:1.5;color:#64728b}
+.research-output-check small{display:block;font-size:12.5px;line-height:1.5;color:#5f6d85}
 .research-scale{margin:10px 0 4px}
 .research-scale .research-field-row{flex-wrap:wrap;font-size:13.5px;color:#33415c}
 .research-scale-label{display:block;font-size:13.5px;font-weight:600;color:#1b2942;margin-bottom:4px}
@@ -155,11 +155,11 @@
 /* Workspace: filters above the table */
 .research-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:22px 0 0}
 .research-filters select,.research-selectors select,.research-selectors input{font:inherit;font-size:13px;padding:7px 28px 7px 10px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#19334f;max-width:220px;min-height:36px}
-.research-search{display:flex!important;align-items:center;gap:6px;margin:0!important;padding:0 10px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#64728b;min-height:36px;font-weight:400!important}
+.research-search{display:flex!important;align-items:center;gap:6px;margin:0!important;padding:0 10px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#5f6d85;min-height:36px;font-weight:400!important}
 .research-search input{border:0!important;padding:6px 0!important;width:120px!important;font-size:13px;outline:0;background:transparent}
 .research-search:focus-within{outline:2px solid #003d73;outline-offset:1px}
 .research-filters .research-pick{max-width:200px}
-.research-filter-count{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:13px;color:#64728b}
+.research-filter-count{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:13px;color:#5f6d85}
 .research-filter-count:empty{display:none}
 /* Chart, Excel, and the menu for clearing: at the right end of the row above the table. */
 .research-result-actions{display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}
@@ -186,7 +186,7 @@
 /* Detail: labels, metadata, earlier results */
 .research-detail{margin:14px 0}
 .research-cells{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px 18px;margin:0 0 12px;font-size:14px}
-.research-cells dt{font-size:12px;color:#64728b}
+.research-cells dt{font-size:12px;color:#5f6d85}
 .research-cells dd{margin:2px 0 0;overflow-wrap:anywhere}
 .research-earlier summary{cursor:pointer;font-weight:600;font-size:14px}
 .research-earlier-entry{border-top:1px solid #d9e3ef;margin-top:12px;padding-top:10px;font-size:14px;line-height:1.6}
@@ -201,7 +201,7 @@
 .research-earlier-entry .research-technical{margin:0 0 4px}
 .research-earlier-entry .research-technical>summary{font-weight:400;color:#33415c}
 .research-technical dl{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px 18px;margin:10px 0 12px}
-.research-technical dt{font-size:12px;color:#64728b}
+.research-technical dt{font-size:12px;color:#5f6d85}
 .research-technical dd{margin:2px 0 0;overflow-wrap:anywhere}
 .research-technical-part{margin:0 0 10px}
 .research-technical-part>summary{font-weight:400;color:#33415c}
@@ -210,7 +210,7 @@
 .research-technical-full .hint{margin:8px 0 0;font-size:13px;line-height:1.5}
 .research-technical-full .hint .textbutton{font-size:inherit}
 .research-technical .textbutton{font-size:14px}
-.research-steps{display:inline-flex;align-items:center;gap:12px;margin-left:18px;font-size:14px;color:#64728b}
+.research-steps{display:inline-flex;align-items:center;gap:12px;margin-left:18px;font-size:14px;color:#5f6d85}
 .research-steps .textbutton[aria-disabled=true]{color:#9aa6b8;cursor:default;text-decoration:none}
 
 /* Runs & agreement, Export */
@@ -257,7 +257,7 @@
 .research-stat{display:flex;flex-direction:column;gap:3px;padding:12px 14px;border:1px solid #dce2ec;border-radius:10px;background:#fff}
 .research-stat-label{font-size:12px;color:#53657a}
 .research-stat strong{font-size:22px;font-weight:600;color:#1b2942;line-height:1.2}
-.research-stat-ci{font-size:12px;color:#64728b;min-height:1.4em}
+.research-stat-ci{font-size:12px;color:#5f6d85;min-height:1.4em}
 .research-confusion{width:auto;margin-top:8px}
 .research-confusion th,.research-confusion td{text-align:center;min-width:54px;border:1px solid #e3e9f1}
 .research-confusion tbody th{text-align:left;font-weight:600;font-size:13px;color:#29445e;white-space:nowrap}
@@ -276,13 +276,13 @@
 .research-export-card .hint{margin:0}
 .research-check.research-export-option{align-items:flex-start}
 .research-export-option input[type=checkbox]{margin:2px 0 0}
-.research-export-option small{display:block;font-size:12px;line-height:1.55;color:#64728b;margin-top:2px}
+.research-export-option small{display:block;font-size:12px;line-height:1.55;color:#5f6d85;margin-top:2px}
 .research-export-go{padding-top:4px}
 .research-export-step{font-size:13px;line-height:1.55;color:#53657a;margin:8px 0 0;overflow-wrap:anywhere}
 .research-export-backup{display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid #dce2ec;border-radius:10px;background:#fff;padding:14px 20px;margin:14px 0 4px}
 .research-export-backup>div{display:flex;flex-direction:column;gap:3px;min-width:0}
 .research-export-backup strong{font-size:15px}
-.research-export-backup span{font-size:13px;line-height:1.55;color:#64728b}
+.research-export-backup span{font-size:13px;line-height:1.55;color:#5f6d85}
 .research-export-backup button{flex-shrink:0}
 @media(max-width:1000px){.research-export-grid{grid-template-columns:1fr}}
 @media(max-width:780px){.research-panel{width:calc(100% - 32px);padding:24px}.research-page h2{font-size:25px}.research-export-backup{flex-direction:column;align-items:flex-start}.research-filter-count{margin-left:0}}
@@ -294,7 +294,7 @@
 /* The other request settings in Processing options, and "Preview request". */
 .research-request-option{margin-top:14px!important}
 .processing-choice .research-number{width:120px;min-height:0;padding:7px 10px;border:1px solid #d7dfe9;border-radius:6px;background:#fff;color:#19334f;font:inherit;font-size:13px}
-.processing-choice .research-number:disabled{background:#f3f6fa;color:#64728b}
+.processing-choice .research-number:disabled{background:#f3f6fa;color:#5f6d85}
 /* Your own price for the model: two boxes side by side, each under its label. */
 .research-prices{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:end;margin-top:14px}
 .research-prices label{display:block;margin:0 0 6px;font-size:13px;line-height:1.35;color:#53657a}
@@ -566,3 +566,15 @@
 /* Setup fields use the standard Lab's Provider size (14 px) in both modes. */
 .setup .pair [data-slot=select-trigger],.setup .model-settings .research-model-id,.research-key-line.research-key-box,.research-key-box .provider-key-status,.research-key-box .key-status-badge{font-size:14px}
 @media(max-width:1050px){.setup .pair [data-slot=select-trigger],.setup .model-settings .research-model-id,.research-key-line.research-key-box,.research-key-box .provider-key-status,.research-key-box .key-status-badge{font-size:13px}}
+
+/* The line between the two run groups belongs to the second group and sits in the space before it; when that group wraps to a new row, the line falls outside the clipped row and is never left dangling (Gemini design review, Nov 23). */
+.research-run-box>.actions{margin:0 0 0 -24px;column-gap:0;clip-path:inset(-40px -40px -40px 18px)}
+.research-run-box>.actions>*{margin-left:24px}
+.research-run-divider{display:none}
+.research-run-divider+.research-run-group{position:relative}
+.research-run-divider+.research-run-group::before{content:"";position:absolute;left:-12px;top:0;bottom:0;width:1px;background:#dce2ec}
+/* The ⓘ buttons keep their 16 px look but take clicks in a 24 px square. */
+.setting-info{position:relative}.setting-info::after{content:"";position:absolute;inset:-4px}
+/* Answer fields: the allowed values get a line of their own, so a list like “positive, neutral, negative” stays readable in the setup column (Gemini design review, Nov 23). */
+.research-field-row:has(>input[aria-label="Allowed values"]){flex-wrap:wrap}
+.research-field-row:has(>input[aria-label="Allowed values"])>*{flex:1 1 100%}

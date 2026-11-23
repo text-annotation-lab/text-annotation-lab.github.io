@@ -5,7 +5,7 @@ import {Button} from '@/components/ui/button';
 import type {ResultsChartDialogProps} from './results-chart';
 import {ChartReview} from './chart-review';
 import {buildUnits,chartFieldList,formatMean,formatNumber,groupableFields,mean,median,mostCommon,periodLengths,settingsSummary,suggestedGroupRule,suggestedPeriodLength,suggestedRowGroup,suggestedRowYear,suggestedScale,type ChartSourceRow,type Field,type GroupRule,type Scale,type Unit} from '@/lib/chart-model';
-import {OTHER,REST,restLabel,categoryColors,crowdedDots,distributionCategories,distributionNumbers,distributionScale,downloadPng,downloadSvg,exportFigure,groupsView,runsView,scaleColor,scaleLabel,scalePoints,timeDots,timeShares,type Figure} from '@/lib/chart-figures';
+import {inkOn,OTHER,REST,restLabel,categoryColors,crowdedDots,distributionCategories,distributionNumbers,distributionScale,downloadPng,downloadSvg,exportFigure,groupsView,runsView,scaleColor,scaleLabel,scalePoints,timeDots,timeShares,type Figure} from '@/lib/chart-figures';
 import './results-chart.css';
 
 type Tab='distribution'|'time'|'groups'|'runs'|'list';
@@ -209,7 +209,7 @@ function RankedList({units,page,pages,onPage,query,onQuery,order,onOrder,scale,k
   {pages>1&&<div className="chart-pages"><Button variant="outline" disabled={page===0} onClick={()=>onPage(page-1)}>Previous</Button><span>{page*25+1}–{Math.min(units.length,page*25+25)} of {units.length}</span><Button variant="outline" disabled={page===pages-1} onClick={()=>onPage(page+1)}>Next</Button></div>}
  </div>;
 }
-function isDark(hex:string){const v=parseInt(hex.slice(1),16),c=[v>>16,(v>>8)&255,v&255].map(x=>{x/=255;return x<=.03928?x/12.92:((x+.055)/1.055)**2.4;});return .2126*c[0]+.7152*c[1]+.0722*c[2]<.3;}
+function isDark(hex:string){return inkOn(hex)==='#ffffff';}
 
 function DataTable({units,showYear,showGroup,label,noun}:{units:Unit[];showYear:boolean;showGroup:boolean;label:string;noun:string}){
  const rows=[...units].sort((a,b)=>showYear?(a.year!-b.year!):showGroup?a.group!.localeCompare(b.group!):a.name.localeCompare(b.name));
