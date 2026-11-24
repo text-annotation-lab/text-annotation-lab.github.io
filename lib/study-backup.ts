@@ -16,7 +16,7 @@ const fields=z.array(z.object({heading:z.string().min(1).max(100),value:z.string
 const research=z.object({text, sources:z.array(z.object({url:text,title:text})).max(10000),queries:z.array(text).max(10000),searchedAt:short,instructions:text,model:short.optional(),effort:short.optional(),tokens:z.number().optional(),usage:z.unknown().optional(),responseId:optionalText,searchSuggestionsHtml:optionalText}).passthrough();
 const answerNames=z.array(z.string().min(1).max(60)).max(MAX_ANSWER_FIELDS).refine(validAnswerFields).optional();
 // Typed answer fields, plain text, or no explanation (research mode).
-const answerSettings=z.object({plain:z.literal(true).optional(),rationale:z.literal(false).optional(),named:z.literal(true).optional(),inPrompt:z.literal(true).optional(),fields:z.array(z.object({name:z.string().min(1).max(60),type:z.enum(FIELD_TYPES as [string,...string[]]),values:z.array(z.string().max(200)).max(100),description:z.string().max(2000)})).max(MAX_ANSWER_FIELDS).optional()}).optional();
+const answerSettings=z.object({plain:z.literal(true).optional(),rationale:z.literal(false).optional(),named:z.literal(true).optional(),slugKeys:z.literal(true).optional(),inPrompt:z.literal(true).optional(),fields:z.array(z.object({name:z.string().min(1).max(60),type:z.enum(FIELD_TYPES as [string,...string[]]),values:z.array(z.string().max(200)).max(100),description:z.string().max(2000)})).max(MAX_ANSWER_FIELDS).optional()}).optional();
 // Request settings (research mode: prompt caching, temperature, output limit, reasoning summary, OpenAI's
 // logs; lib/request-settings.ts), as stored with a study and recorded on a result.
 const requestSettings=z.object({cache:z.literal(true).optional(),temperature:z.number().min(0).max(2).optional(),maxOutput:z.number().int().min(16).max(1000000).optional(),summary:z.literal(true).optional(),store:z.literal(false).optional(),system:z.string().min(1).max(100000).optional()}).optional();
@@ -24,7 +24,8 @@ const resultShape={inputMode:z.enum(['pdf-native','text']).optional(),runId:shor
  // Research mode: the record of a request (lib/research/requests.ts).
  requestId:z.string().regex(/^q[1-9]\d{0,8}$/).optional(),modelReported:z.string().max(500).optional(),stopReason:z.string().max(200).optional(),output:optionalText,reasoningSummary:optionalText,lab:z.string().max(100).optional(),
  // Research mode: the values a request's prompt was sent with in place of its placeholders (lib/prompt-inserts.ts).
- inserts:z.array(z.string().max(20000)).max(12000).optional(),
+ // A request takes values of up to 20,000 characters; a backup made before a run refused longer ones is still read.
+ inserts:z.array(text).max(12000).optional(),
  // Where the prompt went in the request (lib/request-frame.ts; absent: the earlier layout).
  layout:z.literal('message').optional()};
 // Research mode: several annotations per text (lib/research/repeats.ts). An annotation holds a part of a result's fields.

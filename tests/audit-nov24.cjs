@@ -2,7 +2,8 @@
 // the Gemini models that ignore one, cache minimums, cache-read prices, announced price changes, a value at the
 // end of a prompt sent whole, no empty part before a PDF, a prompt that opens like the earlier layout, billing
 // advice for an empty Claude balance, reasoning that cannot be turned off, long texts in other scripts, and a
-// cost estimate that never falls below zero. Mocked only.
+// cost estimate that never falls below zero. Workspace, Model knowledge, and charts: long placeholder values,
+// earlier results of a subject, declared scales, rounding, short bars, thin slices, labels, and legends. Mocked only.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {createRequire}=require('node:module'),root=process.cwd(),ts=require(path.join(root,'node_modules/typescript')),req=createRequire(path.join(root,'package.json'));
 const cache=new Map();let calls=[],mock=()=>Response.json({});
@@ -98,6 +99,57 @@ function load(file){
   const warning=/output limit constrains/,config={provider:'gemini',model:'gemini-2.5-flash-lite',effort:'dynamic',prompt:'Rate the tone.',maxTokens:2500},short={tokens:{low:50,high:50}},long={tokens:{low:400000,high:400000}};
   const first=engine.estimate(config,[long,short]).notes.some(note=>warning.test(note)),last=engine.estimate(config,[short,long]).notes.some(note=>warning.test(note));
   assert.equal(first,last,'the order of the texts does not decide the warning');
+ }
+ // --- Workspace, Model knowledge, and charts -----------------------------------------------------------
+
+ // A value too long for a placeholder is refused before a run, and a backup that holds one is still read.
+ {const research=load('lib/research/inserts.ts'),columns=[{name:'Notes',role:'meta'},{name:'Gold',role:'label'}],long='x'.repeat(20001);
+  assert.equal(research.longInsert(['id','meta.Notes'],[{name:'a.txt',cells:['short','']},{name:'b.txt',cells:['x'.repeat(20000),'']}],columns),'');
+  assert.match(research.longInsert(['meta.Notes'],[{name:'a.txt',cells:['short','']},{name:'b.txt',cells:[long,'']}],columns),/^\{\{meta\.Notes\}\} has more than 20,000 characters for “b\.txt”.*Nothing was sent\.$/);
+  assert.equal(research.longInsert(['meta.Gold','meta.Missing'],[{name:'b.txt',cells:['',long]}],columns),'','Human labels and missing columns are filled in empty');
+  const backup=load('lib/study-backup.ts'),doc={id:'d1',name:'a.txt',file:new File(['Text'],'a.txt'),status:'error',error:'Refused.',prompt:'Rate {{meta.Notes}}.',inserts:[long],answerSettings:{named:true,slugKeys:true,fields:[{name:'Tone',type:'ordinal',values:['1','2','3'],description:''}]}};
+  const restored=backup.decodeStudyBackup(await backup.encodeStudyBackup({name:'Long value',createdAt:'2026-11-24',texts:{docs:[doc]},knowledge:{items:[]}}));
+  assert.equal(restored.texts.docs[0].inserts[0].length,20001);assert.equal(restored.texts.docs[0].answerSettings.slugKeys,true);
+ }
+ // Model knowledge: the detail pane of a subject gets the results of its earlier runs.
+ {const knowledge=load('lib/research/knowledge.ts'),item=(id,run,score)=>({id,subjectId:'s1',runNumber:run,name:'Subject',fields:[],status:'done',score});
+  const [subject]=knowledge.knowledgeRows([item('a',1,'2'),item('b',2,'4'),item('c',3,'5')]);
+  assert.deepEqual(subject.earlier.map(entry=>[entry.runNo,entry.score]),[[1,'2'],[2,'4']]);assert.equal(subject.itemId,'c');
+ }
+ // Charts. A field typed as a scale is drawn on its declared scale, also after a pilot run with two scores.
+ {const model=load('lib/chart-model.ts'),figures=load('lib/chart-figures.ts'),field={key:'f0',label:'Hope',name:'Hope'};
+  const typed=values=>({named:true,fields:[{name:'Hope',type:'ordinal',values,description:''}]}),row=(id,answer,settings)=>({id,name:id+'.txt',status:'done',prompt:'Rate hopefulness.',answerFields:['Hope'],answerSettings:settings,answers:{f0:answer}});
+  const wide=typed(['-3','-2','-1','0','1','2','3']);
+  assert.deepEqual(model.suggestedScale([row('a','1',wide),row('b','2',wide)],field,[1,2]),{min:-3,max:3,type:'diverging',lowLabel:'',highLabel:'',source:'declared'});
+  assert.equal(model.suggestedScale([row('a','1',wide),row('b','2',typed(['1','2','3','4','5']))],field,[1,2]).source,'data','Two runs with different scales: the scores decide');
+  assert.equal(model.suggestedScale([row('a','1',typed(['low','high']))],field,[1]).source,'data','Values that are words are no scale');
+  assert.equal(model.suggestedScale([row('a','7',wide)],field,[7]).source,'data','A score outside the declared values');
+  // Halves round away from zero everywhere, and zero has no sign.
+  assert.deepEqual([-0.5,0.5,-0.4,0.4,-1.5,2.5,0].map(model.scalePoint),[-1,1,0,0,-2,3,0]);assert(Object.is(model.scalePoint(-0.2),0));
+  assert.equal(model.formatMean(-0.001),'0.00');assert.equal(model.formatMean(-0.19),'−0.19');assert.equal(model.formatNumber(-0),'0');assert.equal(model.formatNumber(-0.004),'0');assert.equal(model.formatNumber(-0.5),'−0.5');
+  const unit=(key,number,extra={})=>({key,name:key,ids:[key],values:[String(number)],numbers:[number],value:String(number),number,explanation:'',...extra}),scale={min:-3,max:3,type:'diverging',lowLabel:'',highLabel:'',source:'declared'},o={width:860,interactive:false,noun:'subjects'};
+  // Compare groups: an average of −0.5 lies below the center in both places, so its bar ends at the center line.
+  {const units=[unit('a',-0.5,{group:'A'}),unit('b',-0.5,{group:'A'}),unit('c',1,{group:'B'}),unit('d',1,{group:'B'})],chart=figures.groupsView(units,['A','B'],scale,undefined,o);
+   const bars=[...chart.svg.matchAll(/<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="[\d.]+" rx="2" fill="#/g)].map(match=>({x:Number(match[1]),y:Number(match[2]),end:Number(match[1])+Number(match[3])}));
+   assert.equal(bars.length,2);const [low,high]=bars[0].y<bars[1].y?bars:[bars[1],bars[0]];assert(Math.abs(low.end-high.x)<=2.01,`group A's bar ends (${low.end}) where group B's begins (${high.x})`);
+   assert.match(figures.groupsView([unit('a',1,{group:'A'}),unit('c',1,{group:'B'}),unit('d',2,{group:'B'})],['A','B'],scale,undefined,o).notes.join(' '),/at least 2 subjects/);}
+  // A short bar and a narrow bar stay above the axis; a thin slice of a stacked chart is still drawn.
+  {const short=figures.distributionScale([...Array.from({length:90},(_,i)=>unit('h'+i,3)),unit('one',-3)],scale,o),ys=[...short.svg.matchAll(/<path d="M[\d.]+,250 V([\d.]+) /g)].map(match=>Number(match[1]));
+   assert.equal(ys.length,2);assert(ys.every(y=>y<=250),'no bar starts below the axis: '+ys);
+   const narrow=figures.distributionScale([unit('a',0),unit('b',20)],{min:0,max:20,type:'sequential',lowLabel:'',highLabel:'',source:'data'},{...o,width:280});
+   const tops=[...narrow.svg.matchAll(/<path d="M([\d.]+),250 V[\d.]+ Q[\d.]+,[\d.]+ ([\d.]+),[\d.]+ H([\d.]+) /g)];assert.equal(tops.length,2);
+   for(const match of tops)assert(Number(match[2])<=Number(match[3])+.011,'the top of a narrow bar does not fold over');
+   assert(!/x1="([\d.]+)"[^>]*x2="([\d.]+)"[^>]*stroke="#cfd8e3"/.test(narrow.svg)||[...narrow.svg.matchAll(/x1="([\d.]+)"[^>]*x2="([\d.]+)"[^>]*stroke="#cfd8e3"/g)].every(match=>Number(match[1])<=Number(match[2])),'the mark of an empty score runs left to right');
+   const members=[...Array.from({length:299},(_,i)=>unit('m'+i,1,{group:'A',year:1900})),unit('rare',3,{group:'A',year:1900}),unit('x',1,{group:'B',year:1950}),unit('y',2,{group:'B',year:1950})];
+   const stacked=figures.groupsView(members,['A','B'],scale,undefined,o),shares=figures.timeShares(members,scale,undefined,10,o);
+   assert(stacked.picks.some(pick=>pick.ids.includes('rare'))&&shares.picks.some(pick=>pick.ids.includes('rare')));
+   const drawn=svg=>(svg.match(/<rect [^>]*rx="2" fill="#/g)||[]).length;
+   assert.equal(drawn(stacked.svg),4,'every slice of Compare groups is drawn, also 1 of 300');assert.equal(drawn(shares.svg),4,'every slice of the periods chart is drawn');}
+  // One year is written once under the axis; a long legend wraps before the right edge of a downloaded figure.
+  {const dots=figures.timeDots([unit('a',1,{year:1945}),unit('b',2,{year:1945})],scale,false,o);assert.equal((dots.svg.match(/>1945</g)||[]).length,1);
+   const legend=Array.from({length:6},(_,i)=>({label:'A rather long category name number '+i,color:'#123456'})),file=figures.exportFigure({svg:'',width:860,height:100,picks:[],notes:[]},'Title','Caption',legend);
+   const starts=[...file.svg.matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="12" height="12"/g)].map(match=>Number(match[1]));
+   assert.equal(starts.length,6);legend.forEach((item,i)=>assert(starts[i]+17+item.label.length*6.6<=860-24+.01,'legend item '+i+' ends inside the figure'));}
  }
  console.log('audit-nov24 ok');
 })().catch(error=>{console.error(error);process.exit(1);});

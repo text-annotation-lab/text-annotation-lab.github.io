@@ -2,6 +2,7 @@
 // Pure functions only: no DOM, no storage, no network.
 import {resultAnswer,type NamedAnswers} from './answer-fields';
 import {explicitAnswerRules} from './answer-validation';
+import {fieldSpec} from './answer-types';
 import {jsonAnswers,jsonKeyOrder,jsonValue} from './json-reply';
 import {chartNumber,suggestedYear,validChartYear} from './results-chart';
 
@@ -188,13 +189,17 @@ export function buildUnits(rows:ChartSourceRow[],field:Field,options:ChartOption
 /** A mean, always with two decimals (−0.19, 4.00), so means read alike everywhere. */
 export function formatMean(value:number){
  if(!Number.isFinite(value))return '';
- return new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(value).replace('-','−');
+ return unsigned(new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(value)).replace('-','−');
 }
+// A number that rounds to zero is written without a minus sign (0.00, not −0.00).
+const unsigned=(written:string)=>/^-0(?:\.0*)?$/.test(written)?written.slice(1):written;
+/** The point of a whole-number scale a score or an average belongs to: halves go away from zero (2.5 → 3, −0.5 → −1), and zero has no sign. */
+export const scalePoint=(value:number)=>Math.sign(value)*Math.round(Math.abs(value))||0;
 
 export function formatNumber(value:number,digits=2){
  if(!Number.isFinite(value))return '';
  if(Math.abs(value)>=1e6||(value!==0&&Math.abs(value)<.001))return value.toExponential(2).replace('-','−');
- return new Intl.NumberFormat('en-US',{maximumFractionDigits:digits}).format(value).replace('-','−');
+ return unsigned(new Intl.NumberFormat('en-US',{maximumFractionDigits:digits}).format(value)).replace('-','−');
 }
 
 // ---------- Scale ----------
@@ -217,6 +222,13 @@ export function suggestedScale(rows:ChartSourceRow[],field:Field,numbers:number[
  const low=Math.min(...numbers),high=Math.max(...numbers),integers=numbers.every(Number.isInteger);
  const make=(min:number,max:number,source:Scale['source']):Scale=>({min,max,type:min<0&&max>0?'diverging':'sequential',lowLabel:'',highLabel:'',source});
  const name=field.name||'score';
+ // A field typed as a scale (research mode) with whole-number values: the scale every result was asked on,
+ // whether or not the prompt spells it out.
+ if(field.name){
+  const typed=rows.map(row=>{const spec=fieldSpec(row.answerSettings,field.name!);if(spec?.type!=='ordinal'||!spec.values.length||!spec.values.every(value=>/^[+\-−]?\d{1,3}$/.test(value.trim())))return undefined;const values=spec.values.map(value=>Number(value.trim().replace('−','-')));return {min:Math.min(...values),max:Math.max(...values)};});
+  const first=typed[0];
+  if(first&&first.max>first.min&&first.max-first.min<=20&&typed.every(scale=>scale&&scale.min===first.min&&scale.max===first.max)&&low>=first.min&&high<=first.max)return make(first.min,first.max,'declared');
+ }
  const prompts=Array.from(new Set(rows.map(row=>row.prompt||'')));
  const declared=prompts.map(prompt=>explicitAnswerRules(prompt,field.name?rows.find(row=>row.prompt===prompt)?.answerFields||[]:[]).find(rule=>rule.name===name)).filter(Boolean);
  if(declared.length===prompts.length&&declared.length){

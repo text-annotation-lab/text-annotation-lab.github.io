@@ -1,6 +1,6 @@
 // Research mode: what a text gives the placeholders of the prompt (lib/prompt-inserts.ts), and what the setup
 // panel says about them.
-import {promptInserts,strayPlaceholders,placesText} from '../prompt-inserts';
+import {promptInserts,strayPlaceholders,placesText,MAX_INSERT_LENGTH} from '../prompt-inserts';
 import {columnIndex,cellOf,type Column} from './columns';
 
 const metaColumn=(columns:Column[],name:string)=>{const index=columnIndex(columns,name.slice(5));return index>=0&&columns[index].role==='meta'?index:-1;};
@@ -10,6 +10,16 @@ const metaColumn=(columns:Column[],name:string)=>{const index=columnIndex(column
 // sent to the model, and a column the study does not have gives nothing.
 export function insertValues(names:string[],row:{cells?:string[]},columns:Column[],id:string):string[]{
  return names.map(name=>name==='id'?id:cellOf(row,metaColumn(columns,name)));
+}
+// Before a run: a metadata value too long to fill a placeholder (a request takes up to MAX_INSERT_LENGTH
+// characters for one). The message names the first such value; empty when every value fits.
+export function longInsert(names:string[],rows:{name?:unknown;cells?:string[]}[],columns:Column[]):string{
+ for(const name of names){
+  const index=name==='id'?-1:metaColumn(columns,name);if(index<0)continue;
+  const row=rows.find(row=>cellOf(row,index).length>MAX_INSERT_LENGTH);
+  if(row)return `{{${name}}} has more than ${MAX_INSERT_LENGTH.toLocaleString('en-US')} characters for “${String(row.name)}”, which is more than a placeholder takes. Shorten that value, or take the placeholder out of the prompt. Nothing was sent.`;
+ }
+ return '';
 }
 // The lines under the prompt box. unit: what a request is about ("text" or "subject").
 export function insertNotes(prompt:string,columns:Column[],unit:'text'|'subject'):string[]{
