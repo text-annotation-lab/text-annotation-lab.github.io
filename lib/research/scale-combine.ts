@@ -9,7 +9,7 @@
 // come back, and a scale can be set or changed later, so they are combined again here whenever they are read; the
 // stored results never change.
 import {annotationsOf,combinePlain} from './repeats';
-import {toNumber} from './normalize';
+import {toNumber,abstains} from './normalize';
 import {farFromZeroOne,onScale,zeroOne,type ScoreScale} from './score-scale';
 import type {Row} from './runs';
 import {isExplanationKey,jsonAnswers} from '../json-reply';
@@ -32,7 +32,7 @@ function singleValues(result:Result):[string,number][]{
  const values:[string,number][]=[],list=annotationsOf(result),sources=list.length?list.filter(a=>a.status==='done'):[result];
  for(const source of sources){
   const reply=jsonAnswers(source.answers);if(!reply)continue;
-  for(const [key,value] of Object.entries(reply))if(!isExplanationKey(key)&&value.trim())values.push([key,toNumber(value)]);
+  for(const [key,value] of Object.entries(reply))if(!isExplanationKey(key)&&value.trim()&&!abstains(value))values.push([key,toNumber(value)]);
  }
  read.set(result,{annotations:result.annotations,answers:result.answers,values});
  return values;

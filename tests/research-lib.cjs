@@ -18,7 +18,7 @@ const metrics=load('lib/research/metrics.ts'),runs=load('lib/research/runs.ts'),
 const A=['0','1','0','0','0','0','0','0','1','0'],B=['1','1','1','0','0','1','0','0','0','0'];
 let stats=metrics.agreement(A,B,'nominal',[],1,{withIntervals:false});
 assert.equal(stats.n,10);near(stats.percentAgreement,0.6);near(stats.cohenKappa,0.0909090909,'kappa');near(stats.krippendorffAlpha,0.0952380952,'alpha');near(stats.gwetAC1,0.3103448276,'AC1');
-assert.deepEqual(stats.confusion['0'],{'0':5,'1':3});assert.deepEqual(stats.confusion['1'],{'0':1,'1':1});
+assert.deepEqual({...stats.confusion['0']},{'0':5,'1':3});assert.deepEqual({...stats.confusion['1']},{'0':1,'1':1});
 // A five-point scale; reference values from the plain formulas, computed separately.
 const X=[1,2,3,3,2,1,4,1,2,5,3,4,5,1,2].map(String),Y=[1,2,3,4,2,2,4,1,3,5,3,3,4,1,1].map(String);
 stats=metrics.agreement(X,Y,'ordinal',[],1,{withIntervals:false});

@@ -10,7 +10,7 @@ import {unitOf,type Dataset} from './export';
 import {requestLines,rowForRun} from './export-data';
 import type {Table} from './export-tables';
 import {isMissingLabel,type Agreement} from './metrics';
-import {normalizeLabel} from './normalize';
+import {normalizeLabel,isPlainNumber} from './normalize';
 import type {Row} from './runs';
 import {fieldLabel,fieldsOf,valueOf} from './view';
 
@@ -48,7 +48,7 @@ export type Skipped={column:string;reason:string};
 // declared cannot be told from other words, so any label fits them.
 function fits(label:string,p:Pairing):boolean{
  if(p.numeric){
-  const x=Number(label);if(label===''||Number.isNaN(x))return false;
+  const x=Number(label);if(!isPlainNumber(label))return false;
   // A scale read from the answers has no fixed ends: any number may be a label.
   if(p.scaleSeen)return true;
   const scale=p.allowed.map(Number).filter(Number.isFinite);

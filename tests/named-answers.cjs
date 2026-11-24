@@ -149,7 +149,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert(tables.codebook(names,standard.settings,false).includes('| Tone | tone | category | positive, neutral, negative | Overall tone of the text. | answers.f0 |'),'The earlier format names its short keys');
  const values=python.scriptValues({lab:'test',studyName:'S',runDescription:'#1',provider:'anthropic',text:frame,fields:names,plain:false,settings:sent.settings});
  assert.equal(values.KEYS,python.pyLiteral(['Tone','Intensity','Sarcasm','word_count','Notes']));assert.equal(values.RATIONALE,'"rationale"');
- assert.equal(values.ALLOWED,python.pyLiteral({Tone:['positive','neutral','negative'],Intensity:['-1','0','1','2']}),'A scale’s whole numbers are allowed as the Lab keeps them');
+ assert.equal(values.ALLOWED,python.pyLiteral({Tone:['positive','neutral','negative'],Intensity:['-1','0','1','2'],Sarcasm:['yes','no']}),'A scale’s whole numbers are allowed as the Lab keeps them');assert.equal(values.TYPES,python.pyLiteral({Tone:'category',Intensity:'whole number',Sarcasm:'yes / no','Word count':'number'}),'Each typed field is checked by its own type');assert.equal(values.ABSTAIN,'None');
  const oldValues=python.scriptValues({lab:'test',studyName:'S',runDescription:'#1',provider:'anthropic',text:frames.requestFrame({provider:'anthropic',model:'claude-sonnet-5-5',effort:'medium',prompt:PROMPT,answerFields:names,answerSettings:standard.settings,layout:frames.LAYOUT},false),fields:names,plain:false,settings:standard.settings});
  assert.equal(oldValues.KEYS,'None');assert.equal(oldValues.RATIONALE,'None');
  // The script reads a named reply as the Lab does.

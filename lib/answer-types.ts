@@ -21,7 +21,8 @@ export const PLAIN_FIELD='response';
 const KNOWLEDGE_ABSTAIN='INSUFFICIENT_KNOWLEDGE';
 
 /** A number as typed: a leading minus sign may be a real minus or an en dash. */
-export function toNumber(text:string):number{const t=text.trim().replace(/^[−–]/,'-');return t===''?NaN:Number(t);}
+/** Only decimal notation counts, and only a number that can be held: "0x10" and "1e309" are not numbers. */
+export function toNumber(text:string):number{const t=text.trim().replace(/^[−–]/,'-'),x=/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(t)?Number(t):NaN;return Number.isFinite(x)?x:NaN;}
 
 // The values a field allows, as sent: categories as typed, a scale's whole numbers, yes and no.
 export function allowedValues(spec:Pick<FieldSpec,'type'|'values'>):string[]{
@@ -102,7 +103,9 @@ export function typedProblem(spec:FieldSpec,value:string,knowledge=false):string
   if(!Number.isInteger(n))return spec.values.length?list():'a whole number'+or;
   return !spec.values.length||spec.values.some(x=>toNumber(x)===n)?undefined:list();
  }
- return !spec.values.length||spec.values.some(x=>x.trim().toLowerCase()===v.toLowerCase())?undefined:list();
+ // Yes / no always has its two values, also where a stored field lists none.
+ const values=spec.type==='boolean'&&!spec.values.length?['yes','no']:spec.values;
+ return !values.length||values.some(x=>x.trim().toLowerCase()===v.toLowerCase())?undefined:spec.type==='boolean'&&!spec.values.length?'yes or no'+or:list();
 }
 // The schema of one typed field: a string, limited to the allowed values where there are any.
 export function typedSchema(spec:FieldSpec,google:boolean,knowledge:boolean){

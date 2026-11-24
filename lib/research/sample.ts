@@ -44,7 +44,7 @@ export function drawStratifiedSample(docs:SampleRow[],columns:Column[],o:SampleO
  const takenBy=new Map<string,number>();
  const eligible=notExcluded.filter(d=>{
   const held=o.markedAs?value(d,o.markedAs.column):'';
-  const other=held.trim()!==''&&held!==o.markedAs!.value?held:'';
+  const other=held.trim()!==''&&norm(held)!==norm(o.markedAs!.value)?held:'';
   if(other)takenBy.set(other,(takenBy.get(other)??0)+1);
   return !other;
  });

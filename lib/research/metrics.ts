@@ -5,7 +5,7 @@
 // scikit-learn, irrCAC, scipy, and statsmodels). tests/research-lib.cjs checks it
 // here against values worked out separately.
 
-import {toNumber,normalizeLabel} from './normalize';
+import {toNumber,normalizeLabel,isPlainNumber,lowest,highest} from './normalize';
 export {toNumber,normalizeLabel};
 
 export type Level = 'nominal' | 'ordinal' | 'interval';
@@ -85,7 +85,7 @@ export type CiStat =
   | 'meanDifference'
   | 'mae';
 
-const isNum = (s: string) => s.trim() !== '' && !Number.isNaN(Number(s));
+const isNum = isPlainNumber;
 
 /** Cell values that mean "no label" (e.g. R writes NA for a missing value), in any case. */
 const MISSING_LABEL = /^(na|n\/a|#n\/a|n\.a\.?|nan|none|missing|unknown|-|–|—|\.|\?)$/i;
@@ -149,7 +149,7 @@ export function cohenKappa(pairs: [string, string][], weights: 'none' | 'linear'
   const idx = new Map(cats.map((c, i) => [c, i]));
   // Position on the scale: the value itself for numbers, else the category's rank.
   const at = cats.every(isNum) ? cats.map(Number) : cats.map((_, i) => i);
-  const range = Math.max(...at) - Math.min(...at);
+  const range = highest(at) - lowest(at);
   // (The table is one flat row of numbers, and the weights are worked out in the loop: this runs for every resample.)
   const obs = new Float64Array(k * k);
   const ra = new Float64Array(k);
@@ -317,7 +317,7 @@ export function gwetAC2Linear(pairs: [string, string][], scale: string[] = [], t
   const q = cats.length;
   if (q < 2 || !cats.every(isNum)) return null;
   const vals = cats.map(Number);
-  const range = Math.max(...vals) - Math.min(...vals);
+  const range = highest(vals) - lowest(vals);
   const w = (a: number, b: number) => 1 - Math.abs(a - b) / range;
   const pa = pairs.reduce((s, [a, b], i) => s + (times ? times[i] : 1) * w(Number(a), Number(b)), 0) / n;
   let tw = 0;
@@ -607,7 +607,7 @@ export function agreement(
     const use = pairs.filter(([x, y]) => !missing(x) && !missing(y));
     if (use.length < pairs.length) {
       leftOut.n = pairs.length - use.length;
-      leftOut.values = [...new Set(pairs.flat().filter(missing))].slice(0, 5);
+      leftOut.values = [...new Set(pairs.flat().filter(missing))].slice(0, 6);
       pairs = use;
     }
   }
@@ -625,7 +625,7 @@ export function agreement(
     const use = compareAsWords ? labelled : kept;
     if (use.length < pairs.length) {
       leftOut.n = pairs.length - use.length;
-      leftOut.values = [...new Set(pairs.flat().filter((v) => !onScale(v) && (!compareAsWords || missing(v))))].slice(0, 5);
+      leftOut.values = [...new Set(pairs.flat().filter((v) => !onScale(v) && (!compareAsWords || missing(v))))].slice(0, 6);
       pairs = use;
     }
     if (seed && !compareAsWords) {
@@ -642,8 +642,9 @@ export function agreement(
   const xs = numeric ? pairs.map(([x]) => Number(x)) : [];
   const ys = numeric ? pairs.map(([, y]) => Number(y)) : [];
   const categories = sortCats([...new Set([...allowed, ...pairs.flat()])]);
-  const confusion: Record<string, Record<string, number>> = {};
-  for (const c of categories) confusion[c] = Object.fromEntries(categories.map((d) => [d, 0]));
+  // (Without a prototype, so a label such as "__proto__" or "constructor" is a row and a column like any other.)
+  const confusion: Record<string, Record<string, number>> = Object.create(null);
+  for (const c of categories) confusion[c] = Object.assign(Object.create(null), Object.fromEntries(categories.map((d) => [d, 0])));
   for (const [x, y] of pairs) confusion[x][y]++;
   // Plain-text runs (`scaleSeen`): the scale is every whole number of the grown scale above, so a value never used
   // still counts in the weights and in Gwet's q, and a value between whole numbers (a 1.5 median, or a 2.5 answer
@@ -709,7 +710,7 @@ export function agreement(
   }
   if (tiedPairs.length) {
     leftOut.ties = tiedPairs.length;
-    leftOut.tiedValues = [...new Set(tiedPairs.flat().filter(tied))].slice(0, 5);
+    leftOut.tiedValues = [...new Set(tiedPairs.flat().filter(tied))].slice(0, 6);
     leftOut.n += tiedPairs.length;
   }
   return {
@@ -749,13 +750,13 @@ export type Aggregation = 'majority' | 'median' | 'mean';
  * spelling given most often (the first of them when tied), so annotations that differ only in case are no tie.
  */
 export function aggregate(values: string[], method: Aggregation): string {
-  const v = values.filter((x) => x !== '');
+  const v = values.filter((x) => x.trim() !== '');
   if (!v.length) return '';
   // Numbers (a leading − or – read as a minus): an abstention among them is set aside, so "2, 4, INSUFFICIENT_KNOWLEDGE"
   // is 3, not a tie of three; most of them abstaining is an abstention.
   const abstained = v.filter((x) => x.trim().toUpperCase() === 'INSUFFICIENT_KNOWLEDGE');
   const given = v.filter((x) => !abstained.includes(x));
-  if (method !== 'majority' && given.length && given.every((x) => !Number.isNaN(toNumber(x)))) {
+  if (method !== 'majority' && given.length && given.every((x) => Number.isFinite(toNumber(x)))) {
     if (abstained.length * 2 > v.length) return abstained[0];
     const xs = given.map(toNumber).sort((a, b) => a - b);
     const mid = Math.floor(xs.length / 2);
@@ -782,9 +783,9 @@ export function fixed(x: number, digits: number): string {
 }
 
 export function fmtStat(x: number | null, digits = 3): string {
-  return x === null || Number.isNaN(x) ? '—' : fixed(x, digits);
+  return x === null || !Number.isFinite(x) ? '—' : fixed(x, digits);
 }
 
 export function fmtPct(x: number | null): string {
-  return x === null ? '—' : `${(x * 100).toFixed(1)}%`;
+  return x === null || !Number.isFinite(x) ? '—' : `${(x * 100).toFixed(1)}%`;
 }

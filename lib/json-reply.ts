@@ -3,7 +3,7 @@
 // kept as written, and an empty value is an empty cell. A reply that holds JSON among other words is not split.
 // It counts as failed, because its columns would otherwise be silently empty. Prose, even with {braces}, is
 // left alone. This file imports nothing, so anything may import it.
-const FENCE=/^```(?:json)?\s*([\s\S]*?)\s*```$/;
+const FENCE=/^```(?:json)?\s*([\s\S]*?)\s*```$/i;
 const unfenced=(raw:string)=>{const text=raw.trim(),match=FENCE.exec(text);return match?match[1]:text;};
 const written=(value:unknown)=>value===null||value===undefined?'':typeof value==='string'?value:typeof value==='number'||typeof value==='boolean'?String(value):JSON.stringify(value);
 // The reply's own column is named "response"; a JSON key of that name gets a prefix, so neither hides the other.
@@ -59,7 +59,7 @@ export function jsonKeyOrder(replies:(Record<string,string>|null|undefined)[]):s
  for(const key of all)if(!groups.has(groupOf(key)))groups.set(groupOf(key),groups.size);
  const sorted=[...all].sort((a,b)=>groups.get(groupOf(a))!-groups.get(groupOf(b))!||Number(isExplanationKey(a))-Number(isExplanationKey(b)));
  const scoreOf=(key:string)=>{
-  for(const suffix of ['_explanation','_reasoning'])if(key.endsWith(suffix)&&seen.has(key.slice(0,-suffix.length)))return key.slice(0,-suffix.length);
+  for(const suffix of ['_explanation','_reasoning'])if(key.toLowerCase().endsWith(suffix)&&seen.has(key.slice(0,-suffix.length)))return key.slice(0,-suffix.length);
   return null;
  };
  const after=new Map<string,string[]>();

@@ -944,7 +944,7 @@ function leftOutNote(s: FieldSummary, w: Words): string {
     notNumber ? `${fmtInt(notNumber)} not a number` : '',
     offScale && scale ? `${fmtInt(offScale)} outside the scale (${scaleLabel(scale[0])} to ${scaleLabel(scale[1])})` : '',
   ].filter(Boolean);
-  const shown = values.map((v) => `“${v}”`).join(', ') + (values.length === 5 && n > 5 ? ', …' : '');
+  const shown = values.slice(0, 5).map((v) => `“${v}”`).join(', ') + (values.length > 5 ? ', …' : '');
   return `${fmtInt(n)} ${n === 1 ? `${w.one} has an answer` : `${w.many} have answers`} left out of the chart and the figures (${why.join(', ')}): ${shown}.`;
 }
 
@@ -1075,11 +1075,13 @@ function localDate(d = new Date()): string {
 
 /**
  * A name for a file: minus signs kept as “minus” and Nordic letters spelled out before the usual slug ("score −3 to −1"
- * → score-minus3-to-minus1, "Kønsroller" → konsroller), so names stay readable and distinct.
+ * → score-minus3-to-minus1, "Kønsroller" → konsroller), so names stay readable and distinct. A hyphen or dash between
+ * two numbers is a range ("1990-1999" → 1990-1999), and a hyphen after a letter is a hyphen ("wave-2").
  */
 export function fileSlug(text: string): string {
   const t = text
-    .replace(/[−–]\s*(?=\d)|-(?=\d)/g, 'minus')
+    .replace(/(\d)(?:-|\s*–\s*)(?=\d)/g, '$1-')
+    .replace(/[−–]\s*(?=\d)|(?<![\p{L}\d])-(?=\d)/gu, 'minus')
     .replace(/[øØ]/g, (c) => (c === 'ø' ? 'o' : 'O'))
     .replace(/[æÆ]/g, (c) => (c === 'æ' ? 'ae' : 'Ae'))
     .replace(/ß/g, 'ss');

@@ -1,10 +1,11 @@
 // Reading and writing tables: CSV or TSV text, and Excel workbooks.
 import type {Sheet} from './columns';
 
-// The delimiter that splits the first line into the most cells (comma, semicolon, or tab).
+// The delimiter that splits the first line into the most cells (comma, semicolon, or tab). Blank lines before it
+// (they are not rows) are passed over.
 function sniff(text:string):string{
  let line='',quoted=false;
- for(const ch of text){if(ch==='"')quoted=!quoted;else if((ch==='\n'||ch==='\r')&&!quoted)break;line+=quoted&&ch!=='"'?' ':ch;}
+ for(const ch of text){if(ch==='"')quoted=!quoted;else if((ch==='\n'||ch==='\r')&&!quoted){if(line.replace(/[\s,;]/g,'')===''){line='';continue;}break;}line+=quoted&&ch!=='"'?' ':ch;}
  const count=(d:string)=>line.split(d).length-1;
  return [',',';','\t'].reduce((best,d)=>count(d)>count(best)?d:best,',');
 }
