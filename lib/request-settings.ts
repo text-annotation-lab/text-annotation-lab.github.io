@@ -63,10 +63,16 @@ export const marksCache=(provider:string,model:string,request?:RequestSettings)=
 
 // The most output tokens the Lab allows a reply when no other limit is set (reasoning included). Gemini 4
 // models think at length and get more room.
-// Gemini 4 models get 32,768 output tokens; through OpenRouter since November 23, 2026 (`startedAt`: the run's start,
-// so earlier OpenRouter runs, which were sent 16,000, still report the limit they had).
-export const OPENROUTER_GEMINI4_LIMIT_FROM='2026-11-23';
-export const defaultOutputLimit=(provider:string,model:string,startedAt?:string)=>gemini4(provider,model)&&!(provider==='openrouter'&&startedAt&&startedAt<OPENROUTER_GEMINI4_LIMIT_FROM)?32768:16000;
+// `startedAt`: when the run or request was started. A result records a limit only where it was not the Lab's own
+// at the time, so a result without one had the limit of its day: 12,000 until the 16,000 limit was merged on
+// November 18, 2026 (22:46:55 UTC), and, for a Gemini 4 model through OpenRouter, 32,768 only since November 23,
+// 2026. Without `startedAt`: the limit a request gets now.
+export const OUTPUT_LIMIT_16K_FROM='2026-11-18T22:46:55',OPENROUTER_GEMINI4_LIMIT_FROM='2026-11-23';
+export const defaultOutputLimit=(provider:string,model:string,startedAt?:string)=>{
+ if(provider==='gemini'&&model.startsWith('gemini-4-'))return 32768;
+ if(gemini4(provider,model)&&!(startedAt&&startedAt<OPENROUTER_GEMINI4_LIMIT_FROM))return 32768;
+ return startedAt&&startedAt<OUTPUT_LIMIT_16K_FROM?12000:16000;
+};
 // A Gemini 4 model, also through OpenRouter (google/gemini-4-…): it may think for minutes.
 const gemini4=(provider:string,model:string)=>provider==='gemini'&&model.startsWith('gemini-4-')||provider==='openrouter'&&model.startsWith('google/gemini-4-');
 // A model with a fixed reasoning budget (Claude Haiku 4.5 and earlier) needs a limit above that budget.
@@ -85,13 +91,14 @@ export const temperatureCeiling=(provider:string)=>provider==='anthropic'?1:MAX_
 // without a reasoning setting.
 export const summarizesReasoning=(effort?:string,provider?:string,model?:string)=>effort!=='off'&&effort!=='none'&&!(provider==='openai'&&model!==undefined&&plainOpenAI(model));
 // What a request carries and a result records: each setting where it changes the request to this provider and
-// model. effort: the reasoning setting the request is sent with.
-export function sentRequestSettings(provider:string,model:string,request?:RequestSettings,effort?:string):RequestSettings|undefined{
+// model. effort: the reasoning setting the request is sent with. startedAt: when the request was sent, for one
+// that is built again afterwards (its limit is compared with the Lab's own of that day).
+export function sentRequestSettings(provider:string,model:string,request?:RequestSettings,effort?:string,startedAt?:string):RequestSettings|undefined{
  if(!request)return undefined;
  const out:RequestSettings={};
  if(marksCache(provider,model,request))out.cache=true;
  if(request.temperature!==undefined&&takesTemperature(provider,model,effort))out.temperature=Math.min(request.temperature,temperatureCeiling(provider));
- if(request.maxOutput!==undefined){const limit=Math.max(request.maxOutput,outputFloor(provider,model,effort));if(limit!==defaultOutputLimit(provider,model))out.maxOutput=limit;}
+ if(request.maxOutput!==undefined){const limit=Math.max(request.maxOutput,outputFloor(provider,model,effort));if(limit!==defaultOutputLimit(provider,model,startedAt))out.maxOutput=limit;}
  if(request.summary&&summarizesReasoning(effort,provider,model))out.summary=true;
  if(request.store===false&&provider==='openai')out.store=false;
  if(request.system?.trim())out.system=request.system;
@@ -99,7 +106,8 @@ export function sentRequestSettings(provider:string,model:string,request?:Reques
 }
 // The limit a request is sent with, and how long the Lab waits for its reply: longer where a model thinks at
 // length or the limit was raised.
-export const outputLimit=(provider:string,model:string,sent?:RequestSettings)=>sent?.maxOutput??defaultOutputLimit(provider,model);
+// startedAt: for a request that is built again (one that was not kept when it was sent), when it was sent.
+export const outputLimit=(provider:string,model:string,sent?:RequestSettings,startedAt?:string)=>sent?.maxOutput??defaultOutputLimit(provider,model,startedAt);
 export const requestTimeout=(provider:string,model:string,sent?:RequestSettings)=>gemini4(provider,model)||(sent?.maxOutput??0)>defaultOutputLimit(provider,model)?900000:180000;
 
 // fixed (in the three functions below): how much of the prompt is the same for every text, where the prompt

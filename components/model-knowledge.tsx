@@ -240,7 +240,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
     taken.add(item.id);claimed++;
     // n: the number of the annotation; 0 for a subject's single annotation, which is written on the subject itself.
     const ns=times===1?[0]:item.status==='pending'?Array.from({length:times},(_,i)=>i+1):missingRepeats(item);
-    update(item.id,{status:'running',runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,effort,prompt,layout:LAYOUT,webSearch,processing:'instant',concurrency:all?parallel:1,batchId:undefined,instructions:knowledgeAddition(webSearch,sentSettings).trim(),research:undefined,webUsed:undefined,time:undefined,score:undefined,explanation:undefined,...noted,...insertsOf(item,idOf),...claimRepeats(item,times)});
+    update(item.id,{status:'running',runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,effort,prompt,layout:LAYOUT,webSearch,processing:'instant',concurrency:all?parallel:1,batchId:undefined,batchEndedAt:undefined,instructions:knowledgeAddition(webSearch,sentSettings).trim(),research:undefined,webUsed:undefined,time:undefined,score:undefined,explanation:undefined,...noted,...insertsOf(item,idOf),...claimRepeats(item,times)});
     if(times>1){open.set(item.id,{before:item,left:ns.length,came:0});waitingTasks.push(...ns.slice(1).map(n=>({item,n})));}
     if(claimed===1)setSelected(item.id);
     return {item,n:ns[0]};
@@ -343,7 +343,7 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
  // sent as several. Throws, changing nothing, when they cannot be matched to the batch's requests.
  function gatherBatch(job:BatchJob,out:BatchUpdate,list:Item[],part?:BatchPart):Item[]{
   if(out.results!.some(r=>!r||typeof r.id!=='string'||(!r.error&&(typeof r.score!=='string'||typeof r.explanation!=='string')))||new Set(out.results!.map(r=>r.id)).size!==out.results!.length)throw new Error('The batch results could not be matched reliably. Your saved job is unchanged.');
-  const batchId=part?.id??job.id;
+  const batchId=part?.id??job.id,batchEndedAt=out.endedAt;
   const results=new Map<string,BatchResult>((out.results||[]).map(r=>[r.id,r]));
   // Requests are numbered subject by subject: one per subject, or, with several annotations per subject, one per annotation asked for.
   const several=(job.repeats||1)>1,slots=new Map<string,{at:number;ns:number[]}>();let requestCount=0;
@@ -352,13 +352,13 @@ export function ModelKnowledge({research=false,onResearchData,draftRef,studyId='
   if([...results.keys()].some(id=>!expected.has(id)))throw new Error('These results belong to a different batch. Check the batch ID; your workspace has not been changed.');
   const checked=(r:BatchResult|undefined)=>{if(r&&!r.error){r.error=annotationValidationError(r,job.answerFields,job.prompt,true,job.answerSettings);if(r.error)r.rawResponse=JSON.stringify({score:r.score,explanation:r.explanation,answers:r.answers});else delete r.rawResponse;}return r;};
   const collectedAt=new Date().toISOString(),notReturned='No result was returned for this subject. Check the provider’s batch report before retrying.';
-  const settings={provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',concurrency:undefined,batchId,webSearch:false,webUsed:false,instructions:knowledgeAddition(false,job.answerSettings).trim()};
+  const settings={provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',concurrency:undefined,batchId,batchEndedAt,webSearch:false,webUsed:false,instructions:knowledgeAddition(false,job.answerSettings).trim()};
   // Several annotations per subject: each result is kept as an annotation, and the subject's own fields are worked out from them.
   const gathered=(d:Item,slot:{at:number;ns:number[]}):Item=>{
    let row:Item={...d,...settings,answerFields:job.answerFields,answerSettings:job.answerSettings,responseFormat:job.responseFormat};
    slot.ns.forEach((n,k)=>{
     const r=checked(results.get(job.runId+'_'+(slot.at+k)));
-    const got={...(r?{answers:collectedAnswers(r,job.answerFields).answers,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),error:r?.error||(!r?notReturned:undefined),runId:job.runId,runStartedAt:job.createdAt,runSize:d.runSize,processing:'batch',batchId,requestId:d.requestId,lab:d.lab,inserts:d.inserts,startedAt:d.startedAt,time:collectedAt};
+    const got={...(r?{answers:collectedAnswers(r,job.answerFields).answers,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),error:r?.error||(!r?notReturned:undefined),runId:job.runId,runStartedAt:job.createdAt,runSize:d.runSize,processing:'batch',batchId,batchEndedAt,requestId:d.requestId,lab:d.lab,inserts:d.inserts,startedAt:d.startedAt,time:collectedAt};
     row={...row,...withAnnotation(row,annotationFrom(n,Boolean(r&&!r.error),got))};
    });
    return {...row,...settle(row)};

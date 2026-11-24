@@ -28,6 +28,9 @@ assert.equal(usageSample('openai',{input_tokens:500,output_tokens:200,output_tok
 assert.equal(usageSample('gemini',{promptTokenCount:500,candidatesTokenCount:50,thoughtsTokenCount:150}).output,200);
 assert.equal(usageSample('anthropic',{input_tokens:20,cache_read_input_tokens:30,cache_creation_input_tokens:50,output_tokens:100}).input,100);
 assert.equal(usageSample('openai',{total_tokens:900}),undefined);
+// Claude reports its thinking as output_tokens_details.thinking_tokens, part of its output tokens; a reply without the count has none.
+assert.deepEqual(usageSample('anthropic',{input_tokens:20,output_tokens:100,output_tokens_details:{thinking_tokens:60}}),{input:20,output:100,reasoning:60,visible:40});
+assert.equal(usageSample('anthropic',{input_tokens:20,output_tokens:100}).reasoning,undefined);assert.equal(usageSample('anthropic',{input_tokens:20,output_tokens:100,output_tokens_details:{thinking_tokens:0}}).reasoning,0);
 const calibrated=estimate({...config,effort:'medium'},inputs,Array.from({length:12},()=>({input:500,output:120,visible:70,reasoning:50})));assert(calibrated.total.high<medium.total.high);assert.equal(calibrated.samples,12);
 const web=estimate({...config,webSearch:true},inputs);assert(web.total.low>base.total.low&&Math.abs(web.searchCost.low-.4)<1e-10);assert.equal(web.batch,undefined);assert(web.input.low>base.input.low);
 // Prompt caching (research mode; details in prompt-caching.cjs): a long prompt may be read from the cache (lower edge) or written anew by every text (upper edge); a short one is not cached.

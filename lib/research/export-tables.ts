@@ -6,11 +6,11 @@
 import {fieldSpec,isExplanationField,slugKey,wireKeys,RATIONALE_KEY,PLAIN_FIELD,type AnswerSettings} from '../answer-types';
 import {fieldsOf,valueOf} from './view';
 import {docIdOf,docIds,explanationOf,runLines,subjectField,subjectHeadings,uniqueNames,type Dataset,type RunLine} from './export';
-import {costOf,latencyOf,requestLines,rowForRun,shortHash,tokensOf,type ExportStudy,type RequestLine} from './export-data';
+import {costOf,latencyOf,requestFinder,requestLines,rowForRun,runOutputLimit,runRequests,shortHash,tokensOf,type ExportStudy,type RequestLine,type RunRequests} from './export-data';
 import {promptKey,runState,setupOf,type Row} from './runs';
 import {removedOn} from './removed';
 import {consistencyOf} from './repeats';
-import {budgetedClaude,defaultOutputLimit} from '../request-settings';
+import {budgetedClaude} from '../request-settings';
 
 export type Table=(string|number)[][];
 const lower=(name:string)=>name.toLowerCase();
@@ -29,12 +29,24 @@ export {docIdOf,docIds};
 // The file name each request gave for a text (a text from a table or pasted is named after its ID).
 export const sourceName=(dataset:Dataset,row:Row)=>dataset.kind==='knowledge'?'':String(row.name??row.file?.name??'');
 // The columns only the Lab has about a text: a subject's name and the fields the model saw (Model knowledge),
-// and, for a part of a text that was split, the text it comes from and which part it is.
-function textExtras(dataset:Dataset){
+// and, for a part of a text that was split, the text it comes from and which part it is. split (the corpus): also
+// how it was split: the number of words asked for per part, the method, and the part's first and last word in its
+// source (counted from 1).
+const SPLIT_COLUMNS=['chunk_words','chunk_method','word_start','word_end'];
+const whole=(value:unknown):number|''=>typeof value==='number'&&Number.isFinite(value)?value:'';
+function textExtras(dataset:Dataset,split=false){
  const knowledge=dataset.kind==='knowledge',chunked=!knowledge&&dataset.rows.some(row=>row.sourceId);
  const fields=knowledge?subjectHeadings(dataset.rows).filter(heading=>dataset.rows.some(row=>subjectField(row,heading)!==String(row.name??''))):[];
- return {header:[...(knowledge?['subject']:[]),...(chunked?['source_document','chunk']:[]),...fields],
-  cells:(row:Row):(string|number)[]=>[...(knowledge?[String(row.name??'')]:[]),...(chunked?[String(row.sourceName??''),row.sourceId?`${row.chunkIndex} of ${row.chunkCount}`:'']:[]),...fields.map(heading=>subjectField(row,heading))]};
+ return {header:[...(knowledge?['subject']:[]),...(chunked?['source_document','chunk',...(split?SPLIT_COLUMNS:[])]:[]),...fields],
+  cells:(row:Row):(string|number)[]=>[...(knowledge?[String(row.name??'')]:[]),...(chunked?[String(row.sourceName??''),row.sourceId?`${row.chunkIndex} of ${row.chunkCount}`:'',...(split?(row.sourceId?[whole(row.wordsPerChunk),String(row.chunkMethod??'exact-words'),whole(row.wordStart),whole(row.wordEnd)]:['','','','']):[])]:[]),...fields.map(heading=>subjectField(row,heading))]};
+}
+// How the texts of a set were split, where any was: for the record of a run. Absent: none of them is a part of a
+// split text. A value is a list where the parts were not all made the same way.
+export function splitRecord(rows:Row[]):Record<string,unknown>|undefined{
+ const parts=rows.filter(row=>row.sourceId);if(!parts.length)return undefined;
+ const one=<T,>(values:T[])=>{const distinct=[...new Set(values)];return distinct.length===1?distinct[0]:distinct;};
+ const segmenters=[...new Set(parts.map(row=>row.segmenter).filter((value):value is string=>typeof value==='string'&&value!==''))];
+ return {n_chunks:parts.length,n_source_documents:new Set(parts.map(row=>String(row.sourceId))).size,chunk_words:one(parts.map(row=>whole(row.wordsPerChunk))),chunk_method:one(parts.map(row=>String(row.chunkMethod??'exact-words'))),...(segmenters.length?{sentence_segmenter:one(segmenters)}:{})};
 }
 
 // The column of each field. A named answer field goes under its key: the name in lower case with _ between
@@ -84,7 +96,11 @@ export function thinkingOf(run:{provider?:string;model?:string;effort?:string;su
  if(!budgetedClaude(String(run.model??'')))return 'adaptive (on)'+summary;
  return run.effort==='off'?'off':`enabled (budget of ${run.effort} tokens)${summary}`;
 }
-export const modeOf=(processing:string)=>processing==='batch'?'batch':processing==='instant'?'sync':'sync and batch';
+// How a run's requests were sent, in the words every export file uses: one by one, or through the provider's
+// batch interface.
+export const modeOf=(processing:string)=>processing==='batch'?'batch':processing==='instant'?'one by one':'one by one and batch';
+// What stands where a run set no temperature or effort of its own.
+export const MODEL_DEFAULT='model default';
 
 // The first 12 hexadecimal digits of each prompt's SHA-256, to tell at a glance whether two runs used the same prompt.
 // A prompt sent with a system prompt of one's own is hashed with it (promptKey in runs.ts); look a hash up with
@@ -101,15 +117,23 @@ export async function promptHashes(dataset:Dataset):Promise<Map<string,string>>{
 
 // What a run did, counted from its requests. requests: total, ok, and failed count each text's last request
 // in the run (with several annotations per text, the last request for each annotation); replaced counts the
-// failed attempts that were sent again. Tokens and cost include those attempts.
+// failed attempts that were sent again. Tokens and cost include those attempts. reasoningKnownFor: the requests
+// whose provider reported a count of reasoning tokens (0: the run's total is not known, not zero).
+// finished: the time of the run's latest result (empty while the run is in progress). For a request sent through
+// a provider's batch interface that is the time its result was collected here, which can be long after the
+// provider produced it, so the exports give a run two times: ended, when its last reply was produced (the latest
+// reply of requests sent one by one, and the provider's own time for the end of each batch, kept since November
+// 24, 2026: empty where a batch has none), and collected, when the last batch results were collected (empty for a
+// run without a batch). requests.lastReply and requests.lastCollected are the same two times so far, whether or
+// not the run is in progress.
 export type RunFacts={run:RunLine;texts:number;usable:number;allFailed:number;active:number;
- requests:{total:number;ok:number;failed:number;replaced:number;first:string;last:string};
- tokens:{input:number;output:number;reasoning:number;cacheRead:number;cacheWrite:number;knownFor:number};
- cost:{amount:number;knownFor:number;of:number};models:string[];labs:string[];processing:'instant'|'batch'|'instant and batch';batchIds:string[];finished:string;webSearch:boolean;recorded:number};
+ requests:{total:number;ok:number;failed:number;replaced:number;first:string;last:string;lastReply:string;lastCollected:string};
+ tokens:{input:number;output:number;reasoning:number;cacheRead:number;cacheWrite:number;knownFor:number;reasoningKnownFor:number};
+ cost:{amount:number;knownFor:number;of:number};models:string[];labs:string[];processing:'instant'|'batch'|'instant and batch';batchIds:string[];finished:string;ended:string;collected:string;webSearch:boolean;recorded:number};
 export function runFacts(dataset:Dataset,run:RunLine,all:RequestLine[]=requestLines(dataset)):RunFacts{
  const lines=all.filter(line=>line.run===run.number),texts=new Set<string>(),ok=new Set<string>();
- const requests={total:0,ok:0,failed:0,replaced:0,first:'',last:''},tokens={input:0,output:0,reasoning:0,cacheRead:0,cacheWrite:0,knownFor:0},cost={amount:0,knownFor:0,of:lines.length};
- const models=new Set<string>(),labs=new Set<string>(),batchIds=new Set<string>();let instant=0,batch=0,webSearch=false,recorded=0;
+ const requests={total:0,ok:0,failed:0,replaced:0,first:'',last:'',lastReply:'',lastCollected:''},tokens={input:0,output:0,reasoning:0,cacheRead:0,cacheWrite:0,knownFor:0,reasoningKnownFor:0},cost={amount:0,knownFor:0,of:lines.length};
+ const models=new Set<string>(),labs=new Set<string>(),batchIds=new Set<string>();let instant=0,batch=0,webSearch=false,recorded=0,lastInstant='',lastBatch='',batchEnd='',batchEndKnown=true;
  for(const {row,result,replaced} of lines){
   texts.add(row.id);
   if(replaced)requests.replaced++;else{requests.total++;if(result.status==='done'){requests.ok++;ok.add(row.id);}else requests.failed++;}
@@ -118,15 +142,21 @@ export function runFacts(dataset:Dataset,run:RunLine,all:RequestLine[]=requestLi
   if(done&&done>requests.last)requests.last=done;
   const used=tokensOf(result);
   if(used.input!==''){tokens.knownFor++;tokens.input+=used.input;tokens.output+=Number(used.output)||0;tokens.reasoning+=Number(used.reasoning)||0;tokens.cacheRead+=Number(used.cacheRead)||0;tokens.cacheWrite+=Number(used.cacheWrite)||0;}
+  if(used.reasoning!=='')tokens.reasoningKnownFor++;
   const charge=costOf(result);if(charge!==''){cost.amount+=charge;cost.knownFor++;}
   if(result.status==='done'&&result.modelReported)models.add(String(result.modelReported));
   if(result.lab)labs.add(String(result.lab));
-  if(result.processing==='batch'){batch++;if(result.batchId)batchIds.add(String(result.batchId));}else instant++;
+  if(result.processing==='batch'){
+   batch++;if(result.batchId)batchIds.add(String(result.batchId));if(done>lastBatch)lastBatch=done;
+   const end=typeof result.batchEndedAt==='string'?result.batchEndedAt:'';if(!end)batchEndKnown=false;else if(end>batchEnd)batchEnd=end;
+  }else{instant++;if(done>lastInstant)lastInstant=done;}
   if(result.webSearch)webSearch=true;
   if(result.requestId)recorded++;
  }
+ requests.lastReply=!batch?requests.last:batchEndKnown&&batchEnd?(lastInstant>batchEnd?lastInstant:batchEnd):'';requests.lastCollected=lastBatch;
  return {run,texts:texts.size+run.active,usable:ok.size,allFailed:texts.size-ok.size,active:run.active,requests,tokens,cost:{...cost,amount:Number(cost.amount.toFixed(6))},models:[...models],labs:[...labs],
-  processing:batch&&instant?'instant and batch':batch?'batch':'instant',batchIds:[...batchIds],finished:run.active?'':requests.last,webSearch,recorded};
+  processing:batch&&instant?'instant and batch':batch?'batch':'instant',batchIds:[...batchIds],finished:run.active?'':requests.last,
+  ended:run.active?'':requests.lastReply,collected:run.active?'':requests.lastCollected,webSearch,recorded};
 }
 
 // One row per text of a run: doc_id, its answers (in a run that makes several annotations per text, the
@@ -184,22 +214,26 @@ export function requestsTable(study:ExportStudy,runs:number[]|undefined,hashes:M
 }
 
 // One row per run, with its settings, counts, and tokens (Model knowledge adds web_search at the end); a column no
-// run has a value in is left out.
-export function runsOverview(study:ExportStudy,hashes:Map<string,string>):Table{
- const {dataset}=study,knowledge=dataset.kind==='knowledge',lines=requestLines(dataset);
- const header=['run','label','started_at','finished_at','status','mode','batch_id','scope','n_texts','replicates','requests_ok','requests_failed','requests_replaced_by_retries','provider','model_requested','models_reported','effort','thinking','temperature','max_output_tokens','caching','prompt_version','prompt_hash','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','error','notes',
+// run has a value in is left out. finished_at and results_collected_at: see RunFacts (ended, collected).
+// max_output_tokens: what the run's requests say (runOutputLimit). sentOf: a run's requests, where the caller
+// has read them already.
+export function runsOverview(study:ExportStudy,hashes:Map<string,string>,sentOf?:(run:number)=>RunRequests|undefined):Table{
+ const {dataset}=study,knowledge=dataset.kind==='knowledge',lines=requestLines(dataset),find=requestFinder(study);
+ const header=['run','label','started_at','finished_at','results_collected_at','status','mode','batch_id','scope','n_texts','replicates','requests_ok','requests_failed','requests_replaced_by_retries','provider','model_requested','models_reported','effort','thinking','temperature','max_output_tokens','caching','prompt_version','prompt_hash','input_tokens','output_tokens','reasoning_tokens','cache_read_tokens','cache_write_tokens','error','notes',
   ...(knowledge?['web_search']:[])];
  return withoutBlankColumns([header,...runLines(dataset).map(run=>{
   const facts=runFacts(dataset,run,lines),known=facts.tokens.knownFor>0,sum=(n:number)=>known?n:'';
   const notes=run.mixed?'Settings vary within this run; see the table of requests.':run.recorded?'':'Settings read from the run’s results (the run has no record of its own).';
-  return [run.number,run.label??'',run.startedAt,facts.finished,runState(dataset.rows,run),modeOf(facts.processing),facts.batchIds.join('; '),run.scope??'',facts.texts,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,
-   run.provider,run.model,facts.models.join('; '),run.effort||'default',thinkingOf(run),run.temperature??'default',run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt),run.caching,run.promptVersion,hashOf(hashes,run.prompt,run.system),
-   sum(facts.tokens.input),sum(facts.tokens.output),sum(facts.tokens.reasoning),sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),'',notes,
+  return [run.number,run.label??'',run.startedAt,facts.ended,facts.collected,runState(dataset.rows,run),modeOf(facts.processing),facts.batchIds.join('; '),run.scope??'',facts.texts,run.repeats||1,facts.requests.ok,facts.requests.failed,facts.requests.replaced,
+   run.provider,run.model,facts.models.join('; '),run.effort||MODEL_DEFAULT,thinkingOf(run),run.temperature??MODEL_DEFAULT,runOutputLimit(run,sentOf?.(run.number)??runRequests(study,run.number,find,lines)),run.caching,run.promptVersion,hashOf(hashes,run.prompt,run.system),
+   sum(facts.tokens.input),sum(facts.tokens.output),facts.tokens.reasoningKnownFor?facts.tokens.reasoning:'',sum(facts.tokens.cacheRead),sum(facts.tokens.cacheWrite),'',notes,
    ...(knowledge?[run.webSearch?'yes':'no']:[])];
  })]);
 }
-// A table without the columns that no row has a value in (a label, batch ID, scope, or note no run has).
+// A table without the columns that no row has a value in (a label, batch ID, scope, or note no run has). A table
+// without rows keeps its column names.
 export function withoutBlankColumns(table:Table):Table{
+ if(table.length<2)return table;
  const keep=table[0].map((_,i)=>i).filter(i=>table.slice(1).some(row=>row[i]!==''&&row[i]!==null&&row[i]!==undefined));
  return table.map(row=>keep.map(i=>row[i]));
 }
@@ -209,7 +243,7 @@ export function withoutBlankColumns(table:Table):Table{
 // study has such texts), and its labels and metadata; then the columns only the Lab has, and `file`, the path
 // of a PDF in the package (a PDF is sent as a file, so it has no text here).
 function corpusHeader(dataset:Dataset,withFiles:boolean,kept:number[]=dataset.columns.map((_,c)=>c),source=true){
- const extra=textExtras(dataset),removed=dataset.rows.some(row=>row.removedAt);
+ const extra=textExtras(dataset,true),removed=dataset.rows.some(row=>row.removedAt);
  const taken=new Set(['doc_id','text','n_characters','source','removed_from_study',...extra.header,...(withFiles?['file']:[])].map(lower));
  return {extra,removed,header:uniqueNames(['doc_id','text','n_characters',...(source?['source']:[]),...(removed?['removed_from_study']:[]),...named(dataset.columns.map(column=>column.name),taken,'meta_').filter((_,c)=>kept.includes(c)),...extra.header,...(withFiles?['file']:[])])};
 }
@@ -230,7 +264,7 @@ export function corpusTable(dataset:Dataset,rows:Row[],texts:Map<string,string>,
 export function corpusRecords(dataset:Dataset,rows:Row[],texts:Map<string,string>,files:Map<string,string>):Record<string,unknown>[]{
  const knowledge=dataset.kind==='knowledge';
  return rows.map(row=>({doc_id:docIdOf(dataset,row),text:texts.get(row.id)??null,source:sourceName(dataset,row),meta:Object.fromEntries(dataset.columns.map((column,c)=>[column.name,row.cells?.[c]??''])),
-  ...(knowledge?{subject:String(row.name??''),fields:row.fields||[]}:row.sourceId?{source_document:String(row.sourceName??''),chunk:`${row.chunkIndex} of ${row.chunkCount}`}:{}),
+  ...(knowledge?{subject:String(row.name??''),fields:row.fields||[]}:row.sourceId?{source_document:String(row.sourceName??''),chunk:`${row.chunkIndex} of ${row.chunkCount}`,chunk_words:whole(row.wordsPerChunk),chunk_method:String(row.chunkMethod??'exact-words'),word_start:whole(row.wordStart),word_end:whole(row.wordEnd)}:{}),
   ...(files.has(row.id)?{file:files.get(row.id)}:{}),...(row.removedAt?{removed_from_study:removedOn(row)}:{})}));
 }
 

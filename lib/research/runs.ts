@@ -38,7 +38,7 @@ export type Row=ResultFields&{id:string;status:string;name:string;runNo?:number;
 // Everything a single annotation writes on a text (the same list Clear results removes). requestId to inserts are
 // the record research mode keeps of a request (lib/research/requests.ts); the last three belong to a result
 // made of several annotations (lib/research/repeats.ts).
-export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','requestSettings','answers','history','startedAt','concurrency','provider','score','explanation','error','model','prompt','effort','tokens','usage','time','responseId','processing','batchId','runNo','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts','repeats','annotations','consistency','layout'] as const;
+export const RESULT_KEYS=['inputMode','runId','runStartedAt','runSize','responseFormat','rawResponse','answerFields','answerSettings','requestSettings','answers','history','startedAt','concurrency','provider','score','explanation','error','model','prompt','effort','tokens','usage','time','responseId','processing','batchId','batchEndedAt','runNo','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts','repeats','annotations','consistency','layout'] as const;
 
 // Field names and their settings together: the same answers are asked for exactly when this is the same.
 const fieldsKey=(setup:{answerFields?:string[];answerSettings?:AnswerSettings})=>JSON.stringify([setup.answerFields||[],setup.answerSettings||null]);

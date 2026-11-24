@@ -128,7 +128,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert(!overview[0].includes('system_prompt'),'runs.csv has no column for it: prompts/vN/system_prompt.txt holds it');assert.notEqual(overview[1][hashAt],overview[2][hashAt]);
  const long=tables.requestsTable(exported,undefined,hashes),hashColumn=long[0].indexOf('prompt_hash');assert.deepEqual(long.slice(1).map(line=>line[hashColumn]),[overview[1][hashAt],overview[2][hashAt]]);
  const packages=fs.readFileSync(path.join(root,'lib/research/export-packages.ts'),'utf8');
- for(const piece of ["['System prompt',run.system||'(none)']","{path:'system_prompt.txt',data:run.system}","await add(`prompts/v${run.promptVersion}/${file.path}`,file.data)","which!=='run'?[{path:'prompt.txt',data:run.prompt},...(run.system?[{path:'system_prompt.txt',data:run.system}]:[])]",'system_prompt:run.system??null'])assert(packages.includes(piece),piece);
+ for(const piece of ["['System prompt',run.system||'(none)']","{path:'system_prompt.txt',data:run.system}","await add(`prompts/v${run.promptVersion}/${file.path}`,file.data)","const prompt:PackageFile[]=[{path:'prompt.txt',data:run.prompt},...(run.system?[{path:'system_prompt.txt',data:run.system}]:[])];","if(which==='version')return prompt;",'system_prompt:run.system??null'])assert(packages.includes(piece),piece);
 
  // --- Backups, the estimate, the caching note, and input counting ---------------------------------
  const study={name:'Own',createdAt:'2026-11-16T12:00:00Z',texts:{answerFields:[],prompt:PROMPT,requestSettings:{system:SYSTEM},docs:[{id:'a',name:'a.txt',file:new File(['Text'],'a.txt'),...done,requestSettings:{system:SYSTEM}}]},knowledge:{answerFields:[],prompt:PROMPT,requestSettings:{system:SYSTEM},items:[]}};

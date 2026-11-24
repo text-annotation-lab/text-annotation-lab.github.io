@@ -9,14 +9,14 @@ import {fillRequest} from '../request-frame';
 import {insertMap,markedInserts,placesText} from '../prompt-inserts';
 import {columnIndex,stem} from './columns';
 import {agreementTable,runAgreement,type AgreementLine,type Intervals,type LabelPair,type Skipped} from './export-agreement';
-import {fileHash,fullestRun,requestFinder,requestLines,requestParts,requestRecord,responseRecord,runFolder,runRequests,type DocumentReader,type ExportStudy,type RunRequests,type SentRequest} from './export-data';
-import {fillScript,keyVariable,REQUIREMENTS,SCRIPT_TEMPLATE,scriptValues} from './export-python';
-import {codebook,codebookRecord,corpusColumnNames,corpusRecords,corpusTable,docIdOf,failureOf,fieldKeys,hashOf,promptHashes,requestsTable,resultsTable,runFacts,runsOverview,sourceName,thinkingOf,type RunFacts,type Table} from './export-tables';
+import {fileHash,fullestRun,requestFinder,requestLines,requestParts,requestRecord,responseRecord,runFolder,runOutputLimit,runRequests,type DocumentReader,type ExportStudy,type RequestLine,type RunRequests,type SentRequest} from './export-data';
+import {fillScript,keyVariable,SCRIPT_TEMPLATE,scriptValues,withoutTemplateLine} from './export-python';
+import {codebook,codebookRecord,corpusColumnNames,corpusRecords,corpusTable,docIdOf,failureOf,fieldKeys,hashOf,modeOf,MODEL_DEFAULT,promptHashes,requestsTable,resultsTable,runFacts,runsOverview,sourceName,splitRecord,thinkingOf,type RunFacts,type Table} from './export-tables';
 import {buildWorkbook,isProse,type Sheet} from './export-workbook';
-import {dateStamp,exportStem,publicColumns,runLines,unitOf,type RunLine} from './export';
+import {dateStamp,exportStem,publicColumns,runLines,sourceOf,unitOf,type RunLine} from './export';
 import {BOOTSTRAP_RESAMPLES,fixed,fmtStat} from './metrics';
 import {toCsv} from './parse-table';
-import {rowForRun,type Row} from './runs';
+import {rowForRun,runState,type Row} from './runs';
 import {tiedVote} from './repeats';
 import {officialUrl} from './requests';
 import {plainMethod,sampleNote} from './sample';
@@ -40,9 +40,16 @@ const pretty=(value:unknown)=>JSON.stringify(value,null,2)+'\n';
 // CSV files are written for analysis software, exactly as the values are.
 const CSV_NOTE='The CSV files are for analysis software: they keep every value exactly as it is (a value starting with =, +, -, or @ is not escaped, so a spreadsheet program may read it as a formula).';
 const TOKEN_NOTE='Token counts are the providers’ own: input tokens include tokens read from or written to a prompt cache, and output tokens include reasoning tokens.';
-const LOG_NOTE='Each line starts with doc_id, replicate, and attempt. In requests.jsonl, `request` is the request as it was sent, with the document put back where it was (API keys travel in request headers and are never included). In responses.jsonl, `response` holds what was kept of the reply: the text the model returned, the summary of its reasoning where the run asked for one, the model the provider named, the stop reason, the token counts, and the response ID, not the provider’s whole response; a failed attempt that was sent again also has its status, error, and parse_error.';
-// The research repository's logs also hold requests made before requests were kept (see requestOf).
-const REBUILT_NOTE='`recorded` is false for a request that was not kept when it was sent: it was built again from the run’s settings.';
+// lean (the supplementary repository): the replies are without the provider's IDs.
+const logNote=(lean:boolean)=>`Each line starts with doc_id, replicate, and attempt. In requests.jsonl, \`request\` is the request as it was sent, with the document put back where it was (API keys travel in request headers and are never included). In responses.jsonl, \`response\` holds what was kept of the reply: the text the model returned, the summary of its reasoning where the run asked for one, the model the provider named, the stop reason, ${lean?'and the token counts':'the token counts, and the response ID'}, not the provider’s whole response; a failed attempt that was sent again also has its status, error, and parse_error.`;
+// A request that was not kept when it was sent (a run made before requests were kept; see requestOf).
+const REBUILT_NOTE='`recorded` is false for a request that was not kept when it was sent: it was built again from the run’s settings, so it shows what those settings give, not a copy of what was sent (`answer_format_unchanged`, where it is given, says whether the answer format kept with the result is the one the rebuilt request has).';
+// What the times of a request sent through a provider's batch interface are.
+const BATCH_TIMES_NOTE='For a request sent through the provider’s batch interface, `requested_at` is when its batch was submitted and `completed_at` when its results were collected, which can be long after the provider produced them.';
+// Why a prompt taken from a request body has another hash than prompt.txt.
+const hashNote=(system:boolean,folder:string)=>`The prompt hash is the first 12 hexadecimal digits of the SHA-256 of ${system?'the prompt and the system prompt together (as the JSON list `["<prompt>","<system prompt>"]`)':`\`${folder}prompt.txt\``}, in UTF-8 and as written (line breaks as LF). Inside the request bodies the prompt has CR LF line breaks, as it was sent, so the prompt copied from a request gives another hash until its line breaks are changed back.`;
+// What OpenAI's cache option says where caching was off.
+const CACHE_OPTION_NOTE='An OpenAI request made with prompt caching off carries `"prompt_cache_options": {"mode": "explicit"}` and marks no part of the request to cache: with that option nothing is cached unless a part is marked, so this is how caching is turned off.';
 
 // The documents of a set of texts, read once. A PDF was sent as a file: it has no text, and the file goes
 // into the package under `folder`.
@@ -71,8 +78,10 @@ async function readCorpus(ctx:ExportContext,rows:Row[],folder:string,keepFiles:b
 
 // A run's requests and replies as JSON Lines, in the study's order of texts, then replicate (which of the
 // text's annotations), then attempt. filePath: where a
-// PDF is in the package (absent when it is not included).
-async function runLogs(ctx:ExportContext,run:number,find:(row:Row,result:Row)=>SentRequest|undefined,filePath:(row:Row)=>string|undefined):Promise<{requests:Blob;responses:Blob}>{
+// PDF is in the package (absent when it is not included). lean (the supplementary repository): without the
+// provider's IDs of a reply and its batch, which point into the researcher's own account, and `recorded` only
+// where a request was not kept when it was sent.
+async function runLogs(ctx:ExportContext,run:number,find:(row:Row,result:Row)=>SentRequest|undefined,filePath:(row:Row)=>string|undefined,lean=false):Promise<{requests:Blob;responses:Blob}>{
  const {dataset}=ctx.study,requests:unknown[]=[],responses:unknown[]=[],hashes=new Map<string,string>();
  const lines=requestLines(dataset).filter(line=>line.run===run);
  for(const [i,{row,replicate,attempt,result,replaced}] of lines.entries()){
@@ -84,17 +93,17 @@ async function runLogs(ctx:ExportContext,run:number,find:(row:Row,result:Row)=>S
    const path=filePath(row);
    pdf=`[PDF file: ${doc.filename}, ${doc.pdf.size} bytes, SHA-256 ${hashes.get(row.id)}; ${path?'in this package at '+path:'not included in this package'}]`;
   }
-  const {request,...kept}=requestRecord(sent,doc,result,pdf),{status,error,...reply}=responseRecord(result),failure=failureOf(result);
-  requests.push({...head,request,run,...(replaced?{sent_again:true}:{}),...kept,...(sent?{recorded:sent.recorded}:{})});
+  const {request,recorded:_recorded,...kept}=requestRecord(sent,doc,result,pdf),{status,error,...whole}=responseRecord(result),failure=failureOf(result);
+  const {response_id:_id,batch_id:_batch,...short}=whole,reply=lean?short:whole;
+  requests.push({...head,request,run,...(replaced?{sent_again:true}:{}),...(sent&&!(lean&&sent.recorded)?{recorded:sent.recorded}:{}),...kept});
   responses.push({...head,...(replaced?{status,error:failure.error||null,parse_error:failure.parseError||null}:{}),response:reply,run,...(replaced?{sent_again:true}:{status,...(status==='ok'?{}:{error:failure.error||null,parse_error:failure.parseError||null})})});
  }
  return {requests:jsonLines(requests),responses:jsonLines(responses)};
 }
 
 // The temperature a run was sent with: what its request says, or what the run's setup records.
-const temperatureOf=(run:RunFacts['run'],parts?:{temperature?:number}):number|'model default'=>parts?.temperature??run.temperature??'model default';
+const temperatureOf=(run:RunFacts['run'],parts?:{temperature?:number}):number|string=>parts?.temperature??run.temperature??MODEL_DEFAULT;
 const explanationRequested=(facts:RunFacts)=>!facts.run.answerSettings?.plain&&(facts.run.answerSettings?.rationale!==false||facts.run.answerFields.some(name=>name.toLowerCase()==='explanation'));
-const processingWords=(facts:RunFacts)=>facts.processing==='batch'?'the provider’s batch interface':facts.processing==='instant'?'requests sent one by one':'requests sent one by one and the provider’s batch interface';
 // The fields of a run whose answers are combined by majority vote when it makes several annotations per text: not
 // a scale, a number, free text, or an explanation ('' for the single score or category).
 function votedFields(run:RunLine):string[]{
@@ -106,60 +115,79 @@ function votedFields(run:RunLine):string[]{
 // The record of one run: settings, dates, counts, tokens, and the request bodies as sent (with marks where the
 // document goes). It is run.json in the research repository; metadata.json in the supplementary repository is its
 // public part (publicRecord). Neither names the Lab or its build: software_versions.json does (research repository).
-function runRecord(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequests,exportedAt:string){
- const {dataset}=study,{run}=facts,unit=unitOf(dataset),frame=(sent.text||sent.pdf)?.frame,parts=frame?requestParts(frame):undefined,known=facts.tokens.knownFor>0;
- const body=(kind:string,request?:SentRequest&{count:number})=>request?[{kind,requests:request.count,recorded:request.recorded,url:request.frame.url,body:JSON.parse(request.frame.body)}]:[];
+const NOT_KEPT='Not kept when it was sent: built again from the run’s settings.';
+function runRecord(study:ExportStudy,report:RunReport,exportedAt:string){
+ const {dataset}=study,{facts,hash,sent}=report,{run}=facts,unit=unitOf(dataset),frame=(sent.text||sent.pdf)?.frame,parts=frame?requestParts(frame):undefined,known=facts.tokens.knownFor>0;
+ // Every different body of the run's requests with the number of its requests, the most used first (a run can
+ // hold several: part of it sent through the batch interface, or, in Model knowledge, requests to several models).
+ const bodies=sent.bodies.map(body=>({kind:body.kind as string,requests:body.count,recorded:body.recorded,...(body.recorded?{}:{note:NOT_KEPT}),url:body.frame.url,body:JSON.parse(body.frame.body)}));
  // Scores off the study's scale left out when a text's annotations were combined, because another was on it (scale-combine.ts).
  const offScale=run.answerSettings?.plain&&(run.repeats||1)>1?offScaleLeftOut(dataset.rows,run.number,dataset.scoreScale):0;
  // Texts whose majority vote was tied, by field (kept as "a | b"; see repeats.ts).
  const voted=votedFields(run),keys=fieldKeys(run.answerFields,new Set(run.answerFields)),done=voted.length?dataset.rows.map(row=>rowForRun(row,run.number)).filter(result=>result.status==='done'):[];
  const ties=Object.fromEntries(voted.map(name=>[name?keys[run.answerFields.indexOf(name)]:'score',done.filter(result=>tiedVote(result,name)).length]));
+ // How the run's texts were split, where any is a part of a longer text.
+ const split=splitRecord(report.rows);
  return {
   exported_at:exportedAt,study:study.name,
   // Notes kept with the study: how each sample was drawn (rule and seed).
   study_notes:dataset.samples.map(sampleNote).join('\n')||null,
-  run:{number:run.number,...(run.label?{label:run.label}:{}),...(run.scope?{scope:run.scope}:{}),started_at:run.startedAt,finished_at:facts.finished||null,status_when_exported:run.active?'in progress':'finished',processing:processingWords(facts),batch_ids:facts.batchIds},
-  model:{provider:run.provider,requested:run.model,reported_by_api:facts.models,reasoning_effort:run.effort,reasoning_summary_requested:run.summary==='in part'?'in part':run.summary==='on',temperature:temperatureOf(run,parts),max_output_tokens:parts?.limit??null},
+  // finished_at: when the run's last reply was produced (null: not finished, or a batch whose end the provider's
+  // record of it was not kept for). results_collected_at: when the last results of a batch were collected.
+  run:{number:run.number,...(run.label?{label:run.label}:{}),...(run.scope?{scope:run.scope}:{}),started_at:run.startedAt,finished_at:facts.ended||null,...(facts.collected?{results_collected_at:facts.collected}:{}),status_when_exported:runState(dataset.rows,run) as string,processing:modeOf(facts.processing),batch_ids:facts.batchIds},
+  model:{provider:run.provider,requested:run.model,reported_by_api:facts.models,reasoning_effort:run.effort||MODEL_DEFAULT,reasoning_summary_requested:run.summary==='in part'?'in part':run.summary==='on',temperature:temperatureOf(run,parts),max_output_tokens:runOutputLimit(run,sent)},
   prompt:{version:run.promptVersion,sha256_prefix:hash,answer_format:run.answerSettings?.plain?'plain text':'structured',explanation_requested:explanationRequested(facts),answer_fields:run.answerFields,answer_settings:run.answerSettings??null,system_prompt:run.system??null,...(run.answerSettings?.plain&&dataset.scoreScale?{score_scale_for_statistics:{...dataset.scoreScale,sent_to_model:false}}:{})},
   options:{annotations_per_text:run.repeats||1,prompt_caching:run.caching,...(dataset.kind==='knowledge'?{web_search:run.webSearch}:{})},
   // The bodies of the run's requests, with marks where each document goes (<<DOCUMENT_FILENAME>>, <<DOCUMENT_TEXT>>, <<FILE_BASE64>>).
   // recorded: false for a request that was not kept when it was sent, built again from the run's settings.
-  requests_as_sent:{different_bodies:sent.forms,bodies:[...body('text',sent.text),...body('pdf',sent.pdf)]},
-  corpus:{[`n_${unit}s_in_run`]:facts.texts,[`n_${unit}s_with_usable_annotation`]:facts.usable,[`n_${unit}s_all_requests_failed`]:facts.allFailed,[`n_${unit}s_without_result_yet`]:facts.active,...((run.repeats||1)>1?{[`n_${unit}s_with_fewer_usable_annotations`]:run.fewer}:{}),...(voted.length?{[`n_${unit}s_with_tied_votes`]:ties}:{})},
+  requests_as_sent:{different_bodies:sent.forms,bodies},
+  corpus:{[`n_${unit}s_in_run`]:facts.texts,[`n_${unit}s_with_usable_annotation`]:facts.usable,[`n_${unit}s_all_requests_failed`]:facts.allFailed,[`n_${unit}s_without_result_yet`]:facts.active,...((run.repeats||1)>1?{[`n_${unit}s_with_fewer_usable_annotations`]:run.fewer}:{}),...(voted.length?{[`n_${unit}s_with_tied_votes`]:ties}:{}),...(split?{split}:{})},
   // total, ok, failed: each text's last request in the run (with several annotations per text, the last request
-  // for each annotation). replaced_by_retries: failed attempts that were sent again.
-  requests:{total:facts.requests.total,ok:facts.requests.ok,failed:facts.requests.failed,replaced_by_retries:facts.requests.replaced,...(facts.requests.replaced?{sent_in_all:facts.requests.total+facts.requests.replaced}:{}),first_requested_at:facts.requests.first||null,last_completed_at:facts.requests.last||null,...(offScale?{scores_off_scale_left_out_when_combined:offScale}:{})},
-  tokens:known?{input:facts.tokens.input,output:facts.tokens.output,reasoning:facts.tokens.reasoning,cache_read:facts.tokens.cacheRead,cache_write:facts.tokens.cacheWrite,known_for_requests:facts.tokens.knownFor}:null,
+  // for each annotation). replaced_by_retries: failed attempts that were sent again. last_completed_at: when the
+  // last reply was produced (null for a batch without the provider's time for its end); last_results_collected_at:
+  // when the last results of a batch were collected.
+  requests:{total:facts.requests.total,ok:facts.requests.ok,failed:facts.requests.failed,replaced_by_retries:facts.requests.replaced,...(facts.requests.replaced?{sent_in_all:facts.requests.total+facts.requests.replaced}:{}),first_requested_at:facts.requests.first||null,last_completed_at:facts.requests.lastReply||null,...(facts.requests.lastCollected?{last_results_collected_at:facts.requests.lastCollected}:{}),...(offScale?{scores_off_scale_left_out_when_combined:offScale}:{})},
+  // reasoning: null where no request's provider reported a count of its own (not known, which is not zero).
+  tokens:known?{input:facts.tokens.input,output:facts.tokens.output,reasoning:facts.tokens.reasoningKnownFor?facts.tokens.reasoning:null,cache_read:facts.tokens.cacheRead,cache_write:facts.tokens.cacheWrite,known_for_requests:facts.tokens.knownFor}:null,
  };
 }
 type RunRecord=ReturnType<typeof runRecord>;
-// metadata.json of the supplementary repository: the run's record without study notes, its label, scope, or batch
-// IDs, the system prompt or answer settings (prompt/ holds them), and counters that are 0 (the totals always); the
-// output schema is named where the request bodies hold it (prompt/output_schema.json).
-function publicRecord(record:RunRecord,unit:string,schema:unknown):Record<string,unknown>{
- const {study_notes:_notes,run,prompt,requests_as_sent,corpus,requests,...rest}=record;
- const {label:_label,scope:_scope,batch_ids:_batches,status_when_exported,...runRest}=run as typeof run&{label?:string;scope?:string};
+// Whether a run covered only part of the study's texts (a sample, checked texts, one text).
+const partOfStudy=(dataset:ExportStudy['dataset'],facts:RunFacts)=>facts.texts<dataset.rows.filter(row=>!row.removedAt).length;
+// metadata.json of the supplementary repository: the run's record without its label or batch IDs, the system
+// prompt or answer settings (prompt/ holds them), and counters that are 0 (the totals always); the output schema
+// is named where the request bodies hold it (prompt/output_schema.json). Which texts the run covered and the
+// study's notes on how its samples were drawn stay only where the run covered part of the study (partial).
+// `recorded` stays only where a body was not kept when it was sent, and a time only where there is one.
+function publicRecord(record:RunRecord,unit:string,schema:unknown,partial:boolean):Record<string,unknown>{
+ const {study_notes,run,prompt,requests_as_sent,corpus,requests,...rest}=record;
+ const {label:_label,scope,batch_ids:_batches,status_when_exported,finished_at,...runRest}=run as typeof run&{label?:string;scope?:string};
  const nonZero=(o:Record<string,unknown>,always:string[])=>Object.fromEntries(Object.entries(o).filter(([key,value])=>always.includes(key)||(value!==0&&value!==null&&value!==undefined)));
  const shown=JSON.stringify(schema),named=(value:unknown):unknown=>schema!==undefined&&JSON.stringify(value)===shown?'see prompt/output_schema.json':Array.isArray(value)?value.map(named):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([key,item])=>[key,named(item)])):value;
  const tiedKey=`n_${unit}s_with_tied_votes`,tied=nonZero((corpus as Record<string,unknown>)[tiedKey] as Record<string,unknown>||{},[]);
+ // In the order of run.json: number, scope, the times, the status, and how the requests were sent.
+ const {number,started_at,...runLast}=runRest;
  const lean:Record<string,unknown>={...rest,
-  run:{...runRest,...(status_when_exported!=='finished'?{status_when_exported}:{})},
+  ...(partial&&study_notes?{study_notes}:{}),
+  run:{number,...(partial&&scope?{scope}:{}),started_at,...(finished_at?{finished_at}:{}),...runLast,...(status_when_exported!=='completed'?{status_when_exported}:{})},
   // The answer fields only where the schema has them under short keys (f0, f1, …).
   prompt:{version:prompt.version,sha256_prefix:prompt.sha256_prefix,answer_format:prompt.answer_format,explanation_requested:prompt.explanation_requested,...(prompt.answer_format==='structured'&&!prompt.answer_settings?.named&&prompt.answer_fields.length?{answer_fields:prompt.answer_fields}:{}),...('score_scale_for_statistics' in prompt?{score_scale_for_statistics:prompt.score_scale_for_statistics}:{})},
-  requests_as_sent:{...(requests_as_sent.different_bodies>1?{different_bodies:requests_as_sent.different_bodies}:{}),bodies:requests_as_sent.bodies.map(body=>({...body,body:named(body.body)}))},
+  requests_as_sent:{...(requests_as_sent.different_bodies>1?{different_bodies:requests_as_sent.different_bodies}:{}),bodies:requests_as_sent.bodies.map(({recorded,...body})=>({...(recorded?{}:{recorded}),...body,body:named(body.body)}))},
   corpus:{...nonZero({...corpus,[tiedKey]:undefined},[`n_${unit}s_in_run`,`n_${unit}s_with_usable_annotation`]),...(Object.keys(tied).length?{[tiedKey]:tied}:{})},
-  requests:nonZero(requests,['total','ok','failed','first_requested_at','last_completed_at'])};
+  requests:nonZero(requests,['total','ok','failed','first_requested_at'])};
  // In the order of the whole record.
  return Object.fromEntries(Object.keys(record).filter(key=>key in lean).map(key=>[key,lean[key]]));
 }
 
 // The Settings sheet of the workbook. After the common rows: web search (Model knowledge), and the prompt as sent
-// where the Lab added instructions of its own to it (addedInstructions).
+// where the Lab added instructions of its own to it (addedInstructions). A run with a batch has the time its
+// results were collected, and Finished only where the provider's time for the end of the batch was kept.
 function settingsTable(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequests):Table{
  const {dataset}=study,{run}=facts,unit=unitOf(dataset),frame=(sent.text||sent.pdf)?.frame,parts=frame?requestParts(frame):undefined,notes=dataset.samples.map(sampleNote).join('\n');
- return [['setting','value'],['Study',study.name],...(notes?[['Study notes (e.g. how samples were drawn)',notes]]:[]),['Run','#'+run.number+(run.label?` (${run.label})`:'')],['Started',run.startedAt],['Finished',run.active?'not finished when exported (the results so far)':facts.finished],
-  ['Provider',run.provider],['Model',run.model],['Effort / reasoning',run.effort||'model default'],['Thinking',thinkingOf(run)||'n/a (reasoning controlled by effort)'],['Temperature',temperatureOf(run,parts)],['Max output tokens',parts?.limit??''],[`Annotations per ${unit}`,(run.repeats||1)>1?`${run.repeats} (the Results sheet has the combined answers; By replicate has each annotation)`:1],
-  ['Prompt caching',run.caching],['Mode',facts.processing==='batch'?'Batch API':facts.processing==='instant'?'immediate requests':'immediate requests and Batch API'],
+ const ended:Table=run.active?[['Finished','not finished when exported (the results so far)']]:[...(facts.ended?[['Finished',facts.ended]]:[]),...(facts.collected?[['Batch results collected',facts.collected]]:[])];
+ return [['setting','value'],['Study',study.name],...(notes?[['Study notes (e.g. how samples were drawn)',notes]]:[]),['Run','#'+run.number+(run.label?` (${run.label})`:'')],['Started',run.startedAt],...ended,
+  ['Provider',run.provider],['Model',run.model],['Effort / reasoning',run.effort||MODEL_DEFAULT],['Thinking',thinkingOf(run)||'n/a (reasoning controlled by effort)'],['Temperature',temperatureOf(run,parts)],['Max output tokens',runOutputLimit(run,sent)],[`Annotations per ${unit}`,(run.repeats||1)>1?`${run.repeats} (the Results sheet has the combined answers; By replicate has each annotation)`:1],
+  ['Prompt caching',run.caching],['Mode',modeOf(facts.processing)],
   ['Prompt version',`v${run.promptVersion} (${hash})`],[`Prompt (sent with each ${unit})`,run.prompt],['System prompt',run.system||'(none)'],['Output',parts?.schema?JSON.stringify(parts.schema):run.answerSettings?.plain?'plain text':'not recorded'],
   ...(dataset.kind==='knowledge'?[['Web search',run.webSearch?'yes':'no']]:[]),
   ...(parts?.prompt&&addedInstructions(dataset,run)?[['Prompt as sent',parts.prompt]]:[])];
@@ -168,14 +196,16 @@ function settingsTable(study:ExportStudy,facts:RunFacts,hash:string,sent:RunRequ
 // before fields went under their own names), or Model knowledge's paragraph where it was not in the prompt box.
 const addedInstructions=(dataset:ExportStudy['dataset'],run:RunLine)=>dataset.kind==='knowledge'&&!run.answerSettings?.inPrompt||!(run.answerSettings?.plain||run.answerSettings?.named);
 
-// What is computed once for a run and used by its workbook, its tables, and its README.
-type RunReport={facts:RunFacts;hash:string;sent:RunRequests;agreement:AgreementLine[];pairs:LabelPair[];skipped:Skipped[]};
-async function reportRun(ctx:ExportContext,run:number,hashes:Map<string,string>,find=requestFinder(ctx.study)):Promise<RunReport>{
+// What is computed once for a run and used by its workbook, its tables, and its README. rows: the texts the run
+// sent a request for, in the study's order.
+type RunReport={facts:RunFacts;hash:string;sent:RunRequests;rows:Row[];agreement:AgreementLine[];pairs:LabelPair[];skipped:Skipped[]};
+async function reportRun(ctx:ExportContext,run:number,hashes:Map<string,string>,find=requestFinder(ctx.study),lines:RequestLine[]=requestLines(ctx.study.dataset)):Promise<RunReport>{
  const {dataset}=ctx.study,line=runLines(dataset).find(candidate=>candidate.number===run);
  if(!line)throw new Error(`Run ${run} has no results.`);
  await ctx.onProgress?.(`Computing agreement for run ${run}`);
- const {lines,pairs,skipped}=await runAgreement(dataset,run,ctx.intervals);
- return {facts:runFacts(dataset,line),hash:hashOf(hashes,line.prompt,line.system),sent:runRequests(ctx.study,run,find),agreement:lines,pairs,skipped};
+ const {lines:agreement,pairs,skipped}=await runAgreement(dataset,run,ctx.intervals);
+ const ids=new Set(lines.filter(item=>item.run===run).map(item=>item.row.id));
+ return {facts:runFacts(dataset,line,lines),hash:hashOf(hashes,line.prompt,line.system),sent:runRequests(ctx.study,run,find,lines),rows:dataset.rows.filter(row=>ids.has(row.id)),agreement,pairs,skipped};
 }
 // The column of an agreement line's field, as in the run's results tables.
 function agreementKeys(dataset:ExportStudy['dataset']):(line:AgreementLine)=>string{
@@ -187,10 +217,12 @@ function agreementKeys(dataset:ExportStudy['dataset']):(line:AgreementLine)=>str
 const RUN_CONSTANTS=['study','run','run_label','prompt_version','prompt_hash','provider','model_requested','latency_ms'];
 const BLANK_UNLESS_USED=['rationale','reasoning_summary','parse_error','error','reasoning_tokens','cache_read_tokens','cache_write_tokens'];
 const unused=(value:unknown)=>value===''||value===0||value===null||value===undefined;
-// A run's table of requests without those columns. Public (the supplementary repository): also without
-// model_reported where the provider named one model throughout, and, with one annotation per text, without
-// replicate and the answers, which results.csv gives (a plain-text reply stays where a failed request has one).
-// web_search (Model knowledge) goes where it is the same throughout.
+// A run's table of requests without those columns, and with doc_id and replicate first (what a row is, before
+// what it holds). Public (the supplementary repository): also without model_reported where the provider named
+// one model throughout, without response_id (the provider's ID of a reply, which points into the researcher's own
+// account), and, with one annotation per text, without replicate and the answers, which results.csv gives (a
+// plain-text reply stays where a failed request has one). web_search (Model knowledge) goes where it is the same
+// throughout.
 function leanRequests(table:Table,lean?:{reps:number}):Table{
  const [header,...rows]=table,at=(name:string)=>header.indexOf(name),drop=new Set<number>();
  const same=(i:number)=>i>=0&&rows.every(row=>row[i]===rows[0][i]);
@@ -200,13 +232,15 @@ function leanRequests(table:Table,lean?:{reps:number}):Table{
  if(same(at('web_search')))drop.add(at('web_search'));
  if(lean){
   if(same(at('model_reported')))drop.add(at('model_reported'));
+  if(at('response_id')>=0)drop.add(at('response_id'));
   if(lean.reps===1){
    const status=at('status'),end=header.findIndex((name,i)=>i>status&&['rationale','reasoning_summary','parse_error'].includes(String(name)));
    drop.add(at('replicate'));if(at('rationale')>=0)drop.add(at('rationale'));
    for(let i=status+1;i<end;i++)if(!(header[i]===PLAIN_FIELD&&rows.some(row=>row[status]==='error'&&row[i]!=='')))drop.add(i);
   }
  }
- return table.map(row=>row.filter((_,i)=>!drop.has(i)));
+ const first=[at('doc_id'),at('replicate')].filter(i=>i>=0),order=[...first,...header.map((_,i)=>i).filter(i=>!first.includes(i))].filter(i=>!drop.has(i));
+ return table.map(row=>order.map(i=>row[i]));
 }
 // results.csv of the supplementary repository: no n_error, and n_ok only where a text has fewer usable annotations
 // than the run made (the workbook keeps both).
@@ -241,12 +275,16 @@ export async function buildRunWorkbook(ctx:ExportContext,run:number):Promise<{na
 // codebook.json (research repository; codebook.json not for plain text), and output_schema.json; then
 // prompt_as_sent.txt, only where the Lab added instructions of its own (addedInstructions): the prompt as each
 // request carried it. which: those of a supplementary repository's prompt/ (no codebook: the schema gives the
-// fields), those of a prompt version (prompts/vN/), or those that can differ between runs of one version (runs/run-NN/).
+// fields), those of a prompt version (prompts/vN/: the prompt and its system prompt, which make the version),
+// or those of a run (runs/run-NN/: runs of one version can ask for different answer fields, so the codebook and
+// the schema are each run's own).
 function promptFiles(study:ExportStudy,report:RunReport,which:'all'|'version'|'run'):PackageFile[]{
  const {run}=report.facts,frame=(report.sent.text||report.sent.pdf)?.frame,sent=frame?requestParts(frame):undefined,plain=Boolean(run.answerSettings?.plain);
- return [...(which!=='run'?[{path:'prompt.txt',data:run.prompt},...(run.system?[{path:'system_prompt.txt',data:run.system}]:[])]:[]),
+ const prompt:PackageFile[]=[{path:'prompt.txt',data:run.prompt},...(run.system?[{path:'system_prompt.txt',data:run.system}]:[])];
+ if(which==='version')return prompt;
+ return [...(which==='all'?prompt:[]),
   ...(which==='all'?[]:[{path:'codebook.md',data:codebook(run.answerFields,run.answerSettings,study.dataset.kind==='knowledge')}]),...(sent?.schema?[{path:'output_schema.json',data:pretty(sent.schema)}]:[]),...(plain||which==='all'?[]:[{path:'codebook.json',data:pretty(codebookRecord(run.answerFields,run.answerSettings))}]),
-  ...(which!=='version'&&sent?.prompt&&addedInstructions(study.dataset,run)?[{path:'prompt_as_sent.txt',data:sent.prompt}]:[])];
+  ...(sent?.prompt&&addedInstructions(study.dataset,run)?[{path:'prompt_as_sent.txt',data:sent.prompt}]:[])];
 }
 // The placeholders of a run's prompt that were filled in for each text, read from the marks of its request.
 const runInserts=(sent:RunRequests):string[]=>markedInserts((sent.text||sent.pdf)?.frame.body||'');
@@ -296,9 +334,10 @@ function valuedInserts(dataset:ExportStudy['dataset'],run:number):Set<string>{
  for(const line of requestLines(dataset))if(line.run===run&&Array.isArray(line.result.inserts))for(const [name,value] of insertMap(String(line.result.prompt??''),line.result.inserts))if(value!=='')valued.add(name);
  return valued;
 }
-// The script that sends a run's requests again, with its template. No script: a run whose requests carried web
-// search results collected for each subject (the search is a step of its own), or a run without a known request.
-function scriptFiles(study:ExportStudy,report:RunReport,exportedAt:string,withFiles=false):{files:PackageFile[];why:string}{
+// The script that sends a run's requests again; template: with its template (the research repository). No script:
+// a run whose requests carried web search results collected for each subject (the search is a step of its own),
+// or a run without a known request.
+function scriptFiles(study:ExportStudy,report:RunReport,exportedAt:string,withFiles=false,template=false):{files:PackageFile[];why:string}{
  const {facts,sent}=report,{run}=facts;
  if(facts.webSearch)return {files:[],why:'No script is included: each request of this run carried web search results collected for its subject in a step of its own, which a script cannot repeat as it was.'};
  if(!sent.text&&!sent.pdf)return {files:[],why:'No script is included: the settings of this run’s requests were not recorded.'};
@@ -306,11 +345,15 @@ function scriptFiles(study:ExportStudy,report:RunReport,exportedAt:string,withFi
  if([sent.text,sent.pdf].some(part=>part&&!officialUrl(part.frame.url,run.provider)))return {files:[],why:'No script is included: the recorded address of this run’s requests is not the provider’s own.'};
  const other=sent.total-(sent.text?.count||0)-(sent.pdf?.count||0)-sent.unknown;
  const notes=[other>0?`${count(other)} of the run’s ${count(sent.total)} requests had another body (for example, sent through the provider’s batch interface, or with another answer format); this script sends every document with the body most of them had.`:'',
-  facts.processing!=='instant'?'The run used the provider’s batch interface; this script sends the same request bodies one by one.':''].filter(Boolean);
+  facts.processing!=='instant'?'The run used the provider’s batch interface; this script sends the same request bodies one by one.':'',
+  // The body is the run's own only where it was kept when the run was made.
+  [sent.text,sent.pdf].some(part=>part&&!part.recorded)?'The request body below was not kept when the run was made: it was built again from the run’s settings.':''].filter(Boolean);
  // Lines of at most about 78 characters, as in the rest of the script's opening text.
  const wrap=(text:string)=>text.split(' ').reduce<string[]>((lines,word)=>{const last=lines[lines.length-1];if(last!==undefined&&(last+' '+word).length<=78)lines[lines.length-1]=last+' '+word;else lines.push(word);return lines;},[]).join('\n');
- const values=scriptValues({studyName:study.name,runDescription:`#${run.number}, started ${run.startedAt}; exported ${exportedAt}`,provider:run.provider as Provider,text:sent.text?.frame,pdf:sent.pdf?.frame,fields:run.answerFields,plain:Boolean(run.answerSettings?.plain),settings:run.answerSettings,repeats:run.repeats||1,note:notes.map(wrap).join('\n'),inserts:insertColumns(study.dataset,runInserts(sent),run.number,withFiles)});
- return {files:[{path:'annotate_template.py',data:SCRIPT_TEMPLATE},{path:'annotate.py',data:fillScript(SCRIPT_TEMPLATE,values)},{path:'requirements.txt',data:REQUIREMENTS}],why:''};
+ // columns: each answer field's column in the run's results tables, so that the script's results.csv has the same names.
+ const values=scriptValues({studyName:study.name,runDescription:`#${run.number}, started ${run.startedAt}; exported ${exportedAt}`,provider:run.provider as Provider,text:sent.text?.frame,pdf:sent.pdf?.frame,fields:run.answerFields,columns:fieldKeys(run.answerFields,new Set(run.answerFields)),plain:Boolean(run.answerSettings?.plain),settings:run.answerSettings,repeats:run.repeats||1,note:notes.map(wrap).join('\n'),inserts:insertColumns(study.dataset,runInserts(sent),run.number,withFiles)});
+ const script=fillScript(SCRIPT_TEMPLATE,values);
+ return {files:template?[{path:'annotate_template.py',data:SCRIPT_TEMPLATE},{path:'annotate.py',data:script}]:[{path:'annotate.py',data:withoutTemplateLine(script)}],why:''};
 }
 
 // How a run that annotated each text several times combined its answers, in one line (empty for one annotation
@@ -329,6 +372,26 @@ function combiningLine(study:ExportStudy,report:RunReport,record:RunRecord):stri
 }
 
 const tableRow=(cells:(string|number)[])=>'| '+cells.join(' | ')+' |';
+// A run whose results were not all made with the same settings (a run without a record of its own, as in Model
+// knowledge, can hold requests to several models or with several prompts): the models and the number of prompts
+// of its request bodies, in a sentence.
+function mixedWarning(report:RunReport):string{
+ const {sent}=report,models=new Map<string,number>(),prompts=new Set<string>();
+ for(const body of sent.bodies){
+  let parts:{model:string;prompt:string}|undefined;try{parts=requestParts(body.frame);}catch{/* a body that cannot be read is counted without a model */}
+  const model=parts?.model||'unknown model';models.set(model,(models.get(model)||0)+body.count);prompts.add(parts?.prompt??'');
+ }
+ const perModel=[...models].map(([model,n])=>`\`${model}\` (${count(n)} request${n===1?'':'s'})`);
+ return `**The results of this run were not all made with the same settings.** Its ${count(sent.total)} requests had ${sent.forms} different request bodies: ${models.size>1?`${models.size} models, ${listed(perModel)}`:`one model, ${perModel[0]}`}, and ${prompts.size===1?'one prompt':`${prompts.size} different prompts`}. The summary below and \`prompt/\` give the settings and the prompt that most of its requests had; \`metadata.json\` holds every body with the number of its requests, and \`results/results_by_replicate.csv\` gives the provider, model, and prompt hash of each request.`;
+}
+// How the run's texts were split, in a sentence (empty: none is a part of a longer text).
+function splitLine(record:RunRecord):string{
+ const split=record.corpus.split as {n_chunks:number;n_source_documents:number;chunk_words:unknown;chunk_method:unknown}|undefined;
+ if(!split)return '';
+ const one=(value:unknown)=>Array.isArray(value)?listed(value.map(String)):String(value),method=(value:unknown)=>one(Array.isArray(value)?value.map(methodWords):methodWords(value));
+ return `${count(split.n_chunks)} of the run’s texts ${split.n_chunks===1?'is a part':'are parts'} of ${count(split.n_source_documents)} longer text${split.n_source_documents===1?'':'s'} that ${split.n_source_documents===1?'was':'were'} split before annotation, into parts of about ${one(split.chunk_words)} words (${method(split.chunk_method)}). \`source_document\` and \`chunk\` say which part of which text a row is.`;
+}
+const methodWords=(method:unknown)=>method==='sentences'?'ending at sentence boundaries where possible':method==='exact-words'?'cut at exact word counts':String(method);
 // The agreement figures as a Markdown table, with what the brackets and the counts mean.
 function agreementSection(study:ExportStudy,report:RunReport):string[]{
  if(!report.agreement.length&&!report.skipped.length)return [];
@@ -349,8 +412,17 @@ function agreementSection(study:ExportStudy,report:RunReport):string[]{
 
 // The README of the supplementary repository: what the package holds, and how to send the requests again. It names
 // neither the Lab nor its build, and has no text for a paper (the researcher writes that).
-function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord,options:SupplementaryOptions,has:{agreement:boolean;script:boolean;scriptWhy:string;schema:boolean;asSent:boolean;files:number;unread:number;answersOnce:boolean;fewer:boolean;source:boolean;readLeftOut?:string[]}):string{
+function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord,options:SupplementaryOptions,has:{agreement:boolean;script:boolean;scriptWhy:string;schema:boolean;asSent:boolean;files:number;unread:number;answersOnce:boolean;fewer:boolean;source:boolean;partial:boolean;readLeftOut?:string[]}):string{
  const {dataset}=study,{facts}=report,{run}=facts,unit=unitOf(dataset),knowledge=dataset.kind==='knowledge',plain=Boolean(run.answerSettings?.plain),reps=run.repeats||1;
+ // Bodies that were not kept when the run was made are built again from its settings: the package then says so
+ // where it would otherwise call them the requests as sent.
+ const rebuilt=report.sent.bodies.some(body=>!body.recorded),allRebuilt=rebuilt&&report.sent.bodies.every(body=>!body.recorded);
+ // The times of a run: of requests sent one by one, from the first request to the last reply. A batch has the time
+ // it was submitted and the time its results were collected here, and the provider's own time for its end where kept.
+ const batch=facts.processing!=='instant',times=!batch?[tableRow(['Annotation period',`${facts.requests.first||'—'} to ${facts.requests.last||'—'}`])]:
+  [tableRow([facts.processing==='batch'?(facts.batchIds.length>1?'First batch submitted':'Batch submitted'):'First request',facts.requests.first||'—']),...(facts.requests.lastReply?[tableRow([facts.processing==='batch'?'Batch ended (the provider’s time)':'Last reply produced',facts.requests.lastReply])]:[]),tableRow(['Batch results collected',facts.requests.lastCollected||'—'])];
+ const sampling=has.partial?dataset.samples.map(sampleNote).join(' '):'',split=splitLine(record);
+ const cacheOff=report.sent.bodies.some(body=>body.frame.body.includes('"prompt_cache_options"')&&!body.frame.body.includes('"prompt_cache_breakpoint"'));
  // Placeholders of the prompt that were filled in for each text, and where the corpus holds their values.
  const inserted=runInserts(report.sent),valued=valuedInserts(dataset,run.number),metaFilled=inserted.filter(name=>name!=='id'&&valued.has(name)),unfilled=inserted.filter(name=>!valued.has(name));
  const insertedNote=inserted.length?`. Its placeholders were filled in for each ${unit}: ${[inserted.includes('id')&&valued.has('id')?`\`{{id}}\` with the ${unit}’s ${idColumn(dataset,run.number)==='doc_id'?'doc_id':'name'}`:'',metaFilled.length?`${written(metaFilled)} with its value${metaFilled.length===1?' in that metadata column':'s in those metadata columns'}`:'',unfilled.length?`${written(unfilled)} ${unfilled.length===1?'was':'were'} filled in empty for every ${unit} (${unfilled.length===1?'it names':'they name'} no metadata column, or an empty one)`:''].filter(Boolean).join('; ')}`:'';
@@ -359,15 +431,19 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   `Supplementary materials for the LLM-based annotation, exported on ${record.exported_at.slice(0,10)}.`,'',
   ...(run.active?['**This run was not finished when these materials were exported**: they describe the results so far.','']:[]),
   ...(knowledge?['Model knowledge: no texts were supplied. The model judged named subjects from what it has learned.'+(facts.webSearch?' Web search results collected for each subject were supplied with the request.':''),'']:[]),
+  ...(run.mixed?[mixedWarning(report),'']:[]),
   '## Summary','','| | |','|---|---|',
-  tableRow(['Provider / model',`${run.provider} / \`${run.model}\``]),tableRow(['Model reported by the API',facts.models.map(model=>'`'+model+'`').join(', ')||'—']),tableRow(['Reasoning effort',run.effort||'—']),tableRow(['Temperature',record.model.temperature]),tableRow(['Max output tokens',record.model.max_output_tokens??'—']),
+  tableRow(['Provider / model',`${run.provider} / \`${run.model}\``]),tableRow(['Model reported by the API',facts.models.map(model=>'`'+model+'`').join(', ')||'—']),tableRow(['Reasoning effort',record.model.reasoning_effort]),tableRow(['Temperature',record.model.temperature]),tableRow(['Max output tokens',record.model.max_output_tokens]),
+  ...(has.partial&&run.scope?[tableRow([`${unit==='text'?'Texts':'Subjects'} the run covered`,run.scope])]:[]),
   tableRow([`${unit==='text'?'Texts':'Subjects'} with a usable annotation`,`${facts.usable} of ${facts.texts}`]),tableRow([`Annotations per ${unit}`,reps]),tableRow(['Requests (ok / failed)',`${facts.requests.ok} / ${facts.requests.failed}`]),
   ...(facts.requests.replaced?[tableRow(['Failed attempts sent again',`${facts.requests.replaced} (their tokens are included in the token totals)`])]:[]),
-  tableRow(['Annotation period',`${facts.requests.first||'—'} to ${facts.requests.last||'—'}`]),tableRow(['Prompt version / hash',`v${run.promptVersion} / \`${report.hash}\``]),'',
+  tableRow(['Requests sent',modeOf(facts.processing)]),...times,tableRow(['Prompt version / hash',`v${run.promptVersion} / \`${report.hash}\``]),'',
+  ...(sampling?[`How the study’s samples were drawn: ${sampling}`,'']:[]),
+  ...(split?[split,'']:[]),
   ...(combining?[combining,'']:[]),
   ...agreementSection(study,report),
   '## Files','','| File | Contents |','|---|---|',
-  tableRow(['`metadata.json`','Machine-readable record of the model, settings, dates, counts, and token use, with the bodies of the requests as sent (marks stand for the document'+(inserted.length?' and for the values of the prompt’s placeholders':'')+')']),
+  tableRow(['`metadata.json`',`Machine-readable record of the model, settings, dates, counts, and token use, with the ${report.sent.forms>1?'different bodies':'body'} of the requests${allRebuilt?', built again from the run’s settings (the requests were not kept when the run was made)':' as sent'}${report.sent.forms>1?', each with the number of its requests':''} (marks stand for the document`+(inserted.length?' and for the values of the prompt’s placeholders':'')+(rebuilt&&!allRebuilt?'; a body marked `"recorded": false` was not kept when it was sent and is built again from the run’s settings':'')+')']),
   tableRow(['`prompt/prompt.txt`','The annotation prompt as written'+insertedNote]),
   ...(has.asSent?[tableRow(['`prompt/prompt_as_sent.txt`','The prompt as each request carried it: '+(added=>added.length?'with the instructions added after it '+added.join(' and ')+', and ':'')([...(plain||run.answerSettings?.named?[]:['on the answer format']),...(knowledge&&!run.answerSettings?.inPrompt?['on judging from learned knowledge']:[])])+'with its line breaks as they were sent (CR LF)'+(inserted.length?'; the placeholders stand where each request had the values':'')+([report.sent.text].some(sent=>sent&&placesText(run.prompt)&&requestParts(sent.frame).prompt.includes('{{text}}'))?`; \`{{text}}\` stands where each request had the ${knowledge?'subject’s fields':unit}`:'')])]:[]),
   ...(run.system?[tableRow(['`prompt/system_prompt.txt`','The system prompt sent unchanged with every request; the prompt opened the message with each '+unit])]:[]),
@@ -377,8 +453,9 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   ...(has.agreement?[tableRow(['`results/agreement.csv`','Agreement statistics'])]:[]),
   ...(options.texts?[tableRow(['`data/corpus.csv`',`The annotated ${unit}s as they were sent${has.source?', with the name each request gave for the document (`source`)':''}, with labels and metadata`+(has.files?'; a PDF was sent as a file and is in `data/files/`':'')])]:[]),
   ...(options.logs?[tableRow(['`logs/requests.jsonl`, `logs/responses.jsonl`','Every request and what was kept of every reply; a request that was sent again has a line for each attempt (same doc_id and replicate; attempt 1, 2, …)'])]:[]),
-  ...(has.script?[tableRow(['`scripts/annotate.py`','Python script that sends the requests again (values inserted)']),tableRow(['`scripts/annotate_template.py`','The same script with `{{PLACEHOLDERS}}` marking every value that comes from the study']),tableRow(['`scripts/requirements.txt`','Says that the script needs no packages besides Python itself'])]:[]),
-  '',...(options.logs?[LOG_NOTE+' A failed attempt’s request may never have reached the provider (a connection that broke, say).','']:[]),CSV_NOTE,'',TOKEN_NOTE,''];
+  ...(has.script?[tableRow(['`scripts/annotate.py`','Python script that sends the requests again'])]:[]),
+  '',...(options.logs?[logNote(true)+' A failed attempt’s request may never have reached the provider (a connection that broke, say).'+(rebuilt?' '+REBUILT_NOTE:''),'']:[]),CSV_NOTE,'',TOKEN_NOTE,'',
+  ...(batch?[BATCH_TIMES_NOTE,'']:[]),hashNote(Boolean(run.system),'prompt/'),'',...(cacheOff?[CACHE_OPTION_NOTE,'']:[])];
  if(has.script)lines.push('## Reproducing','','```bash','cd scripts',`export ${keyVariable(run.provider as Provider)}=...`,`python annotate.py ${options.texts?'../data/corpus.csv':'your_corpus.csv'}`,'```','',
   `The script needs Python 3.9 or later and nothing else. ${options.texts&&has.readLeftOut?.length?`\`data/corpus.csv\` leaves out the ${has.readLeftOut.length===1?'column':'columns'} ${listed(has.readLeftOut.map(name=>'`'+name+'`'))}, which the prompt’s placeholders take their values from; add ${has.readLeftOut.length===1?'it':'them'} to the file to run the script. `:''}${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files||report.sent.pdf?' (or file, with the path of a PDF)':''}${[report.sent.text,report.sent.pdf].some(sent=>sent?.frame.body.includes('<<DOCUMENT_FILENAME>>'))?'; a column source gives the name each request states for the document':''}${inserted.length?`; and the columns the prompt’s placeholders take their values from (${insertColumns(dataset,inserted,run.number,Boolean(options.texts&&has.files)).filter(pair=>pair[1]).map(pair=>pair[1]).join(', ')})`:''}. `}${inserted.length?`The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent${options.logs?' (the logs hold the requests as they were sent)':''}. `:''}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
  else if(has.scriptWhy)lines.push('## Reproducing','',has.scriptWhy+(options.logs?' The logs hold every request as it was sent.':' The requests as sent are in the logs when the package includes them.'),'');
@@ -392,16 +469,16 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
 // of them). A column the prompt's placeholders take values from stays in data/corpus.csv, for the script.
 export type SupplementaryOptions={texts:boolean;explanations:boolean;logs:boolean;columns?:string[]};
 // What a journal or a deposit needs for one run: lean tables (no column with one value for the whole run, none
-// empty throughout, nothing said twice), and nothing that names the Lab or its build.
+// empty throughout, nothing said twice), nothing that names the Lab or its build, and none of the provider's IDs
+// (of a batch or a reply), which point into the researcher's own account.
 export async function buildSupplementary(ctx:ExportContext,run:number,options:SupplementaryOptions):Promise<Package>{
  const {study}=ctx,{dataset}=study,exportedAt=(ctx.now||new Date()).toISOString(),name=`${exportStem(study.name,dataset)}_supplementary_${dateStamp(ctx.now||new Date())}`;
  const files:PackageFile[]=[],add=async(path:string,data:PackageFile['data'])=>{await ctx.onProgress?.('Writing '+path);files.push({path:name+'/'+path,data});};
- const hashes=await promptHashes(dataset),find=requestFinder(study),full=await reportRun(ctx,run,hashes,find),record=runRecord(study,full.facts,full.hash,full.sent,exportedAt);
+ const hashes=await promptHashes(dataset),find=requestFinder(study),full=await reportRun(ctx,run,hashes,find),record=runRecord(study,full,exportedAt),partial=partOfStudy(dataset,full.facts);
  // A label column left out of the package is left out of its agreement too (agreement.csv and the README).
  const shown=(column:string)=>!options.columns||options.columns.includes(column);
  const report:RunReport={...full,agreement:full.agreement.filter(line=>shown(line.comparedWith)&&(line.source==='model'||shown(line.source))),pairs:full.pairs.filter(pair=>shown(pair.column)),skipped:full.skipped.filter(skip=>shown(skip.column))};
- const ids=new Set(requestLines(dataset).filter(line=>line.run===run).map(line=>line.row.id)),rows=dataset.rows.filter(row=>ids.has(row.id));
- const reps=report.facts.run.repeats||1,corpus=options.texts?await readCorpus(ctx,rows,name+'/data',true,run):undefined;
+ const rows=report.rows,reps=report.facts.run.repeats||1,corpus=options.texts?await readCorpus(ctx,rows,name+'/data',true,run):undefined;
  // The label and metadata columns chosen, in results.csv and data/corpus.csv alike. A metadata column the prompt's
  // placeholders read that was left out is named in the README, which says the script needs it (readLeftOut).
  const chosen=publicColumns(dataset).filter(c=>!options.columns||options.columns.includes(dataset.columns[c].name));
@@ -412,7 +489,7 @@ export async function buildSupplementary(ctx:ExportContext,run:number,options:Su
  const frames=[report.sent.text,report.sent.pdf].filter(Boolean).map(sent=>sent!.frame.body);
  const source=frames.some(body=>body.includes('<<DOCUMENT_FILENAME>>'))||!rows.every(row=>{const given=sourceName(dataset,row),id=docIdOf(dataset,row);return !given||given===id||stem(given)===id;});
  const prompt=promptFiles(study,report,'all'),schema=prompt.find(file=>file.path==='output_schema.json');
- await add('metadata.json',pretty(publicRecord(record,unitOf(dataset),schema?JSON.parse(String(schema.data)):undefined)));
+ await add('metadata.json',pretty(publicRecord(record,unitOf(dataset),schema?JSON.parse(String(schema.data)):undefined,partial)));
  for(const file of prompt)await add('prompt/'+file.path,file.data);
  const results=publicResults(resultsTable(study,run,{texts:corpus?.texts,explanation:options.explanations,columns:chosen}),reps);
  await add('results/results.csv',toCsv(results));
@@ -424,32 +501,36 @@ export async function buildSupplementary(ctx:ExportContext,run:number,options:Su
   for(const pdf of corpus.pdfs){await ctx.onProgress?.('Writing '+pdf.path.slice(name.length+1));files.push({path:pdf.path,data:pdf.file});}
  }
  if(options.logs){
-  const logs=await runLogs(ctx,run,find,row=>corpus?.files.has(row.id)?'data/'+corpus.files.get(row.id):undefined);
+  const logs=await runLogs(ctx,run,find,row=>corpus?.files.has(row.id)?'data/'+corpus.files.get(row.id):undefined,true);
   await add('logs/requests.jsonl',logs.requests);await add('logs/responses.jsonl',logs.responses);
  }
  const script=scriptFiles(study,report,exportedAt,Boolean(corpus?.files.size));
  for(const file of script.files)await add('scripts/'+file.path,file.data);
  await add('README.md',supplementaryReadme(study,report,record,options,{agreement:report.agreement.length>0,script:script.files.length>0,scriptWhy:script.why,schema:Boolean(schema),asSent:prompt.some(file=>file.path==='prompt_as_sent.txt'),files:corpus?.pdfs.length||0,unread:corpus?.unread||0,
-  answersOnce:reps===1,fewer:results[0].includes('n_ok'),source,readLeftOut}));
+  answersOnce:reps===1,fewer:results[0].includes('n_ok'),source,partial,readLeftOut}));
  return {name,files};
 }
 
-export type ResearchOptions={logs:boolean};
-// The whole study, for the researcher's own archive.
+// backup: whether the study backup goes into the repository (absent: it does). The backup holds the whole study,
+// which is more than the repository's tables show: both data sets, and the texts deleted from the study.
+export type ResearchOptions={logs:boolean;backup?:boolean};
+const DATA_SETS={texts:'uploaded texts',knowledge:'Model knowledge subjects'} as const;
+// The whole of one data set of the study (the uploaded texts or the Model knowledge subjects), for the researcher's
+// own archive.
 export async function buildResearchRepository(ctx:ExportContext,options:ResearchOptions):Promise<Package>{
  const {study}=ctx,{dataset}=study,unit=unitOf(dataset),knowledge=dataset.kind==='knowledge',exportedAt=(ctx.now||new Date()).toISOString(),name=`${exportStem(study.name,dataset)}_research_${dateStamp(ctx.now||new Date())}`;
  const files:PackageFile[]=[],add=async(path:string,data:PackageFile['data'])=>{await ctx.onProgress?.('Writing '+path);files.push({path:name+'/'+path,data});};
  const hashes=await promptHashes(dataset),find=requestFinder(study),lines=requestLines(dataset),withRequests=new Set(lines.map(line=>line.run)),runs=runLines(dataset).filter(run=>run.done+run.failed>0||withRequests.has(run.number));
  const reports=new Map<number,RunReport>();
- for(const run of runs)reports.set(run.number,await reportRun(ctx,run.number,hashes,find));
+ for(const run of runs)reports.set(run.number,await reportRun(ctx,run.number,hashes,find,lines));
  // Texts deleted from the study but kept for the runs that used them (lib/research/removed.ts).
  const gone=dataset.rows.filter(row=>row.removedAt).length,inStudy=dataset.rows.length-gone;
  const corpus=await readCorpus(ctx,dataset.rows,name+'/corpus',true);
- await add('study.json',pretty({study:study.name,exported_at:exportedAt,[`n_${unit}s`]:inStudy,...(gone?{[`n_${unit}s_deleted_but_kept_for_runs`]:gone}:{}),...(dataset.scoreScale?{score_scale_for_plain_text_scores:dataset.scoreScale}:{}),runs:runs.map(run=>run.number),columns:dataset.columns,samples:dataset.samples.map(sample=>({...sample,method:plainMethod(sample.method)}))}));
+ await add('study.json',pretty({study:study.name,exported_at:exportedAt,data_set:sourceOf(dataset),[`n_${unit}s`]:inStudy,...(gone?{[`n_${unit}s_deleted_but_kept_for_runs`]:gone}:{}),...(dataset.scoreScale?{score_scale_for_plain_text_scores:dataset.scoreScale}:{}),runs:runs.map(run=>run.number),columns:dataset.columns,samples:dataset.samples.map(sample=>({...sample,method:plainMethod(sample.method)}))}));
  // The only file of the export that names the Lab and its builds (a private record).
  await add('software_versions.json',pretty({note:'The only file of this export that names the app and its builds. Keep it private: do not publish it.',software:'Text Annotation Lab',exported_with:study.lab,exported_at:exportedAt,runs:runs.map(run=>({run:run.number,made_with:reports.get(run.number)!.facts.labs.join('; ')||'not recorded'}))}));
- let backupNote='';
- if(ctx.backup){
+ let backupNote='';const withBackup=Boolean(ctx.backup)&&options.backup!==false;
+ if(ctx.backup&&withBackup){
   await ctx.onProgress?.('Writing study-backup.json');
   try{files.push({path:name+'/study-backup.json',data:await ctx.backup()});}
   catch(error){backupNote=error instanceof Error&&error.message?error.message:'The backup could not be made.';}
@@ -457,14 +538,15 @@ export async function buildResearchRepository(ctx:ExportContext,options:Research
  await add('corpus/corpus.csv',toCsv(corpusTable(dataset,dataset.rows,corpus.texts,corpus.files)));
  await add('corpus/corpus.jsonl',jsonLines(corpusRecords(dataset,dataset.rows,corpus.texts,corpus.files)));
  for(const pdf of corpus.pdfs){await ctx.onProgress?.('Writing '+pdf.path.slice(name.length+1));files.push({path:pdf.path,data:pdf.file});}
- await add('results/runs.csv',toCsv(runsOverview(study,hashes)));
+ await add('results/runs.csv',toCsv(runsOverview(study,hashes,run=>reports.get(run)?.sent)));
  await add('results/results_all_runs_long.csv',toCsv(requestsTable(study,undefined,hashes)));
  const versions=new Set<number>();
- // Each prompt version's files, from the first run that used it.
+ // Each prompt version once: the prompt and its system prompt, which make the version. Its answer fields are each
+ // run's own (runs of one version can ask for different ones), so the codebook and the schema are in the run's folder.
  for(const run of runs){if(versions.has(run.promptVersion))continue;versions.add(run.promptVersion);for(const file of promptFiles(study,reports.get(run.number)!,'version'))await add(`prompts/v${run.promptVersion}/${file.path}`,file.data);}
  for(const run of runs){
   const report=reports.get(run.number)!,folder=`runs/${runFolder(run.number,run.label)}/`;
-  await add(folder+'run.json',pretty(runRecord(study,report.facts,report.hash,report.sent,exportedAt)));
+  await add(folder+'run.json',pretty(runRecord(study,report,exportedAt)));
   await add(folder+'results_long.csv',toCsv(requestsTable(study,[run.number],hashes)));
   await add(folder+'results_wide.csv',toCsv(resultsTable(study,run.number)));
   if(options.logs){const logs=await runLogs(ctx,run.number,find,row=>corpus.files.has(row.id)?'corpus/'+corpus.files.get(row.id):undefined);await add(folder+'requests.jsonl',logs.requests);await add(folder+'responses.jsonl',logs.responses);}
@@ -479,34 +561,52 @@ export async function buildResearchRepository(ctx:ExportContext,options:Research
  if(main&&report){
   await ctx.onProgress?.(`Writing results/results_${runFolder(main.number,main.label)}.xlsx`);
   files.push({path:`${name}/results/results_${runFolder(main.number,main.label)}.xlsx`,data:new Uint8Array(await runWorkbook(ctx,report,hashes))});
-  script=scriptFiles(study,report,exportedAt,corpus.files.size>0);
+  script=scriptFiles(study,report,exportedAt,corpus.files.size>0,true);
   for(const file of script.files)await add('scripts/'+file.path,file.data);
  }
  // A prompt of the study has placeholders that were filled in for each text.
  const filled=Boolean(study.requests?.some(request=>markedInserts(request.body).length));
- const rows:[string,string][]=[['`study.json`',`The study at a glance: its name, the number of ${unit}s, its runs, its label and metadata columns, and the samples drawn`],
+ const all=runs.map(run=>reports.get(run.number)!),has=(path:string)=>files.some(file=>file.path.endsWith('/'+path)),plural=(n:number,word:string)=>`${count(n)} ${word}${n===1?'':'s'}`;
+ const mainFolder=main?runFolder(main.number,main.label):'',batch=all.some(item=>item.facts.processing!=='instant'),rebuilt=all.some(item=>item.sent.rebuilt>0);
+ // Runs whose results were not all made with the same settings (runs without a record of their own, as in Model knowledge).
+ const mixed=runs.filter(run=>run.mixed).map(run=>'#'+run.number);
+ // What the study's other data set holds: these files are made from one of the two, the backup from both.
+ const other=study.other&&(study.other.rows||study.other.runs)?study.other:undefined,otherUnit=other?unitOf(other):'';
+ // The files a run's folder can hold besides its record and tables, where any run has them.
+ const runFiles=['codebook.md','codebook.json','output_schema.json','prompt_as_sent.txt'].filter(file=>has(file));
+ // Only what the repository holds is listed: a study without runs has no prompts, runs, agreement, workbook, or script.
+ const rows:[string,string][]=[['`study.json`',`The ${DATA_SETS[dataset.kind]} at a glance: the study’s name, the number of ${unit}s, the runs, the label and metadata columns, and the samples drawn`],
   ['`software_versions.json`','Which build of the app made each run and wrote this export. The only file here that names the app: keep it private'],
-  ...(ctx.backup?[['`study-backup.json`',backupNote?`Not included: ${backupNote}`:`A backup of the whole study (both data sets, with the ${knowledge?'subjects':'uploaded files'}, every run, labels, and samples), re-importable via Studies → Import backup`] as [string,string]]:[]),
-  ['`corpus/corpus.csv`, `corpus.jsonl`',`Every ${unit} as it was sent, with labels and metadata`+(corpus.pdfs.length?'; a PDF was sent as a file and is in `corpus/files/`':'')],
-  ['`prompts/vN/prompt.txt`','Each version of the annotation prompt, as written'],
+  ...(withBackup?[['`study-backup.json`',backupNote?`Not included: ${backupNote}`:`A backup of the whole study, which holds more than the other files here: both data sets (the uploaded texts with their files, and the Model knowledge subjects), every run, labels, samples, and the texts and subjects deleted from the study. Re-importable via Studies → Import backup. Take it out before passing this folder on if not all of that is meant to go with it`] as [string,string]]:[]),
+  ['`corpus/corpus.csv`, `corpus.jsonl`',`Every ${unit} as it was sent, with labels and metadata`+(dataset.rows.some(row=>row.sourceId)?'; for a part of a text that was split, the text it comes from, which part it is, and how the text was split (`chunk_words`, `chunk_method`, `word_start`, `word_end`)':'')+(corpus.pdfs.length?'; a PDF was sent as a file and is in `corpus/files/`':'')],
+  ...(runs.length?[['`prompts/vN/prompt.txt`','Each version of the annotation prompt, as written (`prompt_version` in the tables)'] as [string,string]]:[]),
   ...(runs.some(run=>run.system)?[['`prompts/vN/system_prompt.txt`','The system prompt sent unchanged with every request, where a version had one; the prompt then opened the message with each '+unit] as [string,string]]:[]),
-  ['`prompts/vN/codebook.md`, `codebook.json`, `output_schema.json`','The answer fields (their columns, types, allowed values, and descriptions) and the JSON schema the replies had to follow, as the first run of the version asked for them (no schema or codebook.json for plain text)'],
-  ['`runs/run-NN/run.json`','One folder per run (run-NN-<label> for a run with a label). The record of the run: model, settings, dates, counts, token use, and the bodies of its requests as sent (marks stand for the document'+(filled?' and for the values of a prompt’s placeholders':'')+')'],
-  ['`runs/run-NN/codebook.md`, `codebook.json`, `output_schema.json`, `prompt_as_sent.txt`','The run’s own (runs of one prompt version can ask for different answer fields): the answer fields and the JSON schema; and, only for a run whose requests carried instructions added after the prompt (on the answer format, or on judging from learned knowledge), the prompt as each request carried it'+(filled?' (placeholders that were filled in for each '+unit+' stand as written)':'')],
-  ['`runs/run-NN/results_long.csv`',`One row per request: answers, rationale (the explanation), status, tokens, and timing; \`replicate\` numbers a ${unit}’s annotations in a run that makes several per ${unit} (a failed attempt that was sent again is counted in \`run.json\` and kept in the logs)`],
-  ['`runs/run-NN/results_wide.csv`',`One row per ${unit}: answers, labels, and metadata; in a run that makes several annotations per ${unit}, the answers are the combined ones, and \`<field>_replicate_agreement\` is the share of the ${unit}’s annotations that gave the combined value`],
-  ...(options.logs?[['`runs/run-NN/requests.jsonl`, `responses.jsonl`','Every request and what was kept of every reply; a request that was sent again has a line for each attempt (same doc_id and replicate; attempt 1, 2, …)'] as [string,string]]:[]),
-  ['`results/runs.csv`','Overview of all runs'],['`results/results_all_runs_long.csv`','All requests of all runs in one table'],
-  ['`results/agreement.csv`','Agreement between each run’s answers and the columns of human labels that belong to its answer fields (only if there are such columns)'],
-  ...(main?[[`\`results/results_${runFolder(main.number,main.label)}.xlsx\``,`Excel workbook for run #${main.number}, the run with usable answers for the most ${unit}s (the latest of those)`] as [string,string]]:[]),
-  ...(script.files.length&&main?[['`scripts/`',`Python script that sends the requests of run #${main.number} again (\`annotate.py\`), and its template with placeholders. \`corpus/corpus.csv\` holds every ${unit} of the study: to reproduce that run, use its ${unit}s (the doc_ids in \`runs/${runFolder(main.number,main.label)}/results_wide.csv\`)`] as [string,string]]:[])];
- const readme=[`# ${study.name}: research repository`,'',`Complete record of this annotation study, exported on ${exportedAt}.`,'',
+  ...(runs.length?[['`runs/run-NN/run.json`','One folder per run (run-NN-<label> for a run with a label). The record of the run: model, settings, dates, counts, token use, and every different body of its requests as sent, with the number of its requests (marks stand for the document'+(filled?' and for the values of a prompt’s placeholders':'')+')'] as [string,string]]:[]),
+  ...(runFiles.length?[[listed(runFiles.map((file,i)=>'`'+(i?'':'runs/run-NN/')+file+'`')),'The run’s own answer format (runs of one prompt version can ask for different answer fields): '+listed([...(has('codebook.md')?['the answer fields (their columns, types, allowed values, and descriptions)']:[]),...(has('output_schema.json')?['the JSON schema the replies had to follow (none for plain text)']:[]),...(has('prompt_as_sent.txt')?['for a run whose requests carried instructions added after the prompt (on the answer format, or on judging from learned knowledge), the prompt as each request carried it'+(filled?' (placeholders that were filled in for each '+unit+' stand as written)':'')]:[])])] as [string,string]]:[]),
+  ...(runs.length?[['`runs/run-NN/results_long.csv`',`One row per request: answers, rationale (the explanation), status, tokens, and timing; \`replicate\` numbers a ${unit}’s annotations in a run that makes several per ${unit} (a failed attempt that was sent again is counted in \`run.json\`${options.logs?' and kept in the logs':''})`],
+   ['`runs/run-NN/results_wide.csv`',`One row per ${unit}: answers, labels, and metadata; in a run that makes several annotations per ${unit}, the answers are the combined ones, and \`<field>_replicate_agreement\` is the share of the ${unit}’s annotations that gave the combined value`]] as [string,string][]:[]),
+  ...(runs.length&&options.logs?[['`runs/run-NN/requests.jsonl`, `responses.jsonl`','Every request and what was kept of every reply; a request that was sent again has a line for each attempt (same doc_id and replicate; attempt 1, 2, …)'] as [string,string]]:[]),
+  ['`results/runs.csv`',runs.length?'Overview of all runs. `finished_at` is when a run’s last reply was produced: for a batch that is the provider’s own time for the end of the batch, blank where that time was not kept; `results_collected_at` is when the results of a batch were collected':'Overview of all runs (none yet: the column names only)'],['`results/results_all_runs_long.csv`',runs.length?'All requests of all runs in one table':'All requests of all runs in one table (none yet: the column names only)'],
+  ...(has('results/agreement.csv')?[['`results/agreement.csv`','Agreement between each run’s answers and the columns of human labels that belong to its answer fields'] as [string,string]]:[]),
+  ...(main?[[`\`results/results_${mainFolder}.xlsx\``,`Excel workbook for run #${main.number}, the run with usable answers for the most ${unit}s (the latest of those)`] as [string,string]]:[]),
+  ...(script.files.length&&main?[['`scripts/annotate.py`, `annotate_template.py`',`Python script that sends the requests of run #${main.number} again, and its template, which marks every value that comes from the study as a \`{{PLACEHOLDER}}\``] as [string,string]]:[])];
+ const readme=[`# ${study.name}: research repository`,'',`Complete record of this study’s ${DATA_SETS[dataset.kind]} and the runs on them, exported on ${exportedAt}.`,'',
   ...(knowledge?['Model knowledge: no texts were supplied. The model judged named subjects from what it has learned.','']:[]),
-  `- ${count(inStudy)} ${unit}${inStudy===1?'':'s'}${gone?` (plus ${count(gone)} deleted from the study but kept for the runs that used ${gone===1?'it':'them'}; marked in \`corpus/corpus.csv\`)`:''}, ${runs.length} run${runs.length===1?'':'s'}, ${count(lines.length)} request${lines.length===1?'':'s'} with an outcome.`,'- API keys are never stored or exported.','',
+  `- ${count(inStudy)} ${unit}${inStudy===1?'':'s'}${gone?` (plus ${count(gone)} deleted from the study but kept for the runs that used ${gone===1?'it':'them'}; marked in \`corpus/corpus.csv\`)`:''}, ${runs.length} run${runs.length===1?'':'s'}, ${count(lines.length)} request${lines.length===1?'':'s'} with an outcome.`,
+  ...(runs.length?[]:[`- No run has been made on these ${unit}s yet, so there are no prompts, run folders, workbook, or script here.`]),
+  ...(other?[`- The study also holds ${DATA_SETS[other.kind]}: ${plural(other.rows,otherUnit)} and ${plural(other.runs,'run')}. They are not in the tables here${withBackup&&!backupNote?', only in `study-backup.json`':''}; export them from ${other.kind==='knowledge'?'the Model knowledge tab':'the Export tab'}.`]:[]),
+  ...(mixed.length?[`- The results of ${mixed.length===1?'run':'runs'} ${listed(mixed)} were not all made with the same settings: \`results/runs.csv\` notes it, the run’s \`run.json\` holds every different body of its requests with the number of its requests, and its table of requests gives the provider, model, and prompt hash of each.`]:[]),
+  ...(ctx.backup&&!withBackup?['- The study backup was left out of this export.']:[]),
+  '- API keys are never stored or exported.','',
   '## Layout','','| Path | Contents |','|---|---|',...rows.map(([path,contents])=>tableRow([path,contents])),'',
+  ...(script.files.length&&main?[`## Sending the requests of run #${main.number} again`,'','```bash','cd scripts',`export ${keyVariable(main.provider as Provider)}=...`,`python annotate.py ../corpus/corpus.csv --only ../runs/${mainFolder}/results_wide.csv`,'```','',
+   `\`corpus/corpus.csv\` holds every ${unit} of the study${gone?', the deleted ones too':''}, so \`--only\` names the ${unit}s of run #${main.number}: the script sends only the ${unit}s whose doc_id is in that file. It needs Python 3.9 or later and nothing else. Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'']:[]),
   ...(script.why&&main?[`Run #${main.number} has the most usable answers. ${script.why}`,'']:[]),
-  CSV_NOTE+(main?' To read the results in Excel, open the .xlsx workbook instead.':''),'',TOKEN_NOTE,'',
-  ...(options.logs?[LOG_NOTE+' A failed attempt’s request may never have reached the provider (a connection that broke, say).'+(runs.some(run=>reports.get(run.number)!.sent.rebuilt>0)?' '+REBUILT_NOTE:''),'']:[]),
+  CSV_NOTE+(main?' To read the results in Excel, open the .xlsx workbook instead.':''),'',TOKEN_NOTE+(runs.length?' A blank `reasoning_tokens` means that the provider reported no count of its own, not that there was no reasoning.':''),'',
+  ...(runs.length&&options.logs?[logNote(false)+' A failed attempt’s request may never have reached the provider (a connection that broke, say).'+(rebuilt?' '+REBUILT_NOTE:''),'']:[]),
+  ...(batch?[BATCH_TIMES_NOTE+(options.logs?' In responses.jsonl, `batch_ended_at` is the provider’s own time for the end of the batch, where it was kept.':''),'']:[]),
+  ...(runs.length?[hashNote(false,'prompts/vN/')+(runs.some(run=>run.system)?' A version with a system prompt is hashed with it: the SHA-256 of the JSON list `["<prompt>","<system prompt>"]`.':''),'']:[]),
+  ...(all.some(item=>item.sent.bodies.some(body=>body.frame.body.includes('"prompt_cache_options"')&&!body.frame.body.includes('"prompt_cache_breakpoint"')))?[CACHE_OPTION_NOTE,'']:[]),
   ...(corpus.unread?[`${count(corpus.unread)} ${unit}${corpus.unread===1?'':'s'} could not be read when this repository was made and ${corpus.unread===1?'has':'have'} no text here.`,'']:[])].join('\n');
  await add('README.md',readme);
  return {name,files,...(backupNote?{warning:`study-backup.json is missing: ${backupNote.replace(/\.$/,'')}. Its README says so too.`}:{})};

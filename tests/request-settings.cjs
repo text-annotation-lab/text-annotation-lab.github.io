@@ -41,6 +41,17 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.equal(rs.outputFloor('anthropic','claude-haiku-4-5-20251001','8192'),8193);assert.equal(rs.outputFloor('anthropic','claude-haiku-4-5-20251001','off'),16);assert.equal(rs.outputFloor('anthropic','claude-sonnet-5-5','high'),16);
  assert.deepEqual(rs.sentRequestSettings('anthropic','claude-haiku-4-5-20251001',{maxOutput:2000},'8192'),{maxOutput:8193});assert.deepEqual(rs.sentRequestSettings('anthropic','claude-haiku-4-5-20251001',{maxOutput:2000},'1024'),{maxOutput:2000});
  assert.equal(rs.outputLimit('openai','gpt-6-luna',undefined),16000);assert.equal(rs.outputLimit('openai','gpt-6-luna',{maxOutput:500}),500);
+ // The Lab's own limit was 12,000 until November 18, 2026, 22:46:55 UTC: a request sent before then and not kept is
+ // built again with the limit of its day, and a run from then reads 12,000, not today's 16,000.
+ for(const [provider,model] of [['openai','gpt-6-luna'],['anthropic','claude-opus-5-5'],['gemini','gemini-3.1-flash-lite'],['openrouter','openai/gpt-6-luna']]){
+  assert.equal(rs.defaultOutputLimit(provider,model,'2026-11-18T21:02:48.048Z'),12000,provider+': before the change');assert.equal(rs.defaultOutputLimit(provider,model,'2026-11-18T22:46:55.000Z'),16000,provider+': from the change');assert.equal(rs.defaultOutputLimit(provider,model,''),16000,provider+': no date is today');
+ }
+ assert.equal(rs.defaultOutputLimit('gemini','gemini-4-argon','2026-11-10T00:00:00.000Z'),32768,'Gemini 4 always had its own limit');
+ assert.equal(rs.defaultOutputLimit('openrouter','google/gemini-4-argon','2026-11-20T00:00:00.000Z'),16000);assert.equal(rs.defaultOutputLimit('openrouter','google/gemini-4-argon','2026-11-10T00:00:00.000Z'),12000);assert.equal(rs.defaultOutputLimit('openrouter','google/gemini-4-argon','2026-11-23T00:00:00.000Z'),32768);
+ assert.equal(rs.outputLimit('openai','gpt-6-luna',undefined,'2026-11-17T17:39:37.897Z'),12000);assert.equal(rs.outputLimit('openai','gpt-6-luna',{maxOutput:500},'2026-11-17T17:39:37.897Z'),500,'A limit of the researcher’s own is the limit, whenever it was sent');
+ // A limit kept with a result because it differed from the Lab's own of its day stays what it was.
+ assert.deepEqual(rs.sentRequestSettings('openai','gpt-6-luna',{maxOutput:16000},'medium','2026-11-17T17:39:37.897Z'),{maxOutput:16000});assert.equal(rs.sentRequestSettings('openai','gpt-6-luna',{maxOutput:12000},'medium','2026-11-17T17:39:37.897Z'),undefined);
+ assert.equal(JSON.parse(frame.requestFrame({provider:'openai',model:'gpt-6-luna',effort:'medium',prompt:'P',answerFields:[],at:'2026-11-17T17:39:37.897Z'},false).body).max_output_tokens,12000);assert.equal(JSON.parse(frame.requestFrame({provider:'anthropic',model:'claude-opus-5-5',effort:'high',prompt:'P',answerFields:[],at:'2026-11-18T14:40:33.230Z'},false).body).max_tokens,12000);
  assert.equal(rs.requestTimeout('openai','gpt-6-luna',undefined),180000);assert.equal(rs.requestTimeout('openai','gpt-6-luna',{maxOutput:500}),180000);assert.equal(rs.requestTimeout('openai','gpt-6-luna',{maxOutput:64000}),900000,'A raised limit gets a longer wait');assert.equal(rs.requestTimeout('gemini','gemini-4-argon',undefined),900000);
  // A summary needs reasoning.
  assert.equal(rs.sentRequestSettings('anthropic','claude-haiku-4-5-20251001',{summary:true},'off'),undefined);assert.deepEqual(rs.sentRequestSettings('anthropic','claude-haiku-4-5-20251001',{summary:true},'1024'),{summary:true});
@@ -166,9 +177,9 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert.deepEqual(runs.cleanRuns([{...setup,number:1,startedAt:'2026-11-16T10:00:00Z',temperature:0.5,maxOutput:4000},{...setup,number:2,startedAt:'2026-11-16T11:00:00Z',temperature:'0',maxOutput:4000.5}]).map(run=>[run.temperature,run.maxOutput]),[[0.5,4000],[undefined,undefined]]);
  for(const key of ['requestSettings','reasoningSummary'])assert(runs.RESULT_KEYS.includes(key),key+' is cleared with a result');
  const settings={temperature:0.2,maxOutput:4000,summary:true,store:false},result={status:'done',...setup,score:'A',explanation:'Because.',runNo:1,time:'2026-11-16T10:00:00Z'};
- const study={name:'Settings',createdAt:'2026-11-16T12:00:00Z',texts:{answerFields:[],prompt:PROMPT,requestSettings:settings,runs:[{...setup,temperature:0.2,maxOutput:4000,number:1,startedAt:'2026-11-16T10:00:00Z'}],docs:[{id:'a',name:'a.txt',file:new File(['Text'],'a.txt'),...result,requestSettings:settings,reasoningSummary:'Read the text.',history:[{status:'error',requestSettings:settings,reasoningSummary:'Stopped early.'}]}]},knowledge:{answerFields:[],items:[]}};
+ const study={name:'Settings',createdAt:'2026-11-16T12:00:00Z',texts:{answerFields:[],prompt:PROMPT,requestSettings:settings,runs:[{...setup,temperature:0.2,maxOutput:4000,number:1,startedAt:'2026-11-16T10:00:00Z'}],docs:[{id:'a',name:'a.txt',file:new File(['Text'],'a.txt'),...result,requestSettings:settings,reasoningSummary:'Read the text.',batchEndedAt:'2026-11-18T21:40:00.000Z',history:[{status:'error',requestSettings:settings,reasoningSummary:'Stopped early.'}]}]},knowledge:{answerFields:[],items:[]}};
  const restored=backup.decodeStudyBackup(await backup.encodeStudyBackup(study)).texts;
- assert.deepEqual(restored.requestSettings,settings);assert.deepEqual(restored.docs[0].requestSettings,settings);assert.equal(restored.docs[0].reasoningSummary,'Read the text.');assert.equal(restored.docs[0].history[0].reasoningSummary,'Stopped early.');assert.deepEqual([restored.runs[0].temperature,restored.runs[0].maxOutput],[0.2,4000]);
+ assert.deepEqual(restored.requestSettings,settings);assert.deepEqual(restored.docs[0].requestSettings,settings);assert.equal(restored.docs[0].reasoningSummary,'Read the text.');assert.equal(restored.docs[0].history[0].reasoningSummary,'Stopped early.');assert.deepEqual([restored.runs[0].temperature,restored.runs[0].maxOutput],[0.2,4000]);assert.equal(restored.docs[0].batchEndedAt,'2026-11-18T21:40:00.000Z','A backup keeps the provider’s time for the end of a batch');
  for(const bad of [{temperature:3},{maxOutput:5},{summary:'yes'},{store:true}])await assert.rejects(async()=>backup.decodeStudyBackup(await backup.encodeStudyBackup({...study,texts:{...study.texts,requestSettings:bad}})),JSON.stringify(bad));
 
  // --- Runs and exports --------------------------------------------------------------------------------
@@ -177,7 +188,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  const lines=exporting.runLines(dataset);assert.deepEqual(lines.map(line=>line.summary),['on','off','in part']);assert.deepEqual(lines.map(line=>[line.temperature,line.maxOutput]),[[0.2,4000],[undefined,undefined],[undefined,undefined]]);
  const exported={name:'Settings',dataset,lab:'test'},overview=tables.runsOverview(exported,new Map()),col=name=>overview[0].indexOf(name);
  assert.deepEqual(overview[0].slice(col('effort'),col('effort')+4),['effort','temperature','max_output_tokens','caching'],'The run’s model settings together (thinking: no run has a value)');assert(!overview[0].includes('app_version'),'No build');
- assert.deepEqual(overview.slice(1).map(line=>[line[col('temperature')],line[col('max_output_tokens')]]),[[0.2,4000],['default',16000],['default',16000]]);
+ assert.deepEqual(overview.slice(1).map(line=>[line[col('temperature')],line[col('max_output_tokens')]]),[[0.2,4000],['model default',12000],['model default',12000]],'A run of November 16 had the limit of its day; a setting left to the model is “model default” in every export file');
  const long=tables.requestsTable(exported,undefined,new Map()),at=long[0].indexOf('reasoning_summary');
  assert.equal(long[0][at-1],'rationale');assert.equal(long[0][at+1],'parse_error');assert.deepEqual(long.slice(1).map(line=>line[at]),['Read the text, chose A.','Stopped early.','','',''],'A failed request keeps its summary');
  assert(!tables.requestsTable(exported,undefined,new Map(),{reasoning:false})[0].includes('reasoning_summary'),'Left out of the supplementary table');
@@ -194,7 +205,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  assert(!(await read(pack,'results/results_by_replicate.csv')).includes('reasoning_summary'),'The supplementary table of requests leaves the summaries out');
  assert.deepEqual((await read(pack,'logs/responses.jsonl')).trim().split('\n').map(line=>JSON.parse(line).response.reasoning_summary),['Read the text, chose A.','Stopped early.'],'The logs keep them');
  const usual=await build(2),usualRecord=JSON.parse(await read(usual,'metadata.json')),usualReadme=await read(usual,'README.md');
- assert.deepEqual([usualRecord.model.reasoning_summary_requested,usualRecord.model.temperature,usualRecord.model.max_output_tokens],[false,'model default',16000]);
+ assert.deepEqual([usualRecord.model.reasoning_summary_requested,usualRecord.model.temperature,usualRecord.model.max_output_tokens],[false,'model default',12000],'Not kept when sent (November 16): the limit of its day');
  assert(usualReadme.includes('| Temperature | model default |'));
  assert(!(await read(usual,'logs/responses.jsonl')).includes('reasoning_summary'));
  assert.equal(JSON.parse(await read(await build(3),'metadata.json')).model.reasoning_summary_requested,'in part');

@@ -17,4 +17,6 @@ export type BatchResult={rawResponse?:string;answers?:Record<string,string>;id:s
  // Research mode: the model the provider names, why it stopped, the text it returned, and the summary of the
  // model's reasoning where the requests asked for one.
  modelReported?:string;stopReason?:string;output?:string;reasoningSummary?:string};
-export type BatchUpdate={id:string;terminal:boolean;state:string;completed:number;total:number;results?:BatchResult[]};
+// endedAt: the provider's own time for the end of a batch that has ended (absent where it gives none): a result
+// collected later keeps it, since the time it is collected says nothing of when the model answered.
+export type BatchUpdate={id:string;terminal:boolean;state:string;completed:number;total:number;endedAt?:string;results?:BatchResult[]};

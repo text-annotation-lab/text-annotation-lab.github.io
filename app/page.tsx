@@ -71,7 +71,7 @@ import {knowledgeRows} from '@/lib/research/knowledge';
 import {ask,askThen} from '@/lib/ask';
 // runNo, earlier, and cells belong to research mode: the run a result was made in, the results of earlier runs, and labels or metadata.
 // So does the record of a result's request (Recorded).
-type Doc={runNo?:number;earlier?:Earlier[];removedAt?:string;removedPlace?:number;cells?:string[];requestSettings?:RequestSettings;layout?:string;repeats?:number;annotations?:Annotation[];consistency?:Record<string,number>}&Recorded&{chartYear?:number|null;chartGroup?:string|null}&NamedAnswers&Partial<ChunkInfo>&{inputMode?:string;runId?:string;runStartedAt?:string;runSize?:number;history?:Attempt[];startedAt?:string;concurrency?:number;processing?:string;batchId?:string;provider?:Provider;id:string;name:string;file:File;status:string;score?:string;explanation?:string;error?:string;model?:string;prompt?:string;effort?:string;tokens?:number;usage?:any;time?:string;responseId?:string};
+type Doc={runNo?:number;earlier?:Earlier[];removedAt?:string;removedPlace?:number;cells?:string[];requestSettings?:RequestSettings;layout?:string;repeats?:number;annotations?:Annotation[];consistency?:Record<string,number>}&Recorded&{chartYear?:number|null;chartGroup?:string|null}&NamedAnswers&Partial<ChunkInfo>&{inputMode?:string;runId?:string;runStartedAt?:string;runSize?:number;history?:Attempt[];startedAt?:string;concurrency?:number;processing?:string;batchId?:string;batchEndedAt?:string;provider?:Provider;id:string;name:string;file:File;status:string;score?:string;explanation?:string;error?:string;model?:string;prompt?:string;effort?:string;tokens?:number;usage?:any;time?:string;responseId?:string};
 const SAMPLE='Classify the document’s overall tone as POSITIVE (mainly favorable or hopeful), NEGATIVE (mainly critical or pessimistic), MIXED (substantial positive and negative tone), or NEUTRAL (primarily factual, with no clear positive or negative tone). Choose one label. If the tone cannot be judged from the document, return UNCLEAR instead. Use only the document as evidence. Give a brief explanation with a supporting phrase, and note any uncertainty.';
 
 // A failed save in this browser: the open work is still complete in this page, and the Studies menu can download it.
@@ -467,7 +467,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
      claimed++;
      // n: the number of the annotation; 0 for a text's single annotation, which is written on the text itself.
      const ns=times===1?[0]:d.status==='pending'?Array.from({length:times},(_,i)=>i+1):missingRepeats(d);
-     update(d.id,{inputMode:provider==='openrouter'?(/\.pdf$/i.test(d.file.name)?'pdf-native':'text'):undefined,status:'running',runNo,runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout,concurrency:all?parallel:1,processing:'instant',batchId:undefined,...recorded(d),...claimRepeats(d,times)});
+     update(d.id,{inputMode:provider==='openrouter'?(/\.pdf$/i.test(d.file.name)?'pdf-native':'text'):undefined,status:'running',runNo,runId,runStartedAt,runSize,usage:undefined,startedAt:new Date().toISOString(),error:undefined,answerFields:sentFields,answerSettings:sentSettings,requestSettings:sentRequest,answers:undefined,provider,model,prompt,effort,layout,concurrency:all?parallel:1,processing:'instant',batchId:undefined,batchEndedAt:undefined,...recorded(d),...claimRepeats(d,times)});
      if(times>1){open.set(d.id,{before:failedBefore.get(d.id)||d,left:ns.length,came:0});waitingTasks.push(...ns.slice(1).map(n=>({d,n})));}
      if(claimed===1)setSelected(d.id);
      return {d,n:ns[0]};
@@ -587,7 +587,7 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
  // The results of a batch on the texts as they are now (docs): the run's only batch, or one batch (part) of a run
  // sent as several. Throws, changing nothing, when they cannot be matched to the batch's requests.
  function gatherBatch(job:BatchJob,out:BatchUpdate,docs:Doc[],part?:BatchPart):Doc[]{
-  const batchId=part?.id??job.id;
+  const batchId=part?.id??job.id,batchEndedAt=out.endedAt;
   const results=new Map<string,BatchResult>((out.results||[]).map(r=>[r.id,r]));
   // Requests are numbered text by text: one per text, or, with several annotations per text, one per annotation asked for.
   const several=(job.repeats||1)>1,slots=new Map<string,{at:number;ns:number[]}>();let requestCount=0;
@@ -598,15 +598,15 @@ function StudyWorkspace({studyId='current',studyName,studyControls,onStudyReady,
   const collectedAt=new Date().toISOString(),notReturned='No result was returned for this document. Check the provider’s batch report before retrying.';
   // Several annotations per text: each result is kept as an annotation, and the text's own fields are worked out from them.
   const gathered=(d:Doc,slot:{at:number;ns:number[]}):Doc=>{
-   let row:Doc={...d,answerFields:job.answerFields,answerSettings:job.answerSettings,responseFormat:job.responseFormat,provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',batchId};
+   let row:Doc={...d,answerFields:job.answerFields,answerSettings:job.answerSettings,responseFormat:job.responseFormat,provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',batchId,batchEndedAt};
    slot.ns.forEach((n,k)=>{
     const r=checked(results.get(job.runId+'_'+(slot.at+k)));
-    const got={...(r?{answers:collectedAnswers(r,job.answerFields).answers,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),error:r?.error||(!r?notReturned:undefined),runId:job.runId,runStartedAt:job.createdAt,runSize:d.runSize,processing:'batch',batchId,requestId:d.requestId,lab:d.lab,inserts:d.inserts,startedAt:d.startedAt,time:collectedAt};
+    const got={...(r?{answers:collectedAnswers(r,job.answerFields).answers,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),error:r?.error||(!r?notReturned:undefined),runId:job.runId,runStartedAt:job.createdAt,runSize:d.runSize,processing:'batch',batchId,batchEndedAt,requestId:d.requestId,lab:d.lab,inserts:d.inserts,startedAt:d.startedAt,time:collectedAt};
     row={...row,...withAnnotation(row,annotationFrom(n,Boolean(r&&!r.error),got))};
    });
    return {...row,...settle(row)};
   };
-  return docs.map(d=>{const slot=slots.get(d.id);if(!slot)return d;if(several)return gathered(d,slot);const r=checked(results.get(job.runId+'_'+slot.at));return {...d,...(r?{...collectedAnswers(r,job.answerFields),answerSettings:job.answerSettings,responseFormat:job.responseFormat,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),status:r&&!r.error?'done':'error',error:r?.error||(!r?notReturned:undefined),provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',batchId,time:new Date().toISOString()};});
+  return docs.map(d=>{const slot=slots.get(d.id);if(!slot)return d;if(several)return gathered(d,slot);const r=checked(results.get(job.runId+'_'+slot.at));return {...d,...(r?{...collectedAnswers(r,job.answerFields),answerSettings:job.answerSettings,responseFormat:job.responseFormat,rawResponse:r.rawResponse,score:r.score,explanation:r.explanation,tokens:r.tokens,usage:r.usage,responseId:r.responseId,...(research?replyNotes(r):{})}:{}),status:r&&!r.error?'done':'error',error:r?.error||(!r?notReturned:undefined),provider:job.provider,model:job.model,prompt:job.prompt,effort:job.effort,layout:job.layout,processing:'batch',batchId,batchEndedAt,time:new Date().toISOString()};});
  }
  async function manageBatch(action:'check'|'collect'|'cancel',idOverride?:string){
   if(lock.current||!batchJob||storageConflict)return;
