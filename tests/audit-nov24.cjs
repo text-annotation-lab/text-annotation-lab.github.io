@@ -151,5 +151,20 @@ function load(file){
    const starts=[...file.svg.matchAll(/<rect x="([\d.]+)" y="[\d.]+" width="12" height="12"/g)].map(match=>Number(match[1]));
    assert.equal(starts.length,6);legend.forEach((item,i)=>assert(starts[i]+17+item.label.length*6.6<=860-24+.01,'legend item '+i+' ends inside the figure'));}
  }
+ // The standard Excel file names neither the site nor a department (students at other places use it too), and the
+ // handout ends as the page does.
+ {const {createResultsWorkbook}=load('lib/export-results.ts'),Zip=createRequire(req.resolve('exceljs'))('jszip');
+  const buffer=await createResultsWorkbook([{name:'a.txt',status:'done',score:'2',explanation:'x',prompt:'p',model:'gpt-6-luna',effort:'medium'}],{prompt:'p',model:'gpt-6-luna',effort:'medium',studyName:'My study'}),zip=await Zip.loadAsync(buffer);
+  for(const name of Object.keys(zip.files))if(!zip.files[name].dir)assert(!/Text Annotation Lab|Annotation Lab|Aarhus|Department of English|asca\.au\.dk|github\.io/i.test(await zip.files[name].async('string')),'No site or department name in '+name);
+  const ExcelJS=req('exceljs'),book=new ExcelJS.Workbook();await book.xlsx.load(buffer);const sheet=book.getWorksheet('Study settings');
+  assert.deepEqual([sheet.getCell('A1').value,sheet.getCell('A2').value,sheet.getCell('B2').value],['Study settings','Study name','My study']);
+  const tips=await Zip.loadAsync(fs.readFileSync(path.join(root,'public/teaching/annotation-tips.docx'))),words=(await tips.file('word/document.xml').async('string')).replace(/<[^>]+>/g,'');
+  assert(words.includes('AI annotations are measurements to be evaluated. A longer prompt is not necessarily a better prompt'));assert(!/ground truth/i.test(words));
+  assert(fs.readFileSync(path.join(root,'components/teaching-panels.tsx'),'utf8').includes('AI annotations are measurements to be evaluated. A longer prompt'),'The page and the handout end alike');
+  // Menu paths as the menus have them.
+  assert(fs.readFileSync(path.join(root,'components/student-guidance.tsx'),'utf8').includes('Studies → More options → Download backup'));assert(fs.readFileSync(path.join(root,'lib/research/export-packages.ts'),'utf8').includes('Studies → More options → Import backup'));
+  // Pull requests run the checks of a publish.
+  const checks=fs.readFileSync(path.join(root,'.github/workflows/checks.yml'),'utf8');for(const step of ['npm ci','npm run typecheck','npm run build','npm test'])assert(checks.includes('- run: '+step),step);assert(/pull_request:/.test(checks)&&!/pages: write|id-token/.test(checks),'The checks publish nothing');
+ }
  console.log('audit-nov24 ok');
 })().catch(error=>{console.error(error);process.exit(1);});

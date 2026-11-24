@@ -3,8 +3,8 @@ import {modelLabel,PROVIDERS,reasoningOptionLabel,type Provider} from '@/lib/pro
 export function SaveHelp(){return <details className="hint save-help"><summary>Save, export, and return</summary>
  <dl><div><dt>Autosave</dt><dd>Keeps your current work in this browser.</dd></div>
  <div><dt>Studies → Save study</dt><dd>Keeps a named point you can return to before changing your prompt.</dd></div>
- <div><dt>Studies → Download study backup</dt><dd>Creates a file you can reopen in the lab on another computer.</dd></div>
- <div><dt>Download Excel</dt><dd>Exports results and recorded study settings for analysis; it cannot reopen a study in the lab.</dd></div></dl>
+ <div><dt>Studies → More options → Download backup</dt><dd>Creates a file you can reopen in the Lab on another computer.</dd></div>
+ <div><dt>Download Excel</dt><dd>Exports results and recorded study settings for analysis; it cannot reopen a study in the Lab.</dd></div></dl>
  <p>Browser copies can be lost if browser data is cleared. Keep a downloaded backup. Re-enter your API key after reloading or reopening; keys are never saved.</p>
  </details>}
 const settingNames:Record<SettingDifference['key'],string>={model:'model',prompt:'prompt',effort:'reasoning effort',provider:'provider',answerFields:'answer fields',webSearch:'web search'};

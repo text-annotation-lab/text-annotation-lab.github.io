@@ -14,11 +14,11 @@ export function GetStarted() {
         <source src="/video/text-annotation-lab-walkthrough.mp4" type="video/mp4" />
         <a href="/video/text-annotation-lab-walkthrough.mp4">Download the introduction video (MP4)</a>
       </video>
-      <figcaption>Introduction to the lab · 3½ minutes{!canFullscreen&&<> · <a href="/video/text-annotation-lab-walkthrough.mp4" target="_blank" rel="noreferrer">Watch full screen ↗</a></>}</figcaption>
+      <figcaption>Introduction to the Lab · 3½ minutes{!canFullscreen&&<> · <a href="/video/text-annotation-lab-walkthrough.mp4" target="_blank" rel="noreferrer">Watch full screen ↗</a></>}</figcaption>
     </figure>
 
     <h2 className="mt-8">Set up your API key</h2>
-    <p>An API key connects the lab to the account that pays for your annotations. If you already have a key, including one from your instructor, go straight to step 3.</p>
+    <p>An API key connects the Lab to the account that pays for your annotations. If you already have a key, including one from your instructor, go straight to step 3.</p>
     <ol className="teaching-tips">
       <li><h3>Set up your account</h3>
         <p>The steps here use <a href="https://platform.openai.com/" target="_blank" rel="noreferrer">OpenAI Platform</a> as an example. You can also use <a href="https://platform.claude.com/" target="_blank" rel="noreferrer">Anthropic</a>, <a href="https://aistudio.google.com/" target="_blank" rel="noreferrer">Google</a>, or <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer">OpenRouter</a>.</p>
@@ -27,7 +27,7 @@ export function GetStarted() {
       <li><h3>Add a small amount of credit</h3>
         <p>For OpenAI, open <a href="https://platform.openai.com/settings/organization/billing/overview" target="_blank" rel="noreferrer">API billing</a>. If you need credit, $5 is a reasonable amount to start with. Check the final charge before paying and leave automatic replenishment off.</p>
       </li>
-      <li><h3>Enter your key in the lab</h3>
+      <li><h3>Enter your key in the Lab</h3>
         <p>Use the key your instructor gave you or create one in your provider account. In OpenAI, select your project and open <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">API keys</a>. In <a href="#workspace">Workspace</a>, select the provider that issued the key and paste it into the API key field.</p>
         <p>Keep your key private. The lab keeps it only while the page is open, so you’ll need to enter it again if you reload.</p>
       </li>
