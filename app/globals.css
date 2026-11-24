@@ -126,7 +126,7 @@ footer .contact-link{display:block;font-size:14px;margin-top:5px}
 
 .processing-choice{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px}.processing-choice select{flex-shrink:0}.processing-choice label{margin:0;font-size:13px;color:#53657a}.processing-choice select{width:auto;max-width:100%;padding:7px 28px 7px 10px;border:1px solid #d7dfe9;border-radius:6px;background:white;color:#19334f;font:inherit;font-size:13px}.batch-explainer{margin:8px 0 0}.batch-status{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:16px 0;padding:14px 16px;border:1px solid #cad9e8;border-radius:8px;background:#f0f5fb}.batch-status strong,.batch-status span{display:block}.batch-status strong{font-size:14px}.batch-status span{font-size:13px;color:#607086;margin-top:3px}.batch-details{width:100%;font-size:13px}.batch-details summary{cursor:pointer;color:#003d73}.batch-details p{line-height:1.6;margin:10px 0}.batch-reference{overflow-wrap:anywhere;font-family:monospace}.batch-details .textbutton{margin-left:12px}.batch-details input{margin-bottom:10px}.status.queued{background:#e9eff8;color:#30557c}@media(max-width:600px){.processing-choice{align-items:flex-start}.processing-choice select{min-width:0;font-size:12px}.batch-status{padding:12px}.batch-details .textbutton{margin:10px 0 0;display:block}}
 
-.result-pages{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:20px 0 8px;font-size:13px;color:#40566e}.result-pages>div{display:flex;align-items:center;gap:10px}.result-pages button{padding:6px 12px;min-height:36px}@media(max-width:600px){.result-pages{align-items:flex-start}.result-pages>div{width:100%;justify-content:space-between}}
+.result-pages{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:20px 0 8px;font-size:13px;color:#40566e}.result-pages>div{display:flex;align-items:center;gap:10px}.result-pages>div button{padding:6px 12px;min-height:36px}@media(max-width:600px){.result-pages{align-items:flex-start}.result-pages>div{width:100%;justify-content:space-between}}
 
 /* Let the workspace shrink with narrow screens and long document names. */
 .workspace>.panel{min-width:0}
@@ -373,7 +373,7 @@ textarea::-webkit-scrollbar-corner,textarea::-webkit-resizer{background:transpar
 .prompt-editor-dialog textarea{padding-right:10px}
 @media(max-width:780px){.prompt-editor-dialog textarea{padding-right:4px}}
 /* Standard Lab: progress count, bar, and Costs on one line under the run buttons; the cost panel opens on a line of its own. */
-.queue>.actions:has(~.run-meta){margin-bottom:14px}
+.queue>.actions:has(~.run-meta),.queue>.actions:has(~.result-pages.with-lead){margin-bottom:14px}
 .run-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 20px;margin:0 0 4px;min-height:30px}
 .run-meta .run-progress{display:flex;align-items:center;gap:12px;flex:1 1 180px;min-width:0}
 .run-meta .progressline{margin:0;flex:0 1 auto;flex-wrap:wrap;gap:0 12px}
@@ -383,5 +383,10 @@ textarea::-webkit-scrollbar-corner,textarea::-webkit-resizer{background:transpar
 .run-meta:has(.cost-panel)::after{content:"";order:1;flex:0 0 100%}
 /* The row hint stands where “Showing …” was; the pager names the rows shown. */
 .result-pages.with-lead{margin:12px 0 4px;color:#5f6d85}
-.result-pages.with-lead>span{flex:1 1 300px}
+.result-pages.with-lead>span{flex:1 1 300px;display:flex;flex-wrap:wrap;align-items:center;gap:6px 20px}
+/* Before a run, Costs leads the page line; its panel opens on a line of its own. */
+.result-pages.with-lead .cost-estimator{display:contents}
+.result-pages.with-lead .cost-panel{order:2;margin-top:4px}
+.result-pages.with-lead>span:has(.cost-panel)::after{content:"";order:1;flex:0 0 100%}
+.result-pages.with-lead:has(.cost-panel){align-items:flex-start}
 .result-pages.with-lead+.results{margin-top:6px}
