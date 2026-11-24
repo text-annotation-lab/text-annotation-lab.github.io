@@ -14,7 +14,7 @@ export const EXPLANATION_HELP=[
 ];
 export type SettingHelpId='temperature'|'max-output'|'prices'|'reasoning-summary'|'openai-logs'|'prompt'|'system-prompt'|'answer-fields'|'plain-text'|'json-scale'|'explanation'|'chunking'|'parallel'|'repeats'|'prompt-caching';
 export const SETTING_HELP:{id:SettingHelpId;label:string;text:string[]}[]=[
- {id:'temperature',label:'Temperature',text:['Empty: no temperature is sent and the model uses its own. From 0 to 2 (0 to 1 for Anthropic). Many reasoning models accept only their default and reject a request with another value. Claude models that reason take no temperature, so none is sent.']},
+ {id:'temperature',label:'Temperature',text:['Empty: no temperature is sent and the model uses its own. From 0 to 2 (0 to 1 for Anthropic). Many reasoning models accept only their default and reject a request with another value. Claude models that reason and OpenAI models from GPT-6.2 on take no temperature, and Gemini models from 3.6 Flash and 3.5 Flash-Lite on ignore one, so none is sent to them.']},
  {id:'max-output',label:'Max output tokens',text:['The most tokens a reply may use, reasoning included. A reply that reaches the limit counts as failed. The line under the box gives the Lab’s own limit for the chosen model.']},
  {id:'prices',label:'Price per million tokens',text:[`Used only for the cost estimate before a run. The Lab’s prices are list prices as of ${PRICES_AS_OF}, and can go out of date; type your own to replace them. Your own price is kept in this browser.`]},
  {id:'reasoning-summary',label:'Record the model’s reasoning summary',text:['A readable summary of the model’s reasoning, kept with each result and in the exports. Some models return none.']},

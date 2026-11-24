@@ -57,7 +57,8 @@ export async function POST(request:Request){
    for(const model of out.data){
     const outputs=list(model?.architecture?.output_modalities);if(outputs.length!==1||outputs[0]!=='text')continue;
     const reasons=list(model?.supported_parameters).includes('reasoning'),levels=model?.reasoning?.supported_efforts;
-    add(model?.id,model?.name,!reasons?[]:Array.isArray(levels)?LEVELS.filter(level=>levels.includes(level)):undefined);
+    // A model that must reason and names no levels: every level but "none", which OpenRouter refuses for it.
+    add(model?.id,model?.name,!reasons?[]:Array.isArray(levels)?LEVELS.filter(level=>levels.includes(level)):model?.reasoning?.mandatory===true?LEVELS.filter(level=>level!=='none'):undefined);
    }
   }
   return reply({models});

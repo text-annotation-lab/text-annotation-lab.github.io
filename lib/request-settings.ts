@@ -50,12 +50,13 @@ export const plainOpenAI=(id:string)=>/^(?:gpt-3|gpt-4|chatgpt)/i.test(id);
 // stands before the mark. automatic: the provider caches repeated prompts by itself; nothing is switched.
 // minTokens: a shorter prompt is not cached (documented per model; absent where the provider names no number).
 // write: what storing the prompt costs, as a multiple of the input price (batch: Anthropic's one-hour entry).
-// Checked against the providers' prompt-caching and pricing pages on November 16, 2026.
+// Checked against the providers' prompt-caching and pricing pages on November 16, 2026; the minimums again on
+// November 24, 2026.
 export type CacheSupport={kind:'marked'|'automatic';vendor:'anthropic'|'openai'|'gemini';minTokens?:number;write?:number;batchWrite?:number};
 export function cacheSupport(provider:string,model:string):CacheSupport|undefined{
  const routed=provider==='openrouter',vendor=routed?model.split('/')[0]:provider,id=routed?model.split('/').slice(1).join('/'):model;
- if(vendor==='anthropic')return {kind:'marked',vendor:'anthropic',minTokens:/haiku-4|opus-4[-.][56]/.test(id)?4096:/sonnet-4|opus-4/.test(id)?1024:/^claude-3/.test(id)?(/haiku/.test(id)?2048:1024):512,write:1.25,batchWrite:2};
- if(vendor==='gemini'||vendor==='google')return {kind:'automatic',vendor:'gemini',...(/gemini-2\.5-(flash|pro)$/.test(id)?{minTokens:2048}:/gemini-(4-argon|3\.[68]-flash|3\.1-pro)/.test(id)?{minTokens:4096}:{})};
+ if(vendor==='anthropic')return {kind:'marked',vendor:'anthropic',minTokens:/haiku-4|opus-4[-.][56]/.test(id)?4096:/opus-4[-.]7|mythos-preview/.test(id)?2048:/sonnet-4|opus-4|sonnet-5(?![-.]\d)/.test(id)?1024:/^claude-3/.test(id)?(/haiku/.test(id)?2048:1024):512,write:1.25,batchWrite:2};
+ if(vendor==='gemini'||vendor==='google')return {kind:'automatic',vendor:'gemini',...(/gemini-2\.5-(flash|pro)$/.test(id)?{minTokens:2048}:/gemini-(4-(?:argon|carbon|hydrogen|neon)|3\.[68]-flash|3\.1-pro)/.test(id)?{minTokens:4096}:{})};
  if(vendor==='openai')return marksOpenAICache(id)?{kind:'marked',vendor:'openai',minTokens:1024,write:1.25,batchWrite:1.25}:{kind:'automatic',vendor:'openai',minTokens:1024};
 }
 // Whether the setting changes this request: the option is on, and the model's provider caches at a mark.
@@ -77,13 +78,21 @@ export const defaultOutputLimit=(provider:string,model:string,startedAt?:string)
 const gemini4=(provider:string,model:string)=>provider==='gemini'&&model.startsWith('gemini-4-')||provider==='openrouter'&&model.startsWith('google/gemini-4-');
 // A model with a fixed reasoning budget (Claude Haiku 4.5 and earlier) needs a limit above that budget.
 export const outputFloor=(provider:string,model:string,effort?:string)=>provider==='anthropic'&&budgetedClaude(model)&&/^\d+$/.test(effort||'')?Number(effort)+1:MIN_OUTPUT_TOKENS;
+// Gemini models that ignore a temperature: Gemini 3.6 Flash and 3.5 Flash-Lite, every later Gemini model, and
+// `gemini-3.5-flash`, which Google answers with 3.6 Flash. Google's API takes the setting and ignores it (its
+// "What's new in Gemini 3.6" page, checked November 24, 2026), so a run would record a temperature that never applied.
+export const geminiIgnoresTemperature=(id:string)=>/^gemini-(?:3\.5-flash|3\.[6-9]|3\.\d{2}|[4-9]|\d{2})(?:\b|[-.])/.test(id);
 // Whether a model takes a temperature. Claude models from Opus 4.7 on reject one, and a Claude model that
 // reasons accepts none, so of the Lab's Claude models only Haiku 4.5 with reasoning off gets it, like the
 // earlier Claude models (never through OpenRouter, which offers no "off"). OpenAI models from GPT-6.2 on take
-// none either. Other models are sent the temperature, and reject it where they take none. Anthropic's scale ends at 1.
+// none either, and through OpenRouter no OpenAI model from GPT-5.6 on is offered with one (its catalog, checked
+// November 24, 2026), so a request with one would find no provider. Gemini models from 3.6 Flash and 3.5
+// Flash-Lite on ignore it. Other models are sent the temperature, and reject it where they take none.
+// Anthropic's scale ends at 1.
 export function takesTemperature(provider:string,model:string,effort?:string){
- const routed=provider==='openrouter',vendor=routed?model.split('/')[0]:provider;
- if(vendor==='openai'&&openaiFrom62(routed?model.slice(model.indexOf('/')+1):model))return false;
+ const routed=provider==='openrouter',vendor=routed?model.split('/')[0]:provider,id=routed?model.slice(model.indexOf('/')+1):model;
+ if(vendor==='openai'&&(openaiFrom62(id)||routed&&marksOpenAICache(id)))return false;
+ if((vendor==='gemini'||vendor==='google')&&geminiIgnoresTemperature(id))return false;
  return vendor!=='anthropic'||!routed&&budgetedClaude(model)&&effort==='off';
 }
 export const temperatureCeiling=(provider:string)=>provider==='anthropic'?1:MAX_TEMPERATURE;

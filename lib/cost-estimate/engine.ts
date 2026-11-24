@@ -113,7 +113,8 @@ export function estimate(c:EstimateConfig,inputs:Input[],samples:Sample[]=[]):Es
   // the first text writes the prompt and every later one reads it.
   const inputCost=cost(input);
   if(caching){
-   const rate=(edge:'low'|'high')=>(price.threshold&&input[edge]>price.threshold?price.longInput??price.input:price.input)/1e6;
+   // The same price as cost() uses: that of one request (tier), not of the two requests of a web search together.
+   const rate=(edge:'low'|'high')=>(price.threshold&&tier[edge]>price.threshold?price.longInput??price.input:price.input)/1e6;
    inputCost.high+=Math.min(cachedTokens.high,input.high)*rate('high')*(write-1);
    if(price.cacheRead!==undefined)inputCost.low+=Math.min(cachedTokens.low,input.low)*rate('low')*(index?price.cacheRead-1:write-1);
   }
@@ -134,7 +135,7 @@ export function estimate(c:EstimateConfig,inputs:Input[],samples:Sample[]=[]):Es
  if(valid.some(s=>s.reasoning===undefined))notes.push('Completed usage calibrates combined output. This provider does not report a separate reasoning count; the answer/reasoning split remains an assumption.');
  if(c.webSearch)notes.push('Includes a separate research call, research notes, retrieved text, and 1–3 searches per item. Search use can exceed this assumption; Google free search allowances are account-dependent.');
  if(c.provider==='gemini')notes.push('Uses paid API rates. Free-tier allowances and credits may reduce your bill.');
- if((c.maxTokens||16000)<assumption.tokens.high+reasoningAssumption(c,inputs[0].tokens).high)notes.push('The output limit constrains this estimate. It can also truncate annotations; a low cost does not guarantee a complete answer.');
+ if(inputs.some(i=>(c.maxTokens||16000)<assumption.tokens.high+reasoningAssumption(c,i.tokens).high))notes.push('The output limit constrains this estimate. It can also truncate annotations; a low cost does not guarantee a complete answer.');
  notes.push('Actual costs may differ. Token counts, answer length, and reasoning are approximate; retries, taxes, and account-specific rates are excluded.');
  return result;
 }

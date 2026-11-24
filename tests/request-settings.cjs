@@ -20,15 +20,16 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
 
  // --- What a request to each provider and model carries ----------------------------------------------
  assert.deepEqual(rs.sentRequestSettings('openai','gpt-6-luna',{temperature:0,maxOutput:4000,summary:true,store:false},'medium'),{temperature:0,maxOutput:4000,summary:true,store:false});
- assert.deepEqual(rs.sentRequestSettings('gemini','gemini-3.8-flash',{temperature:1.5,store:false},'medium'),{temperature:1.5},'Only OpenAI has the logs');
- assert.deepEqual(rs.sentRequestSettings('openrouter','openai/gpt-6-luna',{temperature:2,store:false},'low'),{temperature:2});
+ assert.deepEqual(rs.sentRequestSettings('gemini','gemini-3.1-flash-lite',{temperature:1.5,store:false},'medium'),{temperature:1.5},'Only OpenAI has the logs');assert.equal(rs.sentRequestSettings('gemini','gemini-3.8-flash',{temperature:1.5,store:false},'medium'),undefined,'Gemini 3.8 Flash ignores a temperature');
+ assert.deepEqual(rs.sentRequestSettings('openrouter','google/gemini-3.1-flash-lite',{temperature:2,store:false},'low'),{temperature:2});assert.equal(rs.sentRequestSettings('openrouter','openai/gpt-6-luna',{temperature:2,store:false},'low'),undefined,'OpenRouter offers OpenAI models from GPT-5.6 on without a temperature');
  // Claude: no temperature for a model that reasons; Haiku 4.5 with reasoning off takes one, up to 1.
  for(const model of providers.PROVIDERS.anthropic.models)for(const effort of providers.effortsFor?providers.effortsFor('anthropic',model):providers.PROVIDERS.anthropic.efforts){
   const takes=model.startsWith('claude-haiku-4-5')&&effort==='off';assert.equal(rs.takesTemperature('anthropic',model,effort),takes,model+' '+effort);
   assert.deepEqual(rs.sentRequestSettings('anthropic',model,{temperature:1.4},effort),takes?{temperature:1}:undefined,model+' '+effort);
  }
  assert.equal(rs.takesTemperature('anthropic','claude-haiku-4-5-20251001','4096'),false);assert.equal(rs.temperatureCeiling('anthropic'),1);assert.equal(rs.temperatureCeiling('openai'),2);
- for(const model of providers.PROVIDERS.openrouter.models)assert.equal(rs.takesTemperature('openrouter',model,'medium'),!model.startsWith('anthropic/')&&!model.startsWith('openai/gpt-6.2-'),model);
+ // Through OpenRouter: no Claude model, no OpenAI model from GPT-5.6 on, and no Gemini model that ignores one.
+ for(const model of providers.PROVIDERS.openrouter.models)assert.equal(rs.takesTemperature('openrouter',model,'medium'),model==='google/gemini-3.1-flash-lite',model);
  // OpenAI models from GPT-6.2 on take no temperature (OpenAI's GPT-6.2 migration guide).
  for(const model of providers.PROVIDERS.openai.models)assert.equal(rs.takesTemperature('openai',model,'medium'),!model.startsWith('gpt-6.2-'),model);
  assert.equal(rs.sentRequestSettings('openai','gpt-6.2-sol',{temperature:0.5},'medium'),undefined);assert.equal(rs.takesTemperature('openai','gpt-7-sol','medium'),false);assert.equal(rs.takesTemperature('openai','gpt-6.12','medium'),false);assert.equal(rs.takesTemperature('openai','gpt-6-sol','medium'),true);
@@ -82,7 +83,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  }
  // A recorded request holds the settings, and the prompt as sent.
  const recorded=frame.requestFrame({provider:'openai',model:'gpt-6-luna',effort:'low',prompt:PROMPT,answerFields:[],requestSettings:{temperature:0,maxOutput:2000}},false),parts=data.requestParts(recorded);
- assert.equal(parts.temperature,0);assert.equal(parts.limit,2000);assert.equal(data.requestParts(frame.requestFrame({provider:'gemini',model:'gemini-3.8-flash',effort:'low',prompt:PROMPT,answerFields:[],requestSettings:{temperature:1.2}},false)).temperature,1.2);
+ assert.equal(parts.temperature,0);assert.equal(parts.limit,2000);assert.equal(data.requestParts(frame.requestFrame({provider:'gemini',model:'gemini-3.1-flash-lite',effort:'low',prompt:PROMPT,answerFields:[],requestSettings:{temperature:1.2}},false)).temperature,1.2);
  assert.equal(data.requestParts(frame.requestFrame({provider:'openai',model:'gpt-6-luna',effort:'low',prompt:PROMPT,answerFields:[]},false)).temperature,undefined);
 
  // --- The summary of the model's reasoning in a reply -------------------------------------------------
@@ -112,7 +113,7 @@ function load(file){const filename=path.join(root,file);if(cache.has(filename))r
  for(const provider of Object.keys(models)){
   const kept=await sent(provider,{temperature:0.3,maxOutput:4000,summary:true},{record:'true'});
   assert.equal(kept.out.reasoningSummary,'Read the text.\n\nChose A.',provider);assert.equal(kept.out.score,'A',provider+': the answer is read as before');assert.equal(kept.out.output,answer,provider+': the reply’s text holds no reasoning');
-  assert.equal(provider==='gemini'?kept.body.generationConfig.temperature:kept.body.temperature,provider==='anthropic'?undefined:0.3,provider);
+  assert.equal(provider==='gemini'?kept.body.generationConfig.temperature:kept.body.temperature,rs.takesTemperature(provider,models[provider][0],models[provider][1])?0.3:undefined,provider);
   assert.deepEqual(kept.body,frame.providerBody(options(provider,models[provider][0],models[provider][1],{temperature:0.3,maxOutput:4000,summary:true},{prompt:promptIn(kept.body)}),doc),provider+': the handler sends the body the record is made from');
   assert(!('reasoningSummary' in (await sent(provider,{maxOutput:4000},{record:'true'})).out),provider+': no summary unless one was asked for');
   assert(!('reasoningSummary' in (await sent(provider,{summary:true})).out),provider+': nothing is kept without a record (the standard Lab)');

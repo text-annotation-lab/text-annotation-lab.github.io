@@ -38,6 +38,16 @@ export function fixedLength(prompt:string,text=false):number{
  for(const match of prompt.matchAll(BRACES))if(insertName(match[1])||text&&isText(match[1]))return match.index;
  return prompt.length;
 }
+// The prompt of one text (filled) up to where its last line ends. Where the prompt as written ends with a
+// placeholder, only the spaces and line ends written after it are taken off: the value stays as it is, also one
+// that is empty or ends with a space, as the record of the request has it (lib/request-frame.ts).
+export function promptEnd(filled:string,written:string):string{
+ const end=written.trimEnd(),all=[...end.matchAll(BRACES)],last=all[all.length-1];
+ if(!last||last.index+last[0].length!==end.length||!insertName(last[1]))return filled.trimEnd();
+ const tail=written.slice(end.length);
+ for(const after of [tail.replace(/\r\n|\r|\n/g,'\r\n'),tail])if(filled.endsWith(after))return filled.slice(0,filled.length-after.length);
+ return filled.trimEnd();
+}
 // A prompt that places the text: each placeholder put in (put gets its name and how it is written), and each
 // {{text}} taken out. spots: where the text goes in the prompt that is returned, in order. One pass, so a value
 // that holds "{{text}}" or a mark stays as it is.

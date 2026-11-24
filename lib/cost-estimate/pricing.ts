@@ -1,49 +1,56 @@
 // Text Annotation Lab estimator. Jens’s Annotation Lab retains its earlier version.
 // USD per million tokens, first-party Standard APIs. No subscription/free credits.
 export const PRICE_DATE='2026-11-22';
-export const OPENROUTER_PRICE_DATE='2026-11-18';
+export const OPENROUTER_PRICE_DATE='2026-11-24';
 export const SOURCES={openrouter:'https://openrouter.ai/models',openai:'https://developers.openai.com/api/docs/pricing',anthropic:'https://platform.claude.com/docs/en/about-claude/pricing',gemini:'https://ai.google.dev/gemini-api/docs/pricing'};
 export type Provider=keyof typeof SOURCES;
 // cacheRead: the price of input read from the provider's prompt cache, as a share of the input price; absent
-// where the provider's pricing page lists no figure for the model (checked November 16, 2026). In a batch it is
-// halved like every other rate, unless cacheReadBatch gives the batch's own share of the standard input price.
-export type Price={provider:Provider;input:number;output:number;batch:boolean;threshold?:number;longInput?:number;longOutput?:number;tokenMultiplier?:number;cacheRead?:number;cacheReadBatch?:number;changes?:{from:string;input:number;output:number}[];note?:string};
+// where the provider lists no figure for the model (checked November 24, 2026, on each model's own page where the
+// pricing page leaves it out). In a batch it is halved like every other rate, unless cacheReadBatch gives the
+// batch's own share of the standard input price.
+// changes: the model's terms from a date on (a price change the provider has announced, or another model taking
+// over its identifier); a term set to undefined there no longer applies.
+export type Price={provider:Provider;input:number;output:number;batch:boolean;threshold?:number;longInput?:number;longOutput?:number;tokenMultiplier?:number;cacheRead?:number;cacheReadBatch?:number;changes?:({from:string;input:number;output:number}&Partial<Pick<Price,'threshold'|'longInput'|'longOutput'|'cacheRead'|'note'>>)[];note?:string};
 const oa=(input:number,output:number,cacheRead?:number):Price=>({provider:'openai',input,output,batch:true,threshold:272000,longInput:input*2,longOutput:output*1.5,...(cacheRead?{cacheRead}:{})});
 const cl=(input:number,output:number,cacheRead=.1):Price=>({provider:'anthropic',input,output,batch:true,tokenMultiplier:1.3,cacheRead});
 const gg=(input:number,output:number,cacheRead?:number):Price=>({provider:'gemini',input,output,batch:true,...(cacheRead?{cacheRead}:{})});
 const flash:Price={...gg(.75,3.75,.1),changes:[{from:'2027-01-01',input:1.5,output:7.5}]};
-// OpenRouter catalog checked 2026-11-18. Credit-purchase fees are not inference usage.
-const or=(input:number,output:number):Price=>({provider:'openrouter',input,output,batch:false,note:'OpenRouter catalog rates checked November 18, 2026. Routing and price changes can affect actual usage.'});
+// OpenRouter catalog checked 2026-11-24 (its cache-read prices too). Credit-purchase fees are not inference usage.
+const or=(input:number,output:number,cacheRead?:number):Price=>({provider:'openrouter',input,output,batch:false,...(cacheRead?{cacheRead}:{}),note:'OpenRouter catalog rates checked November 24, 2026. Routing and price changes can affect actual usage.'});
 export const PRICES:Record<string,Price>={
- 'openai/gpt-6-luna':{...or(.1,.5),threshold:272000,longInput:.2,longOutput:.75},
- 'anthropic/claude-haiku-5.5':{...or(.1,.5),threshold:100000,longInput:.5,longOutput:2.5,tokenMultiplier:1.3},
- 'google/gemini-3.1-flash-lite':or(.25,1.5),
- 'openai/gpt-6.1-terra':{...or(1,5),threshold:272000,longInput:2,longOutput:7.5},
- 'openai/gpt-6-sol':{...or(2,10),threshold:272000,longInput:4,longOutput:15},
- 'openai/gpt-6.1-sol':{...or(2,10),threshold:272000,longInput:4,longOutput:15},
- 'openai/gpt-6.2-sol':{...or(2,10),threshold:272000,longInput:4,longOutput:15},
- 'openai/gpt-6.2-astra':{...or(8,40),threshold:272000,longInput:16,longOutput:60},
- 'google/gemini-4-hydrogen':or(1.5,7.5),
- 'google/gemini-4-carbon':or(2,10),
- 'google/gemini-3.8-flash':or(.825,4.125),
- 'anthropic/claude-sonnet-5.5':{...or(2,10),tokenMultiplier:1.3},
- 'anthropic/claude-fable-5.2':{...or(8,40),tokenMultiplier:1.3},
- 'gpt-6-luna':oa(.1,.5,.1),'gpt-6.1-terra':oa(1,5,.05),'gpt-6.2-sol':oa(2,10,.05),'gpt-6.1-sol':oa(2,10,.05),'gpt-6-sol':oa(2,10),'gpt-6.2-astra':oa(8,40,.05),'gpt-6-astra':oa(10,50,.1),
- 'gpt-5.6-luna':oa(.2,1.2),'gpt-5.6-terra':oa(2,12),'gpt-5.6-sol':{...oa(4,20),note:'GPT-5.6 Sol promotional rates are available until November 30, 2026.'},
+ 'openai/gpt-6-luna':{...or(.1,.5,.1),threshold:272000,longInput:.2,longOutput:.75},
+ 'anthropic/claude-haiku-5.5':{...or(.1,.5,.1),threshold:100000,longInput:.5,longOutput:2.5,tokenMultiplier:1.3},
+ 'google/gemini-3.1-flash-lite':or(.25,1.5,.1),
+ 'openai/gpt-6.1-terra':{...or(1,5,.05),threshold:272000,longInput:2,longOutput:7.5},
+ 'openai/gpt-6-sol':{...or(2,10,.1),threshold:272000,longInput:4,longOutput:15},
+ 'openai/gpt-6.1-sol':{...or(2,10,.05),threshold:272000,longInput:4,longOutput:15},
+ 'openai/gpt-6.2-sol':{...or(2,10,.05),threshold:272000,longInput:4,longOutput:15},
+ 'openai/gpt-6.2-astra':{...or(8,40,.05),threshold:272000,longInput:16,longOutput:60},
+ 'google/gemini-4-hydrogen':or(1.5,7.5,.05),
+ // Google doubles Gemini 4 Carbon's price on December 1, 2026. OpenRouter lists Google's own price for it, so the
+ // same change is assumed here (not yet announced by OpenRouter; to be checked against its catalog that day).
+ 'google/gemini-4-carbon':{...or(2,10,.05),changes:[{from:'2026-12-01',input:4,output:20}]},
+ 'google/gemini-3.8-flash':or(.825,4.125,.1),
+ 'anthropic/claude-sonnet-5.5':{...or(2,10,.05),tokenMultiplier:1.3},
+ 'anthropic/claude-fable-5.2':{...or(8,40,.025),tokenMultiplier:1.3},
+ 'gpt-6-luna':oa(.1,.5,.1),'gpt-6.1-terra':oa(1,5,.05),'gpt-6.2-sol':oa(2,10,.05),'gpt-6.1-sol':oa(2,10,.05),'gpt-6-sol':oa(2,10,.1),'gpt-6.2-astra':oa(8,40,.05),'gpt-6-astra':oa(10,50,.1),
+ 'gpt-5.6-luna':oa(.2,1.2,.1),'gpt-5.6-terra':oa(2,12,.1),'gpt-5.6-sol':{...oa(4,20,.1),note:'GPT-5.6 Sol promotional rates are available until November 30, 2026.'},
  'claude-haiku-5-5':{...cl(.1,.5),threshold:100000,longInput:.5,longOutput:2.5},
- 'claude-haiku-4-5-20251001':{...cl(1,5),tokenMultiplier:1},
+ 'claude-haiku-4-5':{...cl(1,5),tokenMultiplier:1},
  'claude-sonnet-5-5':cl(2,10,.05),'claude-opus-5-5':cl(4,20,.05),'claude-fable-5-2':cl(8,40,.025),'claude-fable-5-1':cl(10,50,.025),
  'claude-sonnet-4-6':{...cl(3,15),tokenMultiplier:1},'claude-opus-4-6':{...cl(5,25),tokenMultiplier:1},
  'claude-sonnet-4-5':{...cl(3,15),tokenMultiplier:1,threshold:200000,longInput:6,longOutput:22.5},
  'claude-opus-4-5':{...cl(5,25),tokenMultiplier:1},
  'gemini-2.5-flash-lite':{...gg(.1,.4,.1),cacheReadBatch:.1},'gemini-3.1-flash-lite':gg(.25,1.5,.1),'gemini-3.5-flash-lite':gg(.3,2.5,.1),
- 'gemini-2.5-flash':gg(.3,2.5),'gemini-3.8-flash':flash,'gemini-3.6-flash':flash,
+ // From December 1, 2026, Google answers the two deprecated Gemini 2.5 identifiers below with another model and
+ // bills that model's rates (its deprecations page, checked November 24, 2026).
+ 'gemini-2.5-flash':{...gg(.3,2.5),changes:[{from:'2026-12-01',input:.3,output:2.5,cacheRead:.1,note:'Since December 1, 2026, Google answers this identifier with Gemini 3.5 Flash-Lite; its tariff is used.'}]},'gemini-3.8-flash':flash,'gemini-3.6-flash':flash,
  'gemini-3.5-flash':{...flash,note:'Google routes this legacy identifier to Gemini 3.6 Flash; its tariff is used.'},
- 'gemini-2.5-pro':{...gg(1.25,10),threshold:200000,longInput:2.5,longOutput:15},
- 'gemini-4-hydrogen':gg(1.5,7.5),
+ 'gemini-2.5-pro':{...gg(1.25,10),threshold:200000,longInput:2.5,longOutput:15,changes:[{from:'2026-12-01',input:.75,output:3.75,threshold:undefined,longInput:undefined,longOutput:undefined,cacheRead:.1,note:'Since December 1, 2026, Google answers this identifier with Gemini 3.8 Flash; its tariff is used.'},{from:'2027-01-01',input:1.5,output:7.5,threshold:undefined,longInput:undefined,longOutput:undefined,cacheRead:.1,note:'Since December 1, 2026, Google answers this identifier with Gemini 3.8 Flash; its tariff is used.'}]},
+ 'gemini-4-hydrogen':gg(1.5,7.5,.05),
  'gemini-4-neon':gg(3,15,.05),
  'gemini-4-argon':{...gg(2,10,.05),changes:[{from:'2026-12-01',input:4,output:20}]},
- 'gemini-4-carbon':{...gg(2,10),changes:[{from:'2026-12-01',input:4,output:20}]},
+ 'gemini-4-carbon':{...gg(2,10,.05),changes:[{from:'2026-12-01',input:4,output:20}]},
  'gemini-3.1-pro-preview':{...gg(2,12,.1),cacheReadBatch:.1,threshold:200000,longInput:4,longOutput:18},
 };
 // A Claude model's context window in tokens (directly or through OpenRouter), or undefined where the Lab does not
@@ -59,7 +66,8 @@ export function priceFor(provider:Provider,model:string,date=new Date().toISOStr
  // A dated snapshot has its model's price: OpenAI dates it -2026-01-31, Anthropic -20260131.
  const key=PRICES[model]?model:model.replace(/-(?:\d{4}-\d{2}-\d{2}|20\d{6})$/,'');
  const p=PRICES[key];if(!p||p.provider!==provider)return;
- const change=p.changes?.filter(c=>c.from<=date).at(-1);return change?{...p,input:change.input,output:change.output}:p;
+ const change=p.changes?.filter(c=>c.from<=date).at(-1);if(!change)return p;
+ const {from,...terms}=change;return {...p,...terms};
 }
 
 // Your own price for a model (research mode, lib/own-prices.ts), in USD per million tokens. In the estimate

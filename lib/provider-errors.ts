@@ -74,7 +74,7 @@ export function providerError(provider:Provider,status:number,body:unknown,heade
  if(rejected)message=rejected;
  else if(status===429&&diagnostics?.message)message=diagnostics.message;
  else if(status===401||has('api_key_invalid','api_key_expired','invalid_api_key','authentication_error'))message=`${label} rejected the API key. Copy an active key for this provider from ${consoleName}, then retry.`;
- else if(status===402||has('billing_error','credit_balance_exhausted','insufficient_credits'))message=`${label} reports a billing or credit problem. Check API credits and billing in ${consoleName} before retrying; waiting alone will not resolve it.`;
+ else if(status===402||has('billing_error','credit_balance_exhausted','insufficient_credits')||status===400&&/credit balance/i.test(typeof e?.message==='string'?e.message:''))message=`${label} reports a billing or credit problem. Check API credits and billing in ${consoleName} before retrying; waiting alone will not resolve it.`;
  else if(has('organization_spend_limit_exceeded','project_spend_limit_exceeded','organization_usage_limit_exceeded','insufficient_quota','quota_exceeded'))message=`${label} reports an account quota or spending limit. Check the specific limit and its reset date in ${consoleName}. Retry only after access is available again.`;
  else if(status===403)message=`${label} denied access. Check the key’s project permissions, model access, region eligibility, and billing in ${consoleName}. A new key alone may not resolve this.`;
  else if(status===404)message=`${label} could not find the requested model or resource. Check model availability and that you are using the correct provider account.`;
