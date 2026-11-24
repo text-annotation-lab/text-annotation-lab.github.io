@@ -22,6 +22,7 @@ header{height:94px;border-top:5px solid #003d73}.brandtext{display:flex;flex-dir
 .study-example strong{font-weight:600}
 .study-example figure{width:100%;max-width:640px;margin:28px auto 32px}
 .study-example figure img{display:block;width:100%;height:auto}
+.study-example figure picture{display:block}
 .study-example figure a{display:block}
 .study-example figure a:focus-visible{outline:3px solid #003d73;outline-offset:5px}
 .study-example blockquote{margin:26px 0;padding:4px 0 4px 22px;border-left:3px solid #b5c7d8}

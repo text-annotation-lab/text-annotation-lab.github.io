@@ -44,6 +44,14 @@ const ts=projectRequire('typescript');
   if(url.startsWith('#'))assert(ids.has(url.slice(1)),`Missing section ${url}`);
   if(url.startsWith('/')&&!url.startsWith('//'))assert(fs.existsSync(path.join('public',url.split('?')[0])),`Missing asset ${url}`);
  }
+ // The study's figures are offered as WebP (the same pixels, about a third of the bytes) with the PNG as the
+ // fallback of the same picture; "Enlarge" opens the PNG.
+ const pictures=[...study.matchAll(/<picture><source srcset="([^"]+)" type="image\/webp"><img src="([^"]+)"[^>]*><\/picture>/g)];assert.equal(pictures.length,3);
+ for(const [,webp,png] of pictures){
+  assert.equal(webp.replace('.webp','.png'),png);const [small,large]=[webp,png].map(url=>fs.statSync(path.join('public',url.split('?')[0])).size);assert(small<large/2,webp);
+  assert.equal(fs.readFileSync(path.join('public',webp.split('?')[0])).subarray(8,16).toString('latin1'),'WEBPVP8L','A lossless WebP: '+webp);
+ }
+ assert(/\.study-example figure picture\{display:block\}/.test(fs.readFileSync('app/globals.css','utf8')));
  assert(!/<script\b|\bon\w+\s*=/i.test(study),'Study HTML must remain static');
  console.log('PASS: eight corpus ZIP CRCs, 7,446 nonempty text files across the supplied study levels, presidential debate folder counts and documentation, the Billboard archive’s checksums beside its texts, local downloads/images, internal section targets, ten tips, and six closer-look notes. External website availability is not covered.');
 })().catch(error=>{console.error(error);process.exit(1);});
