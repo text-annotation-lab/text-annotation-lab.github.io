@@ -73,7 +73,7 @@ export interface FieldSummary {
   /** Of `missing`: Model knowledge answers INSUFFICIENT_KNOWLEDGE (no judgment, not a category). */
   abstained?: number;
   /**
-   * Numeric fields: answers left out of the chart and the figures, with up to 5 of them as written: values that aren't
+   * Numeric fields: answers left out of the chart and the figures, with up to 6 of them as written (5 are shown): values that aren't
    * numbers (e.g. "NA"), and on a fixed scale (a codebook's, the study's declared one, or 0…1 for flags) numbers off
    * it (e.g. 9 for "can't tell"), as the Agreement panel and the exports leave them out. `scale`: that scale's ends.
    */
@@ -355,7 +355,7 @@ export function summarizeField(field: ComparableField, items: RunItem[], categor
     if (Number.isFinite(num) && !off) return void xs.push(num);
     leftN++;
     if (off) offScale++;
-    if (left.length < 5 && !left.includes(written[i])) left.push(written[i]);
+    if (left.length < 6 && !left.includes(written[i])) left.push(written[i]);
   });
   const stats = describe(xs);
   const diverging = kind === 'scale' && !!range && range[0] < 0 && range[1] > 0;
@@ -530,7 +530,8 @@ export function filterColumns(columns: ColumnInfo[]): ColumnInfo[] {
 export function periodSteps(c: ColumnInfo): { steps: number[]; preferred: number } {
   const steps: number[] = [];
   if (c.values.length <= 40 && !c.more) steps.push(0);
-  const groups = (w: number) => Math.floor(c.max / w) - Math.floor(c.min / w) + 1;
+  // (A hair is added before rounding down: 0.3 / 0.1 is 2.9999999999999996.)
+  const groups = (w: number) => Math.floor(c.max / w + 1e-9) - Math.floor(c.min / w + 1e-9) + 1;
   // (No step finer than the values themselves: a column of decades, 1900, 1910, …, gets no 2- or 5-year periods,
   // which would be mostly empty.)
   const nums = c.more ? [] : [...new Set(c.values.map((v) => toNumber(v)).filter(Number.isFinite))].sort((a, b) => a - b);

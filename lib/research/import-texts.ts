@@ -69,6 +69,8 @@ export function guessIdColumn(sheet:Sheet):number{
 const idText=(value:unknown)=>tidy(value).replace(/[\u0000-\u001f\u007f]+/g,' ').slice(0,120).trim();
 // Every text is stored as a plain-text document, so its name ends in .txt.
 export const textName=(id:string)=>/\.txt$/i.test(id)?id:id+'.txt';
+// An ID with a number after it, before its .txt where it has one: doc1.txt → doc1_2.txt.
+const numbered=(id:string,n:number)=>/\.txt$/i.test(id)?id.replace(/(\.txt)$/i,`_${n}$1`):`${id}_${n}`;
 
 export type TablePlan={texts:NewText[];names:string[];empty:number;twice:number;repeated:string[];tooLong:string[]};
 // The texts a table gives. Rows with an empty text are left out, and so is a
@@ -90,7 +92,7 @@ export function planTable(sheet:Sheet,textIndex:number,idIndex:number,fileName:s
  const texts=kept.map(({row,number})=>{
   const given=(idIndex>=0?idText(row[idIndex]):'')||`${base}_${number}`;
   let id=given;
-  if(used.has(fold(textName(id)))){let n=2;while(used.has(fold(textName(`${given}_${n}`))))n++;id=`${given}_${n}`;repeated.push(given);}
+  if(used.has(fold(textName(id)))){let n=2;while(used.has(fold(textName(numbered(given,n)))))n++;id=numbered(given,n);repeated.push(given);}
   used.add(fold(textName(id)));
   return {name:textName(id),text:String(row[textIndex]),values:from.map(i=>row[i]??'')};
  });
@@ -108,7 +110,7 @@ export function splitPasted(text:string,mode:'none'|'blank'|'line'):string[]{
 }
 export function pastedTexts(parts:string[],prefix:string):NewText[]{
  const id=idText(prefix).replace(/\s+/g,'_')||'pasted';
- return parts.map((text,i)=>({name:textName(parts.length===1?id:`${id}_${i+1}`),text,values:[]}));
+ return parts.map((text,i)=>({name:textName(parts.length===1?id:numbered(id,i+1)),text,values:[]}));
 }
 export const countWords=(text:string)=>(text.match(/\S+/g)||[]).length;
 

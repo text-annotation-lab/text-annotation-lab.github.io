@@ -3,9 +3,10 @@
 // texts the figures count, as the same author's separate research tool does (a coder's “NA”, a 9 next to a −3 to 3
 // scale, or a value that is not one of a field's categories is left out). It repeats the rule `agreement` applies
 // to the same arguments; tests/scale-combine.cjs checks that the two keep the same pairs.
+import {isPlainNumber} from './normalize';
 import {grownScale,isMissingLabel,isTie,ratingRange,type Level} from './metrics';
 
-const isNum=(s:string)=>s.trim()!==''&&!Number.isNaN(Number(s));
+const isNum=isPlainNumber;
 export function comparableValues(pairs:[string,string][],level:Level,allowed:string[]=[],options:{scaleSeen?:boolean;range?:[number,number];known?:string[]}={}):(value:string)=>boolean{
  // A model's INSUFFICIENT_KNOWLEDGE (Model knowledge) and a tied majority vote ("a | b") are left out first, as in
  // `agreement`; a category so named is no tie.

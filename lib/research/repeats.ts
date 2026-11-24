@@ -80,18 +80,23 @@ export function requestsOf<T extends Result>(result:T):{result:T;replicate:numbe
  return list.map(annotation=>({result:{...base,...annotation} as unknown as T,replicate:annotation.n}));
 }
 
-const isNumber=(text:string)=>text.trim()!==''&&!Number.isNaN(Number(text));
+const isNumber=(text:string)=>Number.isFinite(toNumber(text));
+// A reply's own value for a key: a key such as "constructor" that a reply lacks is empty, not what every object has.
+const own=(answers:Record<string,string>,key:string)=>Object.hasOwn(answers,key)?String(answers[key]??''):'';
 // Which annotation's explanation goes with the combined answers: the one whose answers are closest to them.
-// Numbers count by their distance, other answers as the same or not.
+// Numbers count by their distance, other answers as the same or not. An annotation that gave no number where the
+// combined answer is one (an abstention, "NA", nothing) comes after every annotation that did, however far that
+// one's number lies from the combined one.
 function closest(given:Record<string,string>[],combined:Record<string,string>,relevant:string[],numeric:Set<string>):number{
- let best=0,least=Infinity;
+ let best=0,least=Infinity,fewest=Infinity;
  given.forEach((answers,i)=>{
-  let distance=0;
+  let distance=0,missing=0;
   for(const key of relevant){
-   const own=answers[key]??'',shared=combined[key]??'';
-   distance+=numeric.has(key)&&isNumber(own)&&isNumber(shared)?Math.abs(Number(own)-Number(shared)):normalizeLabel(own)===normalizeLabel(shared)?0:1;
+   const mine=own(answers,key),shared=own(combined,key);
+   if(numeric.has(key)&&isNumber(shared)){if(isNumber(mine))distance+=Math.abs(toNumber(mine)-toNumber(shared));else missing++;}
+   else distance+=normalizeLabel(mine)===normalizeLabel(shared)?0:1;
   }
-  if(distance<least){best=i;least=distance;}
+  if(missing<fewest||missing===fewest&&distance<least){best=i;least=distance;fewest=missing;}
  });
  return best;
 }
@@ -107,17 +112,17 @@ export function combinePlain(ok:Annotation[],keep?:(key:string)=>((x:number)=>bo
  if(!read.length)return aggregate(replies,'majority');
  const keys=[...new Set(read.flatMap(reply=>Object.keys(reply)))];
  const isScore=(key:string)=>{
-  const values=read.map(reply=>reply[key]??'').filter(v=>v.trim()!==''),numbers=values.filter(v=>Number.isFinite(toNumber(v)));
+  const values=read.map(reply=>own(reply,key)).filter(v=>v.trim()!==''),numbers=values.filter(v=>Number.isFinite(toNumber(v)));
   return numbers.length>0&&numbers.length>=values.length/2;
  };
- const labels=keys.filter(key=>!isExplanationKey(key)),scores=labels.filter(isScore),combined:Record<string,string>={};
+ const labels=keys.filter(key=>!isExplanationKey(key)),scores=labels.filter(isScore),combined:Record<string,string>=Object.create(null);
  for(const key of labels){
-  if(!scores.includes(key)){combined[key]=aggregate(read.map(reply=>reply[key]??''),'majority');continue;}
-  const numbers=read.map(reply=>toNumber(reply[key]??'')).filter(Number.isFinite),fits=keep?.(key),on=fits?numbers.filter(fits):numbers,used=on.length?on:numbers;
+  if(!scores.includes(key)){combined[key]=aggregate(read.map(reply=>own(reply,key)),'majority');continue;}
+  const numbers=read.map(reply=>toNumber(own(reply,key))).filter(Number.isFinite),fits=keep?.(key),on=fits?numbers.filter(fits):numbers,used=on.length?on:numbers;
   if(leftOut)leftOut.n+=numbers.length-used.length;
   combined[key]=aggregate(used.map(String),'median');
  }
- for(const key of keys.filter(isExplanationKey))combined[key]=read[closest(read,combined,relevantTo(key,labels,k=>k),new Set(scores))][key]??'';
+ for(const key of keys.filter(isExplanationKey))combined[key]=own(read[closest(read,combined,relevantTo(key,labels,k=>k),new Set(scores))],key);
  // Keys in the order they were first given; scores as numbers.
  return JSON.stringify(Object.fromEntries(keys.map(key=>[key,scores.includes(key)&&combined[key]!==''?Number(combined[key]):combined[key]])));
 }

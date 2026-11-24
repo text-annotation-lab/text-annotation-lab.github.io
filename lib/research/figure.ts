@@ -159,7 +159,8 @@ function fit(text: string, max: number, size = SIZE): string {
   while (t.length > 1 && textWidth(`${t}…`, size) > max) t = t.slice(0, -1);
   return `${t.trimEnd()}…`;
 }
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// (Control characters are not allowed in XML: one in a label would leave the figure unreadable.)
+const esc = (s: string) => s.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const r2 = (x: number) => Math.round(x * 100) / 100;
 const pct = (n: number, total: number) => (!total ? '' : wholePercent(n, total));
 /** An interval's bound as a percentage to one decimal. */

@@ -4,7 +4,7 @@
 // {{PLACEHOLDER}}; fillScript inserts the values.
 import {type Provider} from '../providers';
 import {requestTimeout} from '../request-settings';
-import {wireKeys,isExplanationField,RATIONALE_KEY,type AnswerSettings} from '../answer-types';
+import {wireKeys,isExplanationField,RATIONALE_KEY,fieldSpec,allowedValues as typedValues,type AnswerSettings,type FieldType} from '../answer-types';
 import type {RequestFrame} from '../request-frame';
 import {requestParts} from './export-data';
 
@@ -140,6 +140,12 @@ EXPLANATION_REQUIRED = {{EXPLANATION_REQUIRED}}
 # The values the answer format allows for a field (a field not listed: any text).
 ALLOWED = {{ALLOWED}}
 
+# The type the study set for a field: "number", "whole number", "yes / no", or
+# "category" (a field not listed: text). ABSTAIN: the answer such a field also
+# accepts (Model knowledge), or None.
+TYPES = {{TYPES}}
+ABSTAIN = {{ABSTAIN}}
+
 # True: the run asked for plain text, and the whole reply is the answer.
 PLAIN_TEXT = {{PLAIN_TEXT}}
 
@@ -153,7 +159,8 @@ TIMEOUT = {{TIMEOUT}}
 
 MARK = re.compile("<<DOCUMENT_FILENAME>>|<<DOCUMENT_TEXT>>|<<FILE_BASE64>>|<<INSERT:(?:id|meta[.][^<>]{1,60})>>")
 SHORT_CODE = re.compile(r"^[\w .:/@+()-]{1,200}$")
-FENCE = re.compile("^" + chr(96) * 3 + r"(?:json)?\s*([\s\S]*?)\s*" + chr(96) * 3 + "$")
+FENCE = re.compile("^" + chr(96) * 3 + r"(?:json)?\s*([\s\S]*?)\s*" + chr(96) * 3 + "$", re.I)
+NUMBER = re.compile(r"^[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:e[+-]?[0-9]+)?$", re.I)
 
 
 def fill(value, document):
@@ -167,10 +174,15 @@ def fill(value, document):
     return value
 
 
+def insert_columns(args):
+    """The corpus column of each placeholder of the prompt; {{id}} follows --id-column."""
+    return {name: args.id_column if name == "id" and column == "doc_id" else column for name, column in INSERTS.items()}
+
+
 def build_request(row, args, folder, number):
     """(doc_id, request body, the PDF's data or "") for one row of the corpus; the body is None without a document."""
     doc_id = row.get(args.id_column) or str(number)
-    inserts = {"<<INSERT:%s>>" % name: (row.get(column) or "") if column else "" for name, column in INSERTS.items()}
+    inserts = {"<<INSERT:%s>>" % name: (row.get(column) or "") if column else "" for name, column in insert_columns(args).items()}
     path = (row.get(args.file_column) or "").strip()
     if path and REQUEST_PDF is not None:
         with open(os.path.join(folder, path), "rb") as f:
@@ -328,14 +340,33 @@ def parse_answer(text):
     for name, value in values.items():
         if not value.strip():
             return {}, "The answer for " + name + " is missing"
-        allowed = ALLOWED.get(name)
-        if allowed and value.strip().lower() not in [a.lower() for a in allowed]:
+        kind, allowed = TYPES.get(name), ALLOWED.get(name)
+        if kind and ABSTAIN and value.strip() == ABSTAIN:
+            continue
+        if kind in ("number", "whole number"):
+            n = as_number(value)
+            if n is None:
+                return {}, "The answer for " + name + " is not a number"
+            if kind == "whole number" and not n.is_integer():
+                return {}, "The answer for " + name + " is not a whole number"
+            if kind == "whole number" and allowed and not any(as_number(a) == n for a in allowed):
+                return {}, "The answer for " + name + " is not one of the allowed values"
+        elif allowed and value.strip().lower() not in [a.lower() for a in allowed]:
             return {}, "The answer for " + name + " is not one of the allowed values"
     if EXPLANATION_REQUIRED and not explanation.strip() and not any(name.lower() == "explanation" and value.strip() for name, value in values.items()):
         return {}, "The reply is missing its explanation"
     if "explanation" not in [name.lower() for name in values]:
         values["explanation"] = explanation
     return values, ""
+
+
+def as_number(text):
+    """A number as the original run read one: decimal notation only, and one that can be held. None: not a number."""
+    t = re.sub("^[\u2212\u2013]", "-", text.strip())
+    if not NUMBER.match(t):
+        return None
+    n = float(t)
+    return None if n != n or n in (float("inf"), float("-inf")) else n
 
 
 def as_text(value):
@@ -392,13 +423,15 @@ def main():
         rows = [row for row in rows if (row.get(args.id_column) or "").strip() in wanted]
         if not rows:
             sys.exit("None of the documents that %s lists are in %s" % (args.only, args.corpus))
-    if args.limit:
+    if args.limit is not None:
+        if args.limit < 1:
+            sys.exit("--limit takes a whole number of 1 or more")
         rows = rows[: args.limit]
     if not rows:
         sys.exit("No rows found in " + args.corpus)
     if args.text_column not in rows[0] and args.file_column not in rows[0]:
         sys.exit("Neither column '%s' nor column '%s' was found. Columns: %s" % (args.text_column, args.file_column, ", ".join(rows[0].keys())))
-    absent = [column for column in INSERTS.values() if column and column not in rows[0]]
+    absent = [column for column in insert_columns(args).values() if column and column not in rows[0]]
     if absent:
         sys.exit("The prompt inserts values from columns that were not found: %s. Columns: %s" % (", ".join(absent), ", ".join(rows[0].keys())))
     folder = os.path.dirname(os.path.abspath(args.corpus))
@@ -507,13 +540,29 @@ function allowedValues(frame:RequestFrame,fields:string[],keys?:string[]):Record
 // filled in, the corpus column that holds its values (null: the study no longer has the column).
 // settings: the run's answer settings (for the named format).
 // columns: the column of each answer field in the run's results tables (absent: the fields' names).
-export type ScriptInput={studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];columns?:string[];plain:boolean;settings?:AnswerSettings;repeats?:number;note?:string;inserts?:[string,string|null][]};
+// knowledge: a Model knowledge run, where a typed field also accepts INSUFFICIENT_KNOWLEDGE.
+export type ScriptInput={studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];columns?:string[];plain:boolean;settings?:AnswerSettings;repeats?:number;note?:string;inserts?:[string,string|null][];knowledge?:boolean};
+// A field the study gave a type is checked as the Lab checks it (typedProblem in lib/answer-types.ts): by its own
+// type and allowed values, never by the range a provider's schema could carry (Google's takes a scale by its ends,
+// so 1, 3, 5 would otherwise allow 2 and 4).
+const TYPE_NAMES:Partial<Record<FieldType,string>>={number:'number',ordinal:'whole number',boolean:'yes / no',category:'category'};
+function typedChecks(input:ScriptInput,allowed:Record<string,string[]>):{allowed:Record<string,string[]>;types:Record<string,string>}{
+ const types:Record<string,string>={};
+ if(input.plain)return {allowed,types};
+ for(const name of input.fields){
+  const spec=fieldSpec(input.settings,name),kind=spec&&TYPE_NAMES[spec.type];if(!spec||!kind)continue;
+  const values=typedValues(spec);types[name]=kind;
+  if(values.length)allowed[name]=values;else delete allowed[name];
+ }
+ return {allowed,types};
+}
 // The output limit a recorded request was sent with.
 function sentLimit(frame:RequestFrame):number|undefined{
  try{const body=JSON.parse(frame.body),limit=body.max_output_tokens??body.max_tokens??body.generationConfig?.maxOutputTokens;return Number.isInteger(limit)?limit:undefined;}catch{return undefined;}
 }
 export function scriptValues(input:ScriptInput):Record<string,string>{
  const frame=(input.text||input.pdf)!,model=requestParts(frame).model,named=!input.plain&&input.settings?.named===true,keys=named?wireKeys(input.fields,input.settings):undefined;
+ const checks=typedChecks(input,input.plain?{}:allowedValues(frame,input.fields,keys));
  return {
   STUDY_NAME:docLine(input.studyName),RUN_DESCRIPTION:docLine(input.runDescription),
   SCRIPT_NOTE:input.note?'\n\n'+input.note.split('\n').map(docLine).join('\n'):'',
@@ -521,7 +570,7 @@ export function scriptValues(input:ScriptInput):Record<string,string>{
   PROVIDER:JSON.stringify(input.provider),URL:JSON.stringify(frame.url),
   REQUEST:input.text?pyLiteral(JSON.parse(input.text.body)):'None',REQUEST_PDF:input.pdf?pyLiteral(JSON.parse(input.pdf.body)):'None',
   INSERTS:pyLiteral(Object.fromEntries(input.inserts||[])),
-  FIELDS:pyLiteral(input.plain?[]:input.fields),KEYS:keys?pyLiteral(keys):'None',COLUMNS:pyLiteral(input.plain?[]:input.columns&&input.columns.length===input.fields.length?input.columns:input.fields),RATIONALE:named&&input.settings?.rationale!==false&&!input.fields.some(isExplanationField)?JSON.stringify(RATIONALE_KEY):'None',EXPLANATION_REQUIRED:!input.plain&&input.settings?.rationale!==false&&(!named||!input.fields.some(isExplanationField))?'True':'False',ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields,keys)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
+  FIELDS:pyLiteral(input.plain?[]:input.fields),KEYS:keys?pyLiteral(keys):'None',COLUMNS:pyLiteral(input.plain?[]:input.columns&&input.columns.length===input.fields.length?input.columns:input.fields),RATIONALE:named&&input.settings?.rationale!==false&&!input.fields.some(isExplanationField)?JSON.stringify(RATIONALE_KEY):'None',EXPLANATION_REQUIRED:!input.plain&&input.settings?.rationale!==false&&(!named||!input.fields.some(isExplanationField))?'True':'False',ALLOWED:pyLiteral(checks.allowed),TYPES:pyLiteral(checks.types),ABSTAIN:input.knowledge&&Object.keys(checks.types).length?JSON.stringify('INSUFFICIENT_KNOWLEDGE'):'None',PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
   // As long as the browser waits: longer for a model that thinks at length or an output limit above the Lab's own.
   TIMEOUT:String(requestTimeout(input.provider,model,{maxOutput:sentLimit(frame)})/1000),
  };

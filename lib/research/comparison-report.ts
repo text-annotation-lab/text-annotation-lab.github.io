@@ -3,6 +3,7 @@
 // than 0), a draft sentence per field, every compared pair ordered for expert review, the same figures per group of
 // a column (optional), the two runs' settings, a table of the values per field, and notes on how to read them.
 // The pairing and the statistics are those of Runs & agreement.
+import {isPlainNumber} from './normalize';
 import {agreementJob,pairSources,runJob,type AgreementJob,type Pairing} from './agreement';
 import {cellOf,columnIndex} from './columns';
 import {explanationOf,runLines,unitOf,type Dataset,type RunLine} from './export';
@@ -20,7 +21,7 @@ export type ReportOptions={tolerance:number;groupBy?:string;intervals?:Intervals
 type Cells=Record<string,string|number|null>;
 type Stats=Agreement;
 
-const isNum=(value:string)=>value.trim()!==''&&!Number.isNaN(Number(value));
+const isNum=isPlainNumber;
 const r4=(x:number|null|undefined)=>x===null||x===undefined||!Number.isFinite(x)?null:Math.round(x*10000)/10000;
 const count=(n:number)=>n.toLocaleString('en-US');
 // A table from rows of named cells: the columns in the order they first appear (a figure that cannot be computed
@@ -191,6 +192,8 @@ export async function comparisonSheets(dataset:Dataset&{requests?:RecordedReques
 
  // The two runs' settings, side by side.
  const hashes=await promptHashes(dataset),removedIn=(run:number)=>textsOfRun(dataset,run).filter(row=>row.removedAt).length,removed=removedIn(first)+removedIn(second)>0;
+ // The texts still in the study that have a usable answer from the run (one whose request failed has none).
+ const usableIn=(run:number)=>textsOfRun(dataset,run).filter(row=>!row.removedAt&&rowForRun(row,run).status==='done').length;
  const settings=(run:RunLine,facts:ReturnType<typeof runFacts>):Record<string,string>=>{
   const state=runState(dataset.rows,run),unfinished=state==='running'?'not finished: it was still running':state==='submitted'?'not finished: its batch was still being processed':'';
   return {
@@ -199,7 +202,7 @@ export async function comparisonSheets(dataset:Dataset&{requests?:RecordedReques
    effort:run.effort||MODEL_DEFAULT,temperature:run.temperature===undefined?MODEL_DEFAULT:String(run.temperature),max_output_tokens:String(runOutputLimit(run,runRequests({name:'',dataset,requests:dataset.requests,lab:''},run.number))),
    prompt_version:`v${run.promptVersion} (${hashOf(hashes,run.prompt,run.system)})`,system_prompt:run.system?'yes':'none',prompt_caching:run.caching,
    mode:modeOf(facts.processing),
-   started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(Math.max(0,facts.texts-facts.active-removedIn(run.number))),
+   started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(usableIn(run.number)),
    ...(removed?{texts_removed_from_study_since:String(removedIn(run.number))}:{}),
    annotations_per_text:String(run.repeats||1),
   };

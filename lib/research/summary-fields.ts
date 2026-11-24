@@ -3,7 +3,7 @@
 import {allowedValues,fieldSpec,isExplanationField,PLAIN_FIELD,type FieldSpec} from '../answer-types';
 import {cellOf,type Column} from './columns';
 import {fieldLabel,fieldsOf,valueOf} from './fields';
-import {normalizeLabel,toNumber} from './normalize';
+import {normalizeLabel,toNumber,abstains} from './normalize';
 import {incomplete,requestsOf} from './repeats';
 import {rowForRun,type Row} from './runs';
 import {farFromZeroOne,zeroOne,type ScoreScale} from './score-scale';
@@ -49,7 +49,7 @@ export function summaryFields(rows:Row[],run:number,scale?:ScoreScale):Comparabl
   const values:number[]=[];
   for(const result of results)for(const {result:one} of requestsOf(result)){
    if(one.status!=='done')continue;
-   const value=valueOf(one,key).trim();if(value)values.push(toNumber(value));
+   const value=valueOf(one,key).trim();if(value&&!abstains(value))values.push(toNumber(value));
   }
   const nums=values.filter(Number.isFinite);
   if(!nums.length||nums.length<values.length/2)continue;

@@ -2,7 +2,7 @@
 // of human labels) and describe how far they agree. The statistics themselves
 // are in metrics.ts.
 import {agreement,fmtPct,fmtStat,isMissingLabel,type Agreement,type CiStat,type Level} from './metrics';
-import {normalizeLabel} from './normalize';
+import {normalizeLabel,isPlainNumber,lowest,highest,abstains} from './normalize';
 import {rowForRun,type Row} from './runs';
 import {requestsOf} from './repeats';
 import {cellOf,columnIndex,type Column} from './columns';
@@ -18,7 +18,7 @@ export function sourceValues(rows:Row[],columns:Column[],source:CompareSource,fi
  if(source.kind==='column'){const index=columnIndex(columns,source.name);return rows.map(row=>cellOf(row,index).trim());}
  return rows.map(row=>{const result=sourceResult(row,source);return result.status==='done'?valueOf(result,field).trim():'';});
 }
-const isNumber=(value:string)=>value!==''&&!Number.isNaN(Number(value));
+const isNumber=isPlainNumber;
 // Codes that only ever mean “no label” (unlike words such as “none”, which may be a category).
 const MISSING_CODE=/^(na|n\/a|#n\/a|n\.a\.?|nan|missing|-|–|—|\.|\?)$/i;
 // The type a run gave the field (research mode's answer fields) and the values it allowed, when every
@@ -46,7 +46,8 @@ function singleAnswers(rows:Row[],run:number,field:string):Single{
   const result=rowForRun(row,run);if(result.status!=='done')continue;
   for(const {result:one} of requestsOf(result)){
    if(one.status!=='done')continue;
-   const value=normalizeLabel(valueOf(one,field));if(!value)continue;
+   // (An abstention is no answer on the field: it does not decide whether the field is a score.)
+   const value=normalizeLabel(valueOf(one,field));if(!value||abstains(value))continue;
    given++;if(isNumber(value))numbers.push(Number(value));
   }
  }
@@ -65,7 +66,7 @@ const byNumber=(values:string[])=>[...new Set(values)].sort((x,y)=>Number(x)-Num
 function widened(list:string[],other:number[]):{allowed:string[];ends:[number,number];extended:boolean}{
  const points=list.map(Number),lo=Math.min(...points),hi=Math.max(...points),extra:number[]=[];
  if(other.length){
-  const whole=points.every(Number.isInteger),least=Math.min(...other),most=Math.max(...other),from=whole?Math.floor(least):least,to=whole?Math.ceil(most):most;
+  const whole=points.every(Number.isInteger),least=lowest(other),most=highest(other),from=whole?Math.floor(least):least,to=whole?Math.ceil(most):most;
   if(whole&&Math.max(hi,to)-Math.min(lo,from)<=100){for(let x=from;x<lo;x++)extra.push(x);for(let x=hi+1;x<=to;x++)extra.push(x);}
   else extra.push(...[from,to].filter(x=>x<lo||x>hi));
  }
@@ -155,7 +156,7 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
  // every whole number of their range when it is at most 100 wide). A value that is neither is left out and reported.
  // Without points (scores between whole numbers, or a range wider than 100), every value counts.
  if(scores&&scored(scores.single)&&(type==='boolean'||(type==='category'&&declared.length))){
-  const own=type==='boolean'?['false','true']:declared,numbers=scores.single.numbers,least=Math.min(...numbers),most=Math.max(...numbers),study=onStudy(scores);
+  const own=type==='boolean'?['false','true']:declared,numbers=scores.single.numbers,least=lowest(numbers),most=highest(numbers),study=onStudy(scores);
   const points=study?scalePoints(scale!):numbers.every(Number.isInteger)&&most-least<=100?Array.from({length:most-least+1},(_,i)=>String(least+i)):[];
   p.allowed=points.length?[...new Set([...own,...points])]:[];p.leftOut='value';if(study)p.studyScale=scale;
   p.basis=points.length?`Categories: ${type==='boolean'?'yes and no':`the field’s ${own.length} allowed values`}, and the numbers ${points[0]} to ${points.at(-1)} of the run without allowed values${study?' (the scale set for the scores)':''}.`:'';
@@ -207,11 +208,11 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
     p.range=[0,1];if(whole)p.allowed=['0','1'];
     p.basis='Scale: 0 and 1, read from the run’s answers as a yes / no in numbers. A number far from them, such as 9, is left out, and yes and no in the column are read as 1 and 0.';
    }else{
-    const range:[number,number]|undefined=seen.length?[Math.min(...seen),Math.max(...seen)]:undefined;
+    const range:[number,number]|undefined=seen.length?[lowest(seen),highest(seen)]:undefined;
     p.range=range;
     // Each run's points: every whole number of its own range, when that is at most 100 wide. Two runs: the points
     // of both, and every whole number between them when the range of both is at most 100 wide.
-    const points=each.map(numbers=>{const least=Math.min(...numbers),most=Math.max(...numbers);return numbers.length&&most-least<=100?Array.from({length:most-least+1},(_,i)=>least+i):[];});
+    const points=each.map(numbers=>{const least=lowest(numbers),most=highest(numbers);return numbers.length&&most-least<=100?Array.from({length:most-least+1},(_,i)=>least+i):[];});
     if(range&&whole&&points.every(list=>list.length))p.allowed=(range[1]-range[0]<=100?Array.from({length:range[1]-range[0]+1},(_,i)=>range[0]+i):[...new Set(points.flat())].sort((x,y)=>x-y)).map(String);
     p.basis=range?`Scale: read from ${twoRuns?'the two runs’':'the run’s'} answers, ${range[0]} to ${range[1]}; no allowed values are declared for this field.${whole&&range[1]-range[0]<=100?'':' The scores are not a scale of whole numbers, so Gwet’s AC1 and AC2 are not given.'}`:'';
    }
@@ -275,7 +276,8 @@ export function disagreements(p:Pairing,compared:(value:string)=>boolean=()=>tru
 // What was left out of the comparison, in words (empty when nothing was).
 export function leftOutNote(stats:Agreement,unit='text',kind:Pairing['leftOut']='marker'):string{
  if(!stats.leftOut.n)return '';
- const quoted=(list:string[])=>list.map(v=>`“${v}”`).join(', ')+(list.length===5?', …':'');
+ // (Up to six values are kept: five are shown, and “…” says that there are more.)
+ const quoted=(list:string[])=>list.slice(0,5).map(v=>`“${v}”`).join(', ')+(list.length>5?', …':'');
  const ties=stats.leftOut.ties||0,abstained=stats.leftOut.abstained,gave=abstained?abstained.both+abstained.one:0,other=stats.leftOut.n-ties-gave;
  const why=stats.leftOut.range?`not a number on the scale ${stats.leftOut.range[0]} to ${stats.leftOut.range[1]}`:kind==='value'?'not one of the field’s allowed values':kind==='number'?'not a number':'a missing-value marker';
  return [gave?`${gave} ${unit}${gave===1?' was':'s were'} left out because ${abstained!.both===gave?(gave===1?'both models':'both models each time'):abstained!.one===gave?'one model':'a model'} answered INSUFFICIENT_KNOWLEDGE${abstained!.both&&abstained!.one?` (both models: ${abstained!.both}; one: ${abstained!.one})`:''}; agreement is computed on the ${unit}s both judged.`:'',

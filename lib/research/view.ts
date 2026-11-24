@@ -31,8 +31,10 @@ export function researchRows<T extends Row>(docs:T[],columns:Column[],view:View,
  const fields=fieldsOf(source?.kind==='run'?[...base,...docs.map(doc=>sourceResult(doc,source))]:base);
  const field=pickField(fieldsOf(base).length?fieldsOf(base):fields,view.field,source?.kind==='column'?source.name:'');
  const judged=new Map<string,boolean|null>(),runs=new Set<number>();
+ // The compared run's field: the same one for every text, as in the agreement figures. A text whose earlier reply
+ // lacks it shows nothing there, not another field's value.
+ const theirs=source?.kind==='run'?pickField(fieldsOf(docs.map(doc=>sourceResult(doc,source))),field):'';
  if(source){
-  const theirs=source.kind==='run'?pickField(fieldsOf(docs.map(doc=>sourceResult(doc,source))),field):'';
   for(const row of base)if(row.status==='done'&&row.runNo!==undefined)runs.add(row.runNo);
   for(const run of runs){
    const p=pairSources(study,columns,{kind:'run',run},field,source,theirs,scale);
@@ -49,7 +51,7 @@ export function researchRows<T extends Row>(docs:T[],columns:Column[],view:View,
    const own=row.status==='done'?valueOf(row,field):'';
    let other='',yesNo=isYesNo(row,field);
    if(source.kind==='column')other=cellOf(row,compareIndex);
-   else{const earlier=sourceResult(row,source),theirs=pickField(fieldsOf([earlier]),field);other=earlier.status==='done'?valueOf(earlier,theirs):'';yesNo=yesNo||isYesNo(earlier,theirs);}
+   else{const earlier=sourceResult(row,source);other=earlier.status==='done'?valueOf(earlier,theirs):'';yesNo=yesNo||isYesNo(earlier,theirs);}
    // A text the figures do not pair (its label is a coder's “NA”, read as a blank cell) is neither; a result
    // without a run is compared as it reads.
    const paired=row.runNo!==undefined&&runs.has(row.runNo);
