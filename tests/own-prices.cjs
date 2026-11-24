@@ -18,15 +18,15 @@ const STORE='text-annotation-lab:own-prices';
  // --- The rates an estimate uses with your own price ------------------------------------------------
  // A listed model: the two prices are replaced; the model's other terms stay; long-request and dated prices go.
  assert.deepEqual(ownRates('openai','gpt-6.1-terra',{input:3,output:9}),{provider:'openai',input:3,output:9,batch:true,cacheRead:.05});
- assert.deepEqual(ownRates('openai','gpt-6-sol',{input:3,output:9}),{provider:'openai',input:3,output:9,batch:true});
+ assert.deepEqual(ownRates('openai','gpt-6-sol',{input:3,output:9}),{provider:'openai',input:3,output:9,batch:true,cacheRead:.1});
  assert.deepEqual(ownRates('anthropic','claude-sonnet-5-5',{input:1,output:2}),{provider:'anthropic',input:1,output:2,batch:true,tokenMultiplier:1.3,cacheRead:.05});
  assert.deepEqual(ownRates('anthropic','claude-haiku-5-5',{input:1,output:2}),{provider:'anthropic',input:1,output:2,batch:true,tokenMultiplier:1.3,cacheRead:.1});
  assert.deepEqual(ownRates('gemini','gemini-4-argon',{input:1,output:2},'2027-06-01'),{provider:'gemini',input:1,output:2,batch:true,cacheRead:.05},'A later listed price does not replace a typed one');
  assert.deepEqual(ownRates('gemini','gemini-2.5-flash-lite',{input:1,output:2}),{provider:'gemini',input:1,output:2,batch:true,cacheRead:.1,cacheReadBatch:.1});
- assert.deepEqual(ownRates('openrouter','anthropic/claude-sonnet-5.5',{input:1,output:2}),{provider:'openrouter',input:1,output:2,batch:false,tokenMultiplier:1.3},'No note about the catalogue’s rates');
+ assert.deepEqual(ownRates('openrouter','anthropic/claude-sonnet-5.5',{input:1,output:2}),{provider:'openrouter',input:1,output:2,batch:false,tokenMultiplier:1.3,cacheRead:.05},'No note about the catalogue’s rates');
  assert.deepEqual(ownRates('openai','gpt-6.1-sol-2026-10-01',{input:1,output:2}),{provider:'openai',input:1,output:2,batch:true,cacheRead:.05},'A dated ID has its model’s terms');
  // Zero is a price.
- assert.deepEqual(ownRates('openai','gpt-6-sol',{input:0,output:0}),{provider:'openai',input:0,output:0,batch:true});
+ assert.deepEqual(ownRates('openai','gpt-6-sol',{input:0,output:0}),{provider:'openai',input:0,output:0,batch:true,cacheRead:.1});
  // A model without a listed price: its provider's usual terms.
  assert.deepEqual(ownRates('openai','gpt-5.5',{input:3,output:12}),{provider:'openai',input:3,output:12,batch:true});
  assert.deepEqual(ownRates('gemini','gemini-3.7-flash',{input:3,output:12}),{provider:'gemini',input:3,output:12,batch:true});

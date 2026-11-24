@@ -4,7 +4,7 @@
 import {useEffect,useId,useState} from 'react';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {PROVIDERS,type Provider} from '@/lib/providers';
-import {MAX_OUTPUT_TOKENS,MAX_SYSTEM_PROMPT,budgetedClaude,cleanRequestSettings,defaultOutputLimit,outputFloor,plainOpenAI,sentRequestSettings,summarizesReasoning,takesTemperature,temperatureCeiling,type RequestSettings} from '@/lib/request-settings';
+import {MAX_OUTPUT_TOKENS,MAX_SYSTEM_PROMPT,budgetedClaude,cleanRequestSettings,defaultOutputLimit,openaiFrom62,outputFloor,plainOpenAI,sentRequestSettings,summarizesReasoning,takesTemperature,temperatureCeiling,type RequestSettings} from '@/lib/request-settings';
 import {PREVIEW_PLACEHOLDER,previewRequest,type RequestView} from '@/lib/research/request-view';
 import type {FrameSettings} from '@/lib/request-frame';
 import {priceFor} from '@/lib/cost-estimate/pricing';
@@ -56,7 +56,7 @@ export function RequestOptions({part,provider,model,effort,prompt,fixed,value,di
  if(part==='cache')return <CacheOption provider={provider} model={model} prompt={prompt} fixed={fixed} value={value} disabled={disabled} onChange={next=>set({cache:next?.cache})}/>;
  return <>
   <div className="processing-choice research-first-option"><label htmlFor={uid+'request-temperature'}>Temperature</label><NumberBox id={uid+'request-temperature'} value={takes?sent?.temperature:undefined} placeholder={takes?'Model default':'Not sent'} min={0} max={ceiling} step={0.1} disabled={disabled||!takes} describedBy={uid+'request-temperature-help'} onCommit={temperature=>set({temperature})}/></div>
-  {!takes&&<p id={uid+'request-temperature-help'} className="hint batch-explainer">{provider==='openai'||model.startsWith('openai/')?'OpenAI models from GPT-6.2 on take no temperature, so none is sent.':provider==='openrouter'?'Claude models that reason take no temperature, so none is sent.':`Claude models that reason take no temperature, so none is sent. ${budgetedClaude(model)&&!model.startsWith('claude-haiku-4-5')?'This model':'Claude Haiku 4.5'} takes one with reasoning off.`}</p>}
+  {!takes&&<p id={uid+'request-temperature-help'} className="hint batch-explainer">{provider==='gemini'||model.startsWith('google/')?'Gemini models from 3.6 Flash and 3.5 Flash-Lite on ignore a temperature, so none is sent.':provider==='openai'||model.startsWith('openai/')?(provider==='openrouter'&&!openaiFrom62(model.slice(7))?'OpenRouter offers OpenAI models from GPT-5.6 on without a temperature, so none is sent.':'OpenAI models from GPT-6.2 on take no temperature, so none is sent.'):provider==='openrouter'?'Claude models that reason take no temperature, so none is sent.':`Claude models that reason take no temperature, so none is sent. ${budgetedClaude(model)&&!model.startsWith('claude-haiku-4-5')?'This model':'Claude Haiku 4.5'} takes one with reasoning off.`}</p>}
   <div className="processing-choice"><label htmlFor={uid+'request-max-output'}>Max output tokens</label><NumberBox id={uid+'request-max-output'} value={sent?.maxOutput??usual} placeholder={String(usual)} min={floor} max={MAX_OUTPUT_TOKENS} step={1} disabled={disabled} describedBy={uid+'request-max-output-help'} onCommit={maxOutput=>set({maxOutput})}/></div>
   <p id={uid+'request-max-output-help'} className="hint batch-explainer">A reply that reaches it counts as failed. The Lab’s own limit for this model is {count(usual)}.{floor>16?` This reasoning setting needs at least ${count(floor)}.`:''}</p>
   <PriceBoxes provider={provider} model={model}/>

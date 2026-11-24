@@ -103,7 +103,8 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
  near(charge({...luna,usage:usage({cached_tokens:500})}).amount,(500*.1+500*.1*.1+100*.5)/1e6,'OpenAI read');
  near(charge({...luna,usage:usage({cache_write_tokens:400})}).amount,(600*.1+400*.1*1.25+100*.5)/1e6,'OpenAI write');
  near(charge({...luna,processing:'batch',usage:usage({cached_tokens:500,cache_write_tokens:100})}).amount,(400*.1+500*.1*.1+100*.1*1.25+100*.5)/2e6,'The batch discount applies to cached tokens too');
- assert.equal(charge({provider:'openai',model:'gpt-6-sol',usage:usage({cached_tokens:500})}),undefined,'No listed cache rate: the cost stays unknown');assert(charge({provider:'openai',model:'gpt-6-sol',usage:usage({})}));
+ near(charge({provider:'openai',model:'gpt-6-sol',usage:usage({cached_tokens:500})}).amount,(500*2+500*2*.1+100*10)/1e6,'GPT-6 Sol read');
+ assert.equal(charge({provider:'gemini',model:'gemini-2.5-flash',time:'2026-11-20T10:00:00Z',usage:{promptTokenCount:1000,candidatesTokenCount:100,cachedContentTokenCount:500}}),undefined,'No listed cache rate: the cost stays unknown');assert(charge({provider:'gemini',model:'gemini-2.5-flash',time:'2026-11-20T10:00:00Z',usage:{promptTokenCount:1000,candidatesTokenCount:100}}));
  assert.equal(charge({...luna,usage:usage({cached_tokens:1500})}),undefined,'More cached than input tokens is not priced');
  const sonnet={provider:'anthropic',model:'claude-sonnet-5-5'};
  near(charge({...sonnet,usage:{input_tokens:100,cache_read_input_tokens:900,output_tokens:50}}).amount,(100*2+900*2*.05+50*10)/1e6,'Anthropic read');
@@ -116,12 +117,12 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
  near(charge({...lite,usage:metadata}).amount,(200*.25+800*.25*.1+100*1.5)/1e6,'Gemini read');near(charge({...lite,processing:'batch',usage:metadata}).amount,(200*.25+800*.25*.1+100*1.5)/2e6);
  near(charge({provider:'gemini',model:'gemini-2.5-flash-lite',processing:'batch',usage:metadata}).amount,(200*.1*.5+800*.1*.1+100*.4*.5)/1e6,'A batch rate of its own where the provider lists one');
  near(charge({provider:'gemini',model:'gemini-4-argon',time:'2026-12-02T10:00:00Z',usage:metadata}).amount,(200*4+800*4*.05+100*20)/1e6,'The share follows a price change');
- assert.equal(charge({provider:'gemini',model:'gemini-4-hydrogen',usage:metadata}),undefined);
+ near(charge({provider:'gemini',model:'gemini-4-hydrogen',usage:metadata}).amount,(200*1.5+800*1.5*.05+100*7.5)/1e6,'Gemini 4 Hydrogen read');
  const routed={provider:'openrouter',model:'openai/gpt-6-luna'};
  assert.equal(charge({...routed,usage:{prompt_tokens:1000,completion_tokens:100,prompt_tokens_details:{cached_tokens:500}}}),undefined);assert.deepEqual(charge({...routed,usage:{cost:.01,prompt_tokens:1000,completion_tokens:100,prompt_tokens_details:{cached_tokens:500}}}),{amount:.01,reported:true});
  for(const [model,price] of Object.entries(pricing.PRICES)){
   assert(price.cacheRead===undefined||price.cacheRead>0&&price.cacheRead<1,model);assert(price.cacheReadBatch===undefined||price.cacheRead!==undefined,model);
-  if(price.provider==='anthropic')assert(price.cacheRead,model+': every Claude model has a cache rate');if(price.provider==='openrouter')assert.equal(price.cacheRead,undefined,model+': OpenRouter reports its own charge');
+  if(price.provider==='anthropic')assert(price.cacheRead,model+': every Claude model has a cache rate');if(price.provider==='openrouter')assert(price.cacheRead,model+': the catalog’s cache-read share, for estimates (a recorded cost is OpenRouter’s own figure)');
  }
  assert.deepEqual(cost.cacheTokens('anthropic',{cache_read_input_tokens:5,cache_creation_input_tokens:7}),{read:5,write:7,hourWrite:0});assert.deepEqual(cost.cacheTokens('openai',undefined),{read:0,write:0,hourWrite:0});
  const run=cost.latestRunCost([{status:'done',runId:'r',runStartedAt:'2026-11-16T10:00:00Z',...sonnet,usage:{input_tokens:100,cache_creation_input_tokens:900,output_tokens:50}},{status:'done',runId:'r',runStartedAt:'2026-11-16T10:00:00Z',...sonnet,usage:{input_tokens:100,cache_read_input_tokens:900,output_tokens:50}}]);
@@ -141,7 +142,7 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
  near(engine.estimate({...config,cache:true},inputs.slice(0,1)).inputCost.low,engine.estimate(config,inputs.slice(0,1)).inputCost.low+size.low*rate*.25,'One text only writes');
  const brief=engine.estimate({...config,prompt:PROMPT,cache:true},inputs);assert.deepEqual(brief.total,engine.estimate({...config,prompt:PROMPT},inputs).total,'A prompt under the minimum is not cached');assert(brief.notes.some(n=>/shorter than the 1,024 tokens this model caches from, so nothing is cached/.test(n)));
  const gemini={...config,provider:'gemini',model:'gemini-3.8-flash'};assert.deepEqual(engine.estimate({...gemini,cache:true},inputs).total,engine.estimate(gemini,inputs).total,'Nothing is assumed where the provider caches by itself');
- const unlisted={...config,model:'gpt-6-sol'},unlistedOn=engine.estimate({...unlisted,cache:true},inputs);assert.equal(unlistedOn.total.low,engine.estimate(unlisted,inputs).total.low);assert(unlistedOn.total.high>engine.estimate(unlisted,inputs).total.high);assert(unlistedOn.notes.some(n=>n.includes('lists no cache rate')));
+ const unlisted={...config,model:'gpt-6-sol',rates:{provider:'openai',input:2,output:10,batch:true}},unlistedOn=engine.estimate({...unlisted,cache:true},inputs);assert.equal(unlistedOn.total.low,engine.estimate(unlisted,inputs).total.low);assert(unlistedOn.total.high>engine.estimate(unlisted,inputs).total.high);assert(unlistedOn.notes.some(n=>n.includes('lists no cache rate')));
  const claude={...config,provider:'anthropic',model:'claude-sonnet-5-5'},claudeBase=engine.estimate(claude,inputs),claudeSize=engine.textTokens('\n'+long,1.3);
  near(engine.estimate({...claude,cache:true},inputs).inputCost.high,claudeBase.inputCost.high+40*claudeSize.high*2/1e6*.25);
  const inBatch=engine.estimate({...claude,cache:true,batch:true},inputs);near(inBatch.inputCost.high,claudeBase.inputCost.high+40*claudeSize.high*2/1e6,'A batch writes the one-hour entry at twice the input price');near(inBatch.batch.high,inBatch.total.high/2);assert(inBatch.notes.some(n=>n.includes('In a batch, requests can start together')));
@@ -153,10 +154,10 @@ const near=(actual,expected,message)=>assert(Math.abs(actual-expected)<1e-12,`${
  assert.equal(notes.cacheNote('anthropic','claude-fable-5-2','').text.includes('at 2.5% of the input price'),true);
  const openaiNote=notes.cacheNote('openai','gpt-6-luna',long).text;
  assert(openaiNote.startsWith('OpenAI stores the prompt for 30 minutes; later texts read it at 10% of the input price, and storing it costs 25% extra. Prompts under 1,024 tokens are not cached. This prompt: about '));assert(openaiNote.endsWith(' tokens.'));
- assert.equal(notes.cacheNote('openai','gpt-6-sol','').text,'OpenAI stores the prompt for 30 minutes; later texts read it at a lower price, and storing it costs 25% extra. Prompts under 1,024 tokens are not cached.');
+ assert.equal(notes.cacheNote('openai','gpt-6-sol','').text,'OpenAI stores the prompt for 30 minutes; later texts read it at 10% of the input price, and storing it costs 25% extra. Prompts under 1,024 tokens are not cached.');assert.match(notes.cacheNote('openai','gpt-6.3-sol','').text,/later texts read it at a lower price/,'A model without a listed price');
  assert.deepEqual(notes.cacheNote('gemini','gemini-3.8-flash',long),{available:false,text:'Gemini caches repeated prompts by itself, from 4,096 tokens on this model. There is nothing to switch on or off.'});
  assert.equal(notes.cacheNote('gemini','gemini-3.1-flash-lite',long).text,'Gemini caches repeated prompts by itself. There is nothing to switch on or off.');
- assert.equal(notes.cacheNote('openrouter','anthropic/claude-haiku-5.5','').text,'Anthropic stores the prompt for 5 minutes; later texts read it at a lower price, and storing it costs 25% extra. Prompts under 512 tokens are not cached.');
+ assert.equal(notes.cacheNote('openrouter','anthropic/claude-haiku-5.5','').text,'Anthropic stores the prompt for 5 minutes; later texts read it at 10% of the input price, and storing it costs 25% extra. Prompts under 512 tokens are not cached.');
  assert.equal(notes.cacheNote('openrouter','google/gemini-4-hydrogen','').available,false);
 
  // --- What a study keeps ----------------------------------------------------------------------

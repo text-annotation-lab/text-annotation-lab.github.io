@@ -90,10 +90,11 @@ export async function tooLongTexts({provider,model,prompt,system,rows,knowledge=
  const room=window-middle(textTokens((system||'')+'\n'+prompt))-(maxOutput??annotationOutputLimit(provider,model)),names:string[]=[];
  for(const row of rows){
   signal?.throwIfAborted();
-  // A text file has at most as many characters as bytes: one that short cannot be too long, and is not read. A
+  // A text file has at most as many characters as bytes, and the estimate counts at most 1.25 tokens for a
+  // character (one outside the Latin script): a file that small cannot be too long, and is not read. A
   // compressed file (DOCX) can hold many more characters than bytes, so it is always read.
   const copies=placeText?Math.max(1,fillPlaces(prompt,(_,whole)=>whole).spots.length):1,extra=inserts?.(row)?.join('\n').length??0;
-  if(!knowledge&&row.file&&(/\.pdf$/i.test(row.file.name)?!pdfs:!/\.docx$/i.test(row.file.name)&&(row.file.size*copies+extra)*multiplier/3.2<room))continue;
+  if(!knowledge&&row.file&&(/\.pdf$/i.test(row.file.name)?!pdfs:!/\.docx$/i.test(row.file.name)&&(row.file.size*copies+extra)*multiplier*1.25<room))continue;
   const found=knowledge?{tokens:textTokens(knowledgeItemText(row.fields))}:await fileInput(row.file).catch(()=>undefined),tokens=found?asSent(found,row,{prompt,inserts,placeText}).tokens:undefined;
   if(tokens&&middle(tokens)>room)names.push(String(row.name));
  }
