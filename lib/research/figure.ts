@@ -380,7 +380,7 @@ export function rowsFigure(rows: FigureRow[], opts: { widthMm: number; oneField:
   // Header: what the bar shows, and n.
   let y = 9;
   // (The longer heading where it fits over the bars.)
-  const heading = div.length && textWidth(`Share of ${many} below 0, at 0 and above 0`, SMALL) <= barW + sideW ? `Share of ${many} below 0, at 0 and above 0` : `Share of ${many}`;
+  const heading = div.length && textWidth(`Share of ${many} below 0, at 0, and above 0`, SMALL) <= barW + sideW ? `Share of ${many} below 0, at 0, and above 0` : `Share of ${many}`;
   svg.text(barX, y, heading, { size: SMALL, fill: MUTED });
   svg.text(nX, y, 'n', { size: SMALL, fill: MUTED, anchor: 'end' });
   y += 5;

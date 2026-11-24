@@ -21,7 +21,7 @@ export async function POST(request:Request){
  try{
  if(!allowedOrigin(request))return json({error:'Request origin not allowed.'},403);
  const auth=request.headers.get('authorization')||'';
- if(!auth.startsWith('Bearer ')||!auth.slice(7).trim())return json({error:'No API key reached the lab. Re-enter the key for your selected provider and try again.'},401);
+ if(!auth.startsWith('Bearer ')||!auth.slice(7).trim())return json({error:'No API key reached the Lab. Re-enter the key for your selected provider and try again.'},401);
  const tooLarge=()=>json({error:'The annotation request is too large. Use one file up to 20 MB and a prompt up to 100,000 characters.'},413);
  if(Number(request.headers.get('content-length')||0)>MAX_REQUEST_BYTES)return tooLarge();
  let f:FormData,bytes=0,bodyTooLarge=false;
