@@ -7,10 +7,12 @@ const pageSize=20;
 type Entry={unit:Unit;initial:string};
 
 /** Lets students check and correct the year or group of each text before plotting. */
-export function ChartReview({kind,entries,noun,onApply,onCancel,rules,rule,onRuleChange}:{
+export function ChartReview({kind,entries,noun,onApply,onCancel,rules,rule,onRuleChange,suggest}:{
  kind:'year'|'group';entries:Entry[];noun:string;
  onApply:(values:Map<string,string>)=>void;onCancel:()=>void;
  rules?:{value:string;label:string}[];rule?:string;onRuleChange?:(rule:string)=>void;
+ // suggest: the group each text gets under a rule, by the text's key; choosing a rule puts these in the table.
+ suggest?:(rule:string)=>Map<string,string>;
 }){
  const heading=useId(),ruleId=useId();
  const [edits,setEdits]=useState(()=>new Map<string,string>());
@@ -27,8 +29,8 @@ export function ChartReview({kind,entries,noun,onApply,onCancel,rules,rule,onRul
  function renameGroup(from:string,to:string){setEdits(current=>{const next=new Map(current);for(const {unit,value} of values)if(value.trim()===from)next.set(unit.key,to);return next;});}
  return <section aria-labelledby={heading} className="chart-review">
   <h3 id={heading}>{kind==='year'?'Review years':'Set up groups'}</h3>
-  <p>{kind==='year'?`Check the years read from the filenames. Leave a year blank to leave that ${noun.replace(/s$/,'')} out.`:`Give each ${noun.replace(/s$/,'')} a group. Leave it blank to leave it out. Groups are saved with your study.`}</p>
-  {rules&&rules.length>0&&<div className="chart-review-rule"><label htmlFor={ruleId}>Suggest groups from</label><select id={ruleId} value={rule||''} onChange={event=>{setEdits(new Map());onRuleChange?.(event.target.value);}}>{rules.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></div>}
+  <p>{kind==='year'?`Check the years read from the ${noun==='subjects'?'subjects':'filenames'}. Leave a year blank to leave that ${noun.replace(/s$/,'')} out.`:`Give each ${noun.replace(/s$/,'')} a group. Leave it blank to leave it out. Groups are saved with your study.`}</p>
+  {rules&&rules.length>0&&<div className="chart-review-rule"><label htmlFor={ruleId}>Suggest groups from</label><select id={ruleId} value={rule||''} onChange={event=>{setEdits(suggest?suggest(event.target.value):new Map());onRuleChange?.(event.target.value);}}>{rules.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}</select></div>}
   {kind==='group'&&groups.length>0&&groups.length<=8&&<div className="chart-review-groups"><span>Rename groups</span>{groups.map(group=><input key={group} aria-label={`Rename group ${group}`} defaultValue={group} maxLength={40} onBlur={event=>{const next=event.target.value.trim();if(next&&next!==group)renameGroup(group,next);}}/>)}</div>}
   <div className="chart-review-list"><table><thead><tr><th scope="col">{noun==='subjects'?'Subject':'Filename'}</th><th scope="col">{kind==='year'?'Year':'Group'}</th></tr></thead>
    <tbody>{values.slice(start,start+pageSize).map(({unit,value})=><tr key={unit.key}>

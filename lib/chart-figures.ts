@@ -1,6 +1,6 @@
 // Draws the results charts as self-contained SVG strings.
 // The same drawing serves the interactive chart window and the downloaded figure.
-import {formatMean,formatNumber,meanInterval,mean,periodsFor,smoothTrend,trendWindow,type Scale,type Unit} from './chart-model';
+import {formatMean,formatNumber,meanInterval,mean,periodsFor,scalePoint,smoothTrend,trendWindow,type Scale,type Unit} from './chart-model';
 
 export const INK='#1b2942',INK2='#425775',MUTED='#64728b',GRID='#e8ecf2',AXIS='#b7c3d1',ZERO='#8f9caf';
 export const SEQUENTIAL=['#86b6ef','#5c9be8','#3684e0','#2369bd','#184f95','#0f3a72','#082650'];
@@ -64,7 +64,7 @@ export type ViewOptions={width:number;interactive:boolean;noun:string};
 export function distributionScale(units:Unit[],scale:Scale,o:ViewOptions):Figure{
  const points=scalePoints(scale),bins=points.map(()=>[] as Unit[]),notes:string[]=[];
  let rounded=false;
- for(const unit of units){const v=unit.number!;const r=Math.sign(v)*Math.round(Math.abs(v));if(r!==v)rounded=true;const i=Math.max(0,Math.min(points.length-1,r-scale.min));bins[i].push(unit);}
+ for(const unit of units){const v=unit.number!;const r=scalePoint(v);if(r!==v)rounded=true;const i=Math.max(0,Math.min(points.length-1,r-scale.min));bins[i].push(unit);}
  if(rounded)notes.push(`Averages across runs or chunks are rounded to the nearest score in this chart.`);
  const W=o.width,l=48,r=W-8,t=34,b=250,H=b+34,max=Math.max(...bins.map(x=>x.length),1),axis=countAxis(max),Y=(v:number)=>b-v/axis.upper*(b-t),slot=(r-l)/points.length;
  let s='';
@@ -75,8 +75,10 @@ export function distributionScale(units:Unit[],scale:Scale,o:ViewOptions):Figure
   const c=bins[i].length,w=Math.min(64,slot*.64),x=l+i*slot+(slot-w)/2,h=b-Y(c),label=scaleLabel(scale,point);
   if(c){picks.push({label:`Score ${label}`,ids:bins[i].flatMap(u=>u.ids)});s+=pickOpen(picks.length-1,`Score ${label}: ${c} ${o.noun}. Show them.`,o.interactive)+hit(l+i*slot,t,slot,b-t+26,o.interactive);}
   else s+='<g>';
-  if(c)s+=`<path d="M${n(x)},${b} V${n(b-h+4)} Q${n(x)},${n(b-h)} ${n(x+4)},${n(b-h)} H${n(x+w-4)} Q${n(x+w)},${n(b-h)} ${n(x+w)},${n(b-h+4)} V${b}Z" fill="${scaleColor(scale,point)}"/>`;
-  else s+=line(x+8,b-1,x+w-8,b-1,'#cfd8e3',2);
+  // The corners are rounded by at most the bar's height and half its width, so a short or narrow bar stays a bar.
+  const q=Math.max(0,Math.min(4,h,w/2)),inset=Math.min(8,w/4);
+  if(c)s+=`<path d="M${n(x)},${b} V${n(b-h+q)} Q${n(x)},${n(b-h)} ${n(x+q)},${n(b-h)} H${n(x+w-q)} Q${n(x+w)},${n(b-h)} ${n(x+w)},${n(b-h+q)} V${b}Z" fill="${scaleColor(scale,point)}"/>`;
+  else s+=line(x+inset,b-1,x+w-inset,b-1,'#cfd8e3',2);
   if(c){s+=text(x+w/2,b-h-20,String(c),{anchor:'middle',fill:INK,size:13,weight:700})+text(x+w/2,b-h-7,pct(c,units.length),{anchor:'middle',size:11});}
   else s+=text(x+w/2,b-9,'0',{anchor:'middle',fill:MUTED});
   s+=text(x+w/2,b+20,label,{anchor:'middle',fill:INK,size:13,weight:700})+'</g>';
@@ -149,7 +151,6 @@ export function timeDots(units:Unit[],scale:Scale|undefined,trend:boolean,o:View
  s+=line(l,b,r,b,AXIS);
  const span=y1-y0,step=[1,2,5,10,20,25,50,100,200,500].find(st=>span/st<=(W<500?4:7))||1000;
  for(let y=Math.ceil(y0/step)*step;y<=y1;y+=step)s+=line(X(y),b,X(y),b+4,AXIS)+text(X(y),b+18,String(y),{anchor:'middle'});
- if(y0===y1)s+=text(X(y0),b+18,String(y0),{anchor:'middle'});
  s+=text((l+r)/2,b+38,'Year',{anchor:'middle',fill:INK2,size:12.5});
  const notes:string[]=[];
  if(trend){
@@ -185,7 +186,7 @@ export function timeShares(units:Unit[],scale:Scale|undefined,categories:string[
  const periods=periodsFor(dated.map(u=>u.year!),length);
  const keys=scale?scalePoints(scale).map(String):[...categories!,...(units.some(u=>!categories!.includes(u.value))?[REST]:[])];
  const colorOf=(k:string)=>scale?scaleColor(scale,Number(k)):categoryColors(categories!).get(k)||OTHER;
- const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.sign(u.number!)*Math.round(Math.abs(u.number!))))):(categories!.includes(u.value)?u.value:REST);
+ const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,scalePoint(u.number!)))):(categories!.includes(u.value)?u.value:REST);
  const W=o.width,l=44,r=W-6,t=10,b=250,H=b+46,slot=(r-l)/periods.length,bw=Math.min(84,slot*.7),Y=(p:number)=>b-p*(b-t);
  let s='';const picks:Pick[]=[],notes:string[]=[];
  for(const p of [0,.25,.5,.75,1])s+=line(l,Y(p),r,Y(p),p?GRID:AXIS)+text(l-8,Y(p)+4,Math.round(p*100)+'%',{anchor:'end'});
@@ -198,7 +199,7 @@ export function timeShares(units:Unit[],scale:Scale|undefined,categories:string[
    const members=inPeriod.filter(u=>keyOf(u)===key),c=members.length;if(!c)continue;
    const top=Y((acc+c)/total),h=Y(acc/total)-top,fill=colorOf(key),label=scale?scaleLabel(scale,Number(key)):key===REST?restLabel(categories!):key;
    picks.push({label:`${period.start}–${period.end} · ${label}`,ids:members.flatMap(u=>u.ids)});
-   s+=pickOpen(picks.length-1,`${period.start} to ${period.end}, ${label}: ${c} of ${total} ${o.noun}. Show them.`,o.interactive)+hit(x,top,bw,h,o.interactive)+rect(x,top+1,bw,h-2,fill);
+   s+=pickOpen(picks.length-1,`${period.start} to ${period.end}, ${label}: ${c} of ${total} ${o.noun}. Show them.`,o.interactive)+hit(x,top,bw,h,o.interactive)+rect(x,top+(h>3?1:0),bw,h>3?h-2:Math.max(1,h),fill);
    if(h>=18&&bw>=44){const ink=inkOn(fill),short=scale?label:'';
     s+=`<text x="${n(x+bw/2)}" y="${n(top+h/2+4)}" font-size="11.5" text-anchor="middle" fill="${ink}">${short?`<tspan font-weight="700">${esc(short)}</tspan><tspan dx="5" opacity=".85">${pct(c,total)}</tspan>`:esc(pct(c,total))}</text>`;}
    s+='</g>';acc+=c;
@@ -221,7 +222,7 @@ export function groupsView(units:Unit[],groups:string[],scale:Scale|undefined,ca
  let s='';
  const keys=scale?scalePoints(scale).map(String):[...categories!,...(units.some(u=>!categories!.includes(u.value))?[REST]:[])];
  const colorOf=(k:string)=>scale?scaleColor(scale,Number(k)):categoryColors(categories!).get(k)||OTHER;
- const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,Math.sign(u.number!)*Math.round(Math.abs(u.number!))))):(categories!.includes(u.value)?u.value:REST);
+ const keyOf=(u:Unit)=>scale?String(Math.max(scale.min,Math.min(scale.max,scalePoint(u.number!)))):(categories!.includes(u.value)?u.value:REST);
  const diverging=scale?.type==='diverging';
  // Diverging bars are centered on the neutral point; others start at the left edge.
  const center=diverging?barL+(barR-barL)*.5:barL,U=diverging?(barR-barL)/2:(barR-barL);
@@ -232,12 +233,12 @@ export function groupsView(units:Unit[],groups:string[],scale:Scale|undefined,ca
   const members=units.filter(u=>u.group===group),total=members.length,y=top+gi*rowH,h=34;
   s+=text(labelW,y+h/2,group,{anchor:'end',fill:INK,size:13,weight:700})+text(labelW,y+h/2+15,`${total} ${o.noun}`,{anchor:'end',size:11});
   let x=center;
-  if(diverging){const below=members.filter(u=>Math.round(u.number!)<scaleCenter(scale!)).length,mid=members.filter(u=>Math.round(u.number!)===scaleCenter(scale!)).length;x=center-(below+mid/2)/Math.max(1,total)*U;}
+  if(diverging){const below=members.filter(u=>scalePoint(u.number!)<scaleCenter(scale!)).length,mid=members.filter(u=>scalePoint(u.number!)===scaleCenter(scale!)).length;x=center-(below+mid/2)/Math.max(1,total)*U;}
   for(const key of keys){
    const list=members.filter(u=>keyOf(u)===key),c=list.length;if(!c)continue;
    const w=c/total*U,fill=colorOf(key),label=scale?scaleLabel(scale,Number(key)):key===REST?restLabel(categories!):key;
    picks.push({label:`${group} · ${label}`,ids:list.flatMap(u=>u.ids)});
-   s+=pickOpen(picks.length-1,`${group}, ${label}: ${c} of ${total} ${o.noun}. Show them.`,o.interactive)+hit(x,y,w,h,o.interactive)+rect(x+1,y,w-2,h,fill);
+   s+=pickOpen(picks.length-1,`${group}, ${label}: ${c} of ${total} ${o.noun}. Show them.`,o.interactive)+hit(x,y,w,h,o.interactive)+rect(x+(w>3?1:0),y,w>3?w-2:Math.max(1,w),h,fill);
    const ink=inkOn(fill);
    if(scale&&w>=58)s+=`<text x="${n(x+w/2)}" y="${n(y+h/2+4)}" font-size="11.5" text-anchor="middle" fill="${ink}"><tspan font-weight="700">${esc(label)}</tspan><tspan dx="5" opacity=".85">${pct(c,total)}</tspan></text>`;
    else if(w>=34)s+=text(x+w/2,y+h/2+4,pct(c,total),{anchor:'middle',fill:ink,size:11.5});
@@ -257,7 +258,7 @@ export function groupsView(units:Unit[],groups:string[],scale:Scale|undefined,ca
    if(Number.isFinite(ci.low))s+=line(X(Math.max(scale.min,ci.low)),y,X(Math.min(scale.max,ci.high)),y,INK,2.5)+line(X(Math.max(scale.min,ci.low)),y-6,X(Math.max(scale.min,ci.low)),y+6,INK,2)+line(X(Math.min(scale.max,ci.high)),y-6,X(Math.min(scale.max,ci.high)),y+6,INK,2);
    s+=`<circle cx="${n(X(ci.mean))}" cy="${y}" r="4.5" fill="${INK}" stroke="#fff" stroke-width="2"/>`+text(X(ci.mean),y-11,formatMean(ci.mean),{anchor:'middle',fill:INK,size:12,weight:700});
   });
-  if(groups.some(g=>units.filter(u=>u.group===g).length<2))notes.push('A group needs at least 2 texts for a 95% range.');
+  if(groups.some(g=>units.filter(u=>u.group===g).length<2))notes.push(`A group needs at least 2 ${o.noun} for a 95% range.`);
  }
  return {svg:svgDoc(W,H,s,'Groups compared',o.interactive),width:W,height:H,picks,notes};
 }
@@ -305,7 +306,7 @@ export function exportFigure(chart:Figure,title:string,caption:string,legend:{la
  const W=chart.width+48,titleLines=wrap(title||'Results',64),captionLines=caption.trim()?wrap(caption.trim(),Math.floor(W/7.4)):[];
  let y=40,head='';
  titleLines.forEach(l=>{head+=text(24,y,l,{size:22,fill:INK,weight:700});y+=28;});
- if(legend.length){let x=24;y+=2;for(const item of legend){head+=rect(x,y-10,12,12,item.color,2)+text(x+17,y,item.label,{size:12,fill:INK2});x+=17+item.label.length*6.6+16;if(x>W-120){x=24;y+=20;}}y+=16;}
+ if(legend.length){let x=24;y+=2;for(const item of legend){const wide=17+item.label.length*6.6+16;if(x>24&&x+wide>W-24){x=24;y+=20;}head+=rect(x,y-10,12,12,item.color,2)+text(x+17,y,item.label,{size:12,fill:INK2});x+=wide;}y+=16;}
  const chartTop=y;let foot='',cy=chartTop+chart.height+22;
  // The caption already names the smoothed average, so the figure leaves out the longer explanation shown in the chart window.
  const notes=chart.notes.filter(note=>!(note.startsWith('Trend line: a smoothed average')&&/smoothed average/i.test(caption))).flatMap(note=>wrap(note,Math.floor(W/7)));

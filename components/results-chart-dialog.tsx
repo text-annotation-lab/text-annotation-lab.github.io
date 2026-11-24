@@ -4,7 +4,7 @@ import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/u
 import {Button} from '@/components/ui/button';
 import type {ResultsChartDialogProps} from './results-chart';
 import {ChartReview} from './chart-review';
-import {buildUnits,chartFieldList,formatMean,formatNumber,groupableFields,mean,median,mostCommon,periodLengths,settingsSummary,suggestedGroupRule,suggestedPeriodLength,suggestedRowGroup,suggestedRowYear,suggestedScale,type ChartSourceRow,type Field,type GroupRule,type Scale,type Unit} from '@/lib/chart-model';
+import {buildUnits,chartFieldList,formatMean,formatNumber,groupableFields,mean,median,mostCommon,periodLengths,scalePoint,settingsSummary,suggestedGroupRule,suggestedPeriodLength,suggestedRowGroup,suggestedRowYear,suggestedScale,type ChartSourceRow,type Field,type GroupRule,type Scale,type Unit} from '@/lib/chart-model';
 import {inkOn,OTHER,REST,restLabel,categoryColors,crowdedDots,distributionCategories,distributionNumbers,distributionScale,downloadPng,downloadSvg,exportFigure,groupsView,runsView,scaleColor,scaleLabel,scalePoints,timeDots,timeShares,type Figure} from '@/lib/chart-figures';
 import './results-chart.css';
 
@@ -102,9 +102,11 @@ function ChartBody({rows,scope,subjectLabel,onInspect,onSaveYears,onSaveGroups}:
  const groupNames=Array.from(new Set(grouped.map(u=>u.group!))).sort((a,b)=>a.localeCompare(b));
  const categoryLegend=categories?[...Array.from(categoryColors(categories)).map(([label,color])=>({label,color})),...(units.some(u=>!categories.includes(u.value))?[{label:restLabel(categories),color:OTHER}]:[])]:[];
  try{
-  if(view==='distribution'){
+  // Nothing to plot: every result left this field empty or answered that it could not tell.
+  if(!units.length)empty=<div className="chart-empty-state"><strong>Nothing to chart for this field</strong><p>No completed {noun.replace(/s$/,'')} has a value for this field{built.abstained?`; ${built.abstained} answered INSUFFICIENT_KNOWLEDGE`:''}.</p></div>;
+  else if(view==='distribution'){
    if(kind==='scale'&&scale){figure=distributionScale(units,scale,o);
-    stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle score (median)',formatNumber(median(numbers))],['Mean (average)',formatMean(mean(numbers))],['Most common (mode)',mostCommon(units.map(u=>scaleLabel(scale,Math.round(u.number!))))],['Lowest – highest',`${scaleLabel(scale,Math.min(...numbers))} – ${scaleLabel(scale,Math.max(...numbers))}`]];
+    stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle score (median)',formatNumber(median(numbers))],['Mean (average)',formatMean(mean(numbers))],['Most common (mode)',mostCommon(units.map(u=>scaleLabel(scale,scalePoint(u.number!))))],['Lowest – highest',`${scaleLabel(scale,Math.min(...numbers))} – ${scaleLabel(scale,Math.max(...numbers))}`]];
     read=`Each bar counts the ${noun} that received that score. Every point on the scale is shown, even when no ${noun.replace(/s$/,'')} received it, so you see where results sit on the whole scale. Select a bar to read those ${noun} and the model’s explanations.`;}
    else if(kind==='scale'){figure=distributionNumbers(units,o);stats=[[noun==='texts'?'Texts':'Subjects',units.length],['Middle value (median)',formatNumber(median(numbers))],['Mean (average)',formatMean(mean(numbers))],['Lowest – highest',`${formatNumber(Math.min(...numbers))} – ${formatNumber(Math.max(...numbers))}`]];
     read=`Each bar counts the ${noun} whose value falls in that range. Select a bar to read them.`;}
@@ -149,11 +151,13 @@ function ChartBody({rows,scope,subjectLabel,onInspect,onSaveYears,onSaveGroups}:
 
  const caption=autoCaption({field,units,kind,scale,view,trend:view==='time'&&timeView==='dots'&&trend,rows:built.rows,noun,period:view==='time'&&timeView==='periods'?periodChoice||(dated.length?suggestedPeriodLength(dated.map(u=>u.year!)):0):0,groups:groupNames});
  const yearEntries=units.map(unit=>{const row=byId.get(unit.ids[0])!;const year=row.chartYear===null?'':typeof row.chartYear==='number'?String(row.chartYear):String(suggestedRowYear(row)??'');return {unit,initial:year};});
+ // Choosing where groups are suggested from fills the table in again, also for texts whose group was saved.
+ const suggestGroups=(next:string)=>new Map(units.map(unit=>[unit.key,suggestedRowGroup(byId.get(unit.ids[0])!,(next||undefined) as GroupRule|undefined)??'']));
  const groupEntries=units.map(unit=>{const row=byId.get(unit.ids[0])!;const g=row.chartGroup===null?'':typeof row.chartGroup==='string'?row.chartGroup:suggestedRowGroup(row,rule)??'';return {unit,initial:g};});
 
  if(review){
   return <ChartReview kind={review} noun={noun} entries={review==='year'?yearEntries:groupEntries} onCancel={()=>setReview(null)}
-   rules={review==='group'?ruleOptions:undefined} rule={rule||''} onRuleChange={value=>setGroupRule(value as GroupRule|'')}
+   rules={review==='group'?ruleOptions:undefined} rule={rule||''} onRuleChange={value=>setGroupRule(value as GroupRule|'')} suggest={suggestGroups}
    onApply={values=>{
     const years=new Map<string,number|null>(),groupsOut=new Map<string,string|null>();
     for(const unit of units){const value=values.get(unit.key)??'';for(const id of unit.ids){years.set(id,value?Number(value):null);groupsOut.set(id,value||null);}}
@@ -203,7 +207,7 @@ function RankedList({units,page,pages,onPage,query,onQuery,order,onOrder,scale,k
  return <div className="chart-list">
   <div className="chart-list-controls"><input type="search" aria-label={`Find ${noun} by name`} placeholder={`Find a ${noun.replace(/s$/,'')}…`} value={query} maxLength={140} onChange={e=>onQuery(e.target.value)}/>{kind==='scale'&&<select aria-label="Order" value={order} onChange={e=>onOrder(e.target.value as 'highest'|'lowest')}><option value="highest">Highest first</option><option value="lowest">Lowest first</option></select>}</div>
   {!units.length?<p className="chart-empty">No matching {noun}. Try another name.</p>:<ol className={'chart-list-rows'+(kind==='text'?' plain':'')} start={page*25+1}>{units.slice(page*25,page*25+25).map(unit=><li key={unit.key}>
-   {kind!=='text'&&<span className="chart-chip" style={scale&&unit.number!==null?{background:scaleColor(scale,Math.round(unit.number))}:undefined} data-dark={scale&&unit.number!==null?String(isDark(scaleColor(scale,Math.round(unit.number)))):undefined}>{unit.value}</span>}
+   {kind!=='text'&&<span className="chart-chip" style={scale&&unit.number!==null?{background:scaleColor(scale,scalePoint(unit.number))}:undefined} data-dark={scale&&unit.number!==null?String(isDark(scaleColor(scale,scalePoint(unit.number)))):undefined}>{unit.value}</span>}
    <div><strong>{unit.name}</strong>{kind==='text'?<p>{excerpt(unit.value,300)}</p>:explanation(unit)&&<p>{excerpt(explanation(unit),180)}</p>}</div>
    <button type="button" className="chart-link" onClick={()=>onInspect(unit.ids[0])}>Open →</button></li>)}</ol>}
   {pages>1&&<div className="chart-pages"><Button variant="outline" disabled={page===0} onClick={()=>onPage(page-1)}>Previous</Button><span>{page*25+1}–{Math.min(units.length,page*25+25)} of {units.length}</span><Button variant="outline" disabled={page===pages-1} onClick={()=>onPage(page+1)}>Next</Button></div>}
@@ -230,7 +234,7 @@ function autoCaption({field,units,kind,scale,view,trend,rows,noun,period,groups}
  if(view==='time'&&trend)parts.push('Line: smoothed average.');
  if(view==='time'&&period)parts.push(`Periods of ${period} years.`);
  if(view==='groups'&&kind==='scale')parts.push('Dots: group means with 95% ranges.');
- if(units.some(u=>u.values.length>1))parts.push('Repeated runs or chunks combined per text.');
+ if(units.some(u=>u.values.length>1))parts.push(noun==='subjects'?'Repeated runs combined per subject.':'Repeated runs or chunks combined per text.');
  return parts.join(' ');
 }
 
