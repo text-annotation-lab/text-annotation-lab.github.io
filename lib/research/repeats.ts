@@ -38,7 +38,7 @@ type Result={status?:string;repeats?:unknown;annotations?:Annotation[];consisten
 // The first three name the click it was sent with: an annotation made later than its text's others (a missing
 // one that was filled in) has its own, so the cost of a click counts only the requests of that click.
 const SENT_KEYS=['runId','runStartedAt','runSize'] as const;
-const OWN_KEYS=['inputMode','rawResponse','answers','score','explanation','error','tokens','usage','responseId','time','startedAt','processing','batchId','concurrency','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts'] as const;
+const OWN_KEYS=['inputMode','rawResponse','answers','score','explanation','error','tokens','usage','responseId','time','startedAt','processing','batchId','batchEndedAt','concurrency','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts'] as const;
 export const ANNOTATION_KEYS=[...SENT_KEYS,...OWN_KEYS] as const;
 // What a failed annotation that was sent again keeps of its text's result, as a failed attempt in `history`.
 const SETTING_KEYS=['runId','runStartedAt','runSize','responseFormat','answerFields','answerSettings','requestSettings','provider','model','effort','prompt','runNo','repeats','layout'] as const;
@@ -207,7 +207,7 @@ export function annotationFrom(n:number,done:boolean,got:Record<string,any>):Ann
 // A text whose requests were not sent after all (a batch that was not submitted): as it was, with the
 // annotations it already had; a text without any waits again.
 // (Without any, it keeps none of what the claim wrote: the run, the settings, the model, or the request's record.)
-const CLAIM_KEYS=['runNo','runId','runStartedAt','runSize','startedAt','usage','error','answerFields','answerSettings','requestSettings','answers','provider','model','prompt','effort','layout','concurrency','processing','batchId','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts'];
+const CLAIM_KEYS=['runNo','runId','runStartedAt','runSize','startedAt','usage','error','answerFields','answerSettings','requestSettings','answers','provider','model','prompt','effort','layout','concurrency','processing','batchId','batchEndedAt','requestId','modelReported','stopReason','output','reasoningSummary','lab','inserts'];
 export function unclaimed<T extends Result>(result:T):T{
  if(annotationsOf(result).length)return {...result,...settle(result)};
  const {repeats,annotations,consistency,...rest}=result,left:Record<string,unknown>={...rest};

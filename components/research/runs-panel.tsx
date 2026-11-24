@@ -6,14 +6,13 @@ import {Download} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {PROVIDERS,modelName,reasoningOptionLabel,type Provider} from '@/lib/providers';
-import {defaultOutputLimit} from '@/lib/request-settings';
 import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSources,runJob,sourceFields,sourceLabel,statLines,type LevelChoice} from '@/lib/research/agreement';
 import {computeIntervals,intervalsOf} from '@/lib/research/intervals';
 import {comparableValues} from '@/lib/research/comparable';
 import {comparisonReport,groupColumns} from '@/lib/research/comparison-report';
 import {dateStamp,exportStem,runLines,sourceOf,unitOf,type Dataset,type RunLine} from '@/lib/research/export';
 import {scaleText} from '@/lib/research/score-scale';
-import {requestLines,requestParts,runRequests} from '@/lib/research/export-data';
+import {requestLines,requestParts,runOutputLimit,runRequests} from '@/lib/research/export-data';
 import {formText} from '@/lib/request-frame';
 import {runFacts,type RunFacts} from '@/lib/research/export-tables';
 import type {RecordedRequest} from '@/lib/research/requests';
@@ -68,7 +67,7 @@ function RunSettings({dataset,run,facts,state,onClose}:{dataset:PanelData;run:Ru
     {item('Prompt caching',run.caching)}
     {item(`Annotations per ${unit}`,run.repeats||1)}
     {item('Temperature',run.temperature??'the model’s own')}
-    {item('Max output tokens',count(run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt))+(run.maxOutput===undefined?' (the Lab’s own limit)':''))}
+    {item('Max output tokens',count(runOutputLimit(run,sent))+(run.maxOutput===undefined?' (the Lab’s own limit)':''))}
     {item('Reasoning summary',run.summary==='on'?'recorded':run.summary==='off'?'not requested':'recorded in part')}
     {knowledge&&item('Web search',run.webSearch?'yes':'no')}
     {item('Answer fields',answersLabel(run.answerFields,run.answerSettings))}

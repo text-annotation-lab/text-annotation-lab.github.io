@@ -51,7 +51,9 @@ export function usageSample(provider:Provider,usage:any):Sample|undefined{
  if(!usage)return;
  const input=provider==='openrouter'?usage.prompt_tokens:provider==='gemini'?usage.promptTokenCount:provider==='anthropic'?(finite(usage.input_tokens)?usage.input_tokens+(usage.cache_creation_input_tokens||0)+(usage.cache_read_input_tokens||0):undefined):usage.input_tokens;
  const output=provider==='openrouter'?usage.completion_tokens:provider==='gemini'?(finite(usage.candidatesTokenCount)||finite(usage.thoughtsTokenCount)?(usage.candidatesTokenCount||0)+(usage.thoughtsTokenCount||0):undefined):usage.output_tokens;
- const reasoning=provider==='openrouter'?usage.completion_tokens_details?.reasoning_tokens:provider==='openai'?usage.output_tokens_details?.reasoning_tokens:provider==='gemini'?usage.thoughtsTokenCount:undefined;
+ // Claude reports its thinking as output_tokens_details.thinking_tokens (part of output_tokens); a reply from before
+ // it did has no count.
+ const reasoning=provider==='openrouter'?usage.completion_tokens_details?.reasoning_tokens:provider==='openai'?usage.output_tokens_details?.reasoning_tokens:provider==='gemini'?usage.thoughtsTokenCount:provider==='anthropic'?usage.output_tokens_details?.thinking_tokens:undefined;
  if(!finite(output))return;
  return {input:finite(input)?input:undefined,output,...(finite(reasoning)&&reasoning<=output?{reasoning,visible:output-reasoning}:{})};
 }

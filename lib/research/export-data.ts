@@ -4,6 +4,7 @@ import {usageSample} from '../cost-estimate/engine';
 import {cacheTokens,recordedCost} from '../cost-estimate/run-cost';
 import type {Provider} from '../providers';
 import {fillRequest,framePrompt,LAYOUT,requestFrame,type RequestFrame} from '../request-frame';
+import {defaultOutputLimit,outputLimit} from '../request-settings';
 import {insertMap,showInserts} from '../prompt-inserts';
 import {annotationFormatRecord} from '../answer-fields';
 import {knowledgeDocumentText} from '../model-knowledge';
@@ -12,8 +13,10 @@ import {requestsOf} from './repeats';
 import {runLines,slugName,type Dataset,type RunLine} from './export';
 import type {RecordedRequest} from './requests';
 
-// lab: the build of the Lab that makes the export.
-export type ExportStudy={name:string;dataset:Dataset;requests?:RecordedRequest[];lab:string};
+// lab: the build of the Lab that makes the export. other: the study's other data set, where it holds anything (the
+// Export tab's files are made from one data set; the backup holds both).
+export type OtherData={kind:Dataset['kind'];rows:number;runs:number};
+export type ExportStudy={name:string;dataset:Dataset;requests?:RecordedRequest[];lab:string;other?:OtherData};
 // One request a run made and its outcome. replicate: which of the text's annotations in the run it is (1 when
 // the run makes one per text). attempt: counted per run and replicate. replaced: a failed attempt that was sent
 // again later in the same run. result: the request read as a result of its own (an annotation with its text's settings).
@@ -72,6 +75,8 @@ export function latencyOf(result:Row):number|''{
 }
 
 export const sentAsFile=(dataset:Dataset,row:Row)=>dataset.kind==='texts'&&/\.pdf$/i.test(String(row.file?.name||row.name||''));
+// When a result's request was sent, as far as the result says: the Lab's own output limit is the one of that day.
+const sentAt=(result:Row):string|undefined=>[result.startedAt,result.runStartedAt,result.time].find((value):value is string=>typeof value==='string'&&value!=='');
 // The request behind a result. recorded: kept when the request was sent. Otherwise (a result made before the
 // Lab kept requests, or in the standard Lab) it is built again from the result's settings by this version of
 // the Lab; formatUnchanged then says whether the answer format recorded with the result is still what this
@@ -83,7 +88,7 @@ export function requestOf(study:ExportStudy,row:Row,result:Row):SentRequest|unde
  if(!result.provider||!result.model||result.effort===undefined||result.prompt===undefined)return undefined;
  const knowledge=study.dataset.kind==='knowledge';
  try{
-  const frame=requestFrame({provider:result.provider as Provider,model:result.model,effort:result.effort,prompt:result.prompt,answerFields:result.answerFields||[],answerSettings:result.answerSettings,requestSettings:result.requestSettings,knowledge,webSearch:Boolean(result.webSearch),batch:result.processing==='batch',inserts:Array.isArray(result.inserts),layout:result.layout},sentAsFile(study.dataset,row));
+  const frame=requestFrame({provider:result.provider as Provider,model:result.model,effort:result.effort,prompt:result.prompt,answerFields:result.answerFields||[],answerSettings:result.answerSettings,requestSettings:result.requestSettings,knowledge,webSearch:Boolean(result.webSearch),batch:result.processing==='batch',inserts:Array.isArray(result.inserts),layout:result.layout,at:sentAt(result)},sentAsFile(study.dataset,row));
   const format=typeof result.responseFormat==='string'?result.responseFormat===annotationFormatRecord(result.answerFields||[],result.prompt,knowledge,result.answerSettings):undefined;
   return {frame,recorded:false,...(format===undefined?{}:{formatUnchanged:format})};
  }catch{return undefined;}
@@ -94,7 +99,7 @@ export function requestFinder(study:ExportStudy):(row:Row,result:Row)=>SentReque
  const built=new Map<string,SentRequest|undefined>();
  return (row,result)=>{
   if(result.requestId)return requestOf(study,row,result);
-  const key=JSON.stringify([result.provider,result.model,result.effort,result.prompt,result.answerFields,result.answerSettings,result.requestSettings,Boolean(result.webSearch),result.processing==='batch',sentAsFile(study.dataset,row),result.responseFormat,Array.isArray(result.inserts),result.layout]);
+  const key=JSON.stringify([result.provider,result.model,result.effort,result.prompt,result.answerFields,result.answerSettings,result.requestSettings,Boolean(result.webSearch),result.processing==='batch',sentAsFile(study.dataset,row),result.responseFormat,Array.isArray(result.inserts),result.layout,result.provider&&result.model?outputLimit(result.provider,result.model,result.requestSettings,sentAt(result)):0]);
   if(!built.has(key))built.set(key,requestOf(study,row,result));
   return built.get(key);
  };
@@ -102,10 +107,13 @@ export function requestFinder(study:ExportStudy):(row:Row,result:Row)=>SentReque
 // The requests of one run: the body most of its texts were sent with, and the one most of its PDFs were sent
 // with. forms: how many different bodies the run sent (more than one per kind when, say, part of a run went
 // through the batch interface). rebuilt: requests that were not kept when sent and are built again here.
-export type RunRequests={text?:SentRequest&{count:number};pdf?:SentRequest&{count:number};forms:number;rebuilt:number;unknown:number;total:number};
-export function runRequests(study:ExportStudy,run:number,find=requestFinder(study)):RunRequests{
+// bodies: every different body the run sent, with the number of its requests, the most used first (a run without
+// a record of its own, as in Model knowledge, can hold requests to several models or with several prompts).
+export type RunBody=SentRequest&{count:number;kind:'text'|'pdf'};
+export type RunRequests={text?:SentRequest&{count:number};pdf?:SentRequest&{count:number};bodies:RunBody[];forms:number;rebuilt:number;unknown:number;total:number};
+export function runRequests(study:ExportStudy,run:number,find=requestFinder(study),lines=requestLines(study.dataset)):RunRequests{
  const counts=new Map<string,{sent:SentRequest;pdf:boolean;count:number}>();let rebuilt=0,unknown=0,total=0;
- for(const line of requestLines(study.dataset)){
+ for(const line of lines){
   if(line.run!==run)continue;
   total++;const sent=find(line.row,line.result);
   if(!sent){unknown++;continue;}
@@ -115,7 +123,16 @@ export function runRequests(study:ExportStudy,run:number,find=requestFinder(stud
  }
  const most=(pdf:boolean)=>[...counts.values()].filter(entry=>entry.pdf===pdf).reduce<{sent:SentRequest;count:number}|undefined>((best,entry)=>!best||entry.count>best.count?entry:best,undefined);
  const text=most(false),pdf=most(true);
- return {...(text?{text:{...text.sent,count:text.count}}:{}),...(pdf?{pdf:{...pdf.sent,count:pdf.count}}:{}),forms:counts.size,rebuilt,unknown,total};
+ const bodies=[...counts.values()].map((entry,i)=>({entry,i})).sort((a,b)=>b.entry.count-a.entry.count||a.i-b.i).map(({entry}):RunBody=>({...entry.sent,count:entry.count,kind:entry.pdf?'pdf':'text'}));
+ return {...(text?{text:{...text.sent,count:text.count}}:{}),...(pdf?{pdf:{...pdf.sent,count:pdf.count}}:{}),bodies,forms:counts.size,rebuilt,unknown,total};
+}
+// The most output tokens a run's replies could have: what its request says (the body most of its texts were sent
+// with: kept when it was sent, or built again with the limit of its day), else the run's own setting, else the
+// Lab's own limit when the run started.
+export function runOutputLimit(run:{provider:string;model:string;maxOutput?:number;startedAt?:string},sent?:RunRequests):number{
+ const frame=(sent?.text||sent?.pdf)?.frame;let limit:number|undefined;
+ if(frame)try{limit=requestParts(frame).limit;}catch{/* a body that cannot be read says nothing */}
+ return limit??run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt);
 }
 // What a request body says, whichever provider it is for, in either layout (lib/request-frame.ts). prompt: the
 // prompt with the Lab's own instructions, as sent; a placeholder that was filled in for each text stands as
@@ -177,7 +194,7 @@ export function replyOf(result:Row):string|undefined{
 export function responseRecord(result:Row):Record<string,unknown>{
  const done=result.status==='done';
  return {status:done?'ok':'error',...(done?{}:{error:String(result.error??'')}),response_text:replyOf(result)??null,...(typeof result.reasoningSummary==='string'?{reasoning_summary:result.reasoningSummary}:{}),model_reported:result.modelReported??null,stop_reason:result.stopReason??null,response_id:result.responseId??null,
-  ...(result.batchId?{batch_id:result.batchId}:{}),usage:result.usage??null,requested_at:result.startedAt??null,completed_at:result.time??null};
+  ...(result.batchId?{batch_id:result.batchId}:{}),...(typeof result.batchEndedAt==='string'&&result.batchEndedAt?{batch_ended_at:result.batchEndedAt}:{}),usage:result.usage??null,requested_at:result.startedAt??null,completed_at:result.time??null};
 }
 
 // The first 12 hexadecimal digits of a text's SHA-256, to tell whether two prompts are the same.

@@ -6,10 +6,10 @@
 import {agreementJob,pairSources,runJob,type AgreementJob,type Pairing} from './agreement';
 import {cellOf,columnIndex} from './columns';
 import {explanationOf,runLines,unitOf,type Dataset,type RunLine} from './export';
-import {requestLines} from './export-data';
+import {requestLines,runOutputLimit,runRequests} from './export-data';
 import {comparableFields,intervalsHere,textsOfRun,type Intervals} from './export-agreement';
-import {hashOf,promptHashes,runFacts,type Table} from './export-tables';
-import {defaultOutputLimit} from '../request-settings';
+import {hashOf,modeOf,MODEL_DEFAULT,promptHashes,runFacts,type Table} from './export-tables';
+import type {RecordedRequest} from './requests';
 import {buildWorkbook,type Sheet} from './export-workbook';
 import {BOOTSTRAP_RESAMPLES,isTie,type Agreement,type CiStat} from './metrics';
 import {rowForRun,runState,type Row} from './runs';
@@ -85,7 +85,7 @@ function nonZeroSentence(s:Stats,unit:string):string{
 const RANK:Record<string,number>={'tie (no majority)':5,abstained:5,'opposite direction':0,'2+ points':1,differ:1,'between 1 and 2 points':2,'1 point':2,'less than 1 point':2,agree:3,'agree (non-zero)':3,'agree (zero)':4,'not on the scale':5,'not a number':5,'not a category':5};
 
 // The sheets of the report (also used by the tests, which read them without Excel).
-export async function comparisonSheets(dataset:Dataset,first:number,second:number,options:ReportOptions):Promise<Sheet[]>{
+export async function comparisonSheets(dataset:Dataset&{requests?:RecordedRequest[]},first:number,second:number,options:ReportOptions):Promise<Sheet[]>{
  const unit=unitOf(dataset),many=unit+'s',Many=unit[0].toUpperCase()+unit.slice(1)+'s',intervals=options.intervals||intervalsHere,tolerance=Math.max(0,options.tolerance);
  const lines=runLines(dataset),runA=lines.find(run=>run.number===first),runB=lines.find(run=>run.number===second);
  if(!runA||!runB)throw new Error('Both runs must have results.');
@@ -195,9 +195,10 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
   const state=runState(dataset.rows,run),unfinished=state==='running'?'not finished: it was still running':state==='submitted'?'not finished: its batch was still being processed':'';
   return {
    run:`#${run.number}${run.label?` (${run.label})`:''}`,provider:run.provider||'',model:run.model||'',model_reported_by_api:facts.models.join(', '),
-   effort:run.effort||'model default',temperature:run.temperature===undefined?'model default':String(run.temperature),max_output_tokens:String(run.maxOutput??defaultOutputLimit(run.provider,run.model,run.startedAt)),
+   // The limit the run's requests say (kept when they were sent), else the Lab's own limit of that day.
+   effort:run.effort||MODEL_DEFAULT,temperature:run.temperature===undefined?MODEL_DEFAULT:String(run.temperature),max_output_tokens:String(runOutputLimit(run,runRequests({name:'',dataset,requests:dataset.requests,lab:''},run.number))),
    prompt_version:`v${run.promptVersion} (${hashOf(hashes,run.prompt,run.system)})`,system_prompt:run.system?'yes':'none',prompt_caching:run.caching,
-   mode:facts.processing==='batch'?'batch API':facts.processing==='instant and batch'?'immediate requests and batch API':'immediate requests',
+   mode:modeOf(facts.processing),
    started:run.startedAt||'',status:unfinished||state,texts_in_run:String(facts.texts-removedIn(run.number)),texts_with_results:String(Math.max(0,facts.texts-facts.active-removedIn(run.number))),
    ...(removed?{texts_removed_from_study_since:String(removedIn(run.number))}:{}),
    annotations_per_text:String(run.repeats||1),
@@ -234,7 +235,7 @@ export async function comparisonSheets(dataset:Dataset,first:number,second:numbe
  return sheets;
 }
 
-export async function comparisonReport(dataset:Dataset,first:number,second:number,options:ReportOptions):Promise<ArrayBuffer>{
+export async function comparisonReport(dataset:Dataset&{requests?:RecordedRequest[]},first:number,second:number,options:ReportOptions):Promise<ArrayBuffer>{
  return buildWorkbook(await comparisonSheets(dataset,first,second,options));
 }
 // Columns that group texts (a decade, a journal): 2 to 30 different values among the texts, not one per text.

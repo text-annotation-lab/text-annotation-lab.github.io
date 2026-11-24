@@ -29,7 +29,7 @@ const when=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(
 // (the build goes on meanwhile), and a second one cannot start before it is done.
 type Kind='excel'|'research'|'supplementary'|'backup';
 // choices: what the download was started with, shown again when the tab is opened during the build.
-type Choices={run?:number;researchLogs:boolean;options:{texts:boolean;explanations:boolean;logs:boolean;columns?:string[]}};
+type Choices={run?:number;researchLogs:boolean;researchBackup:boolean;options:{texts:boolean;explanations:boolean;logs:boolean;columns?:string[]}};
 type Building={job:{kind:Kind;data:Dataset['kind'];step:string;choices:Choices}|null;error:string};
 let building:Building={job:null,error:''};
 const watchers=new Set<()=>void>();
@@ -55,7 +55,7 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
  const {job,error}=useSyncExternalStore(watch,()=>building,()=>building);
  // Opened during a build: its data set, run, and options are shown, not the defaults.
  const [kind,setKind]=useState<Dataset['kind']>(()=>job?.data??'texts'),[picked,setPicked]=useState<Partial<Record<Dataset['kind'],number>>>(()=>job&&job.choices.run!==undefined?{[job.data]:job.choices.run}:{});
- const [researchLogs,setResearchLogs]=useState(()=>job?.choices.researchLogs??true),[options,setOptions]=useState(()=>job?.choices.options??{texts:false,explanations:true,logs:false});
+ const [researchLogs,setResearchLogs]=useState(()=>job?.choices.researchLogs??true),[researchBackup,setResearchBackup]=useState(()=>job?.choices.researchBackup??true),[options,setOptions]=useState(()=>job?.choices.options??{texts:false,explanations:true,logs:false});
  const available=datasets.filter(d=>d.rows.length>0);
  const dataset=available.find(d=>d.kind===kind)||available[0]||datasets[0]||EMPTY;
  // The columns offered for the supplementary repository, and those left out.
@@ -79,15 +79,17 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
   return {used:pairs.map(pair=>`${fieldLabel(pair.field)} ↔ ${pair.column}`),unused:skipped.map(skip=>`${skip.column} (${skip.reason})`)};
  },[dataset.rows,dataset.columns,dataset.kind,run?.number]);
  const results=all.reduce((n,r)=>n+r.done,0),busy=Boolean(job),here=(which:Kind)=>job?.kind===which&&(which==='backup'||job.data===dataset.kind);
- const choices:Choices={run:run?.number,researchLogs,options:{...options,columns:shownColumns}},stepLine=(which:Kind,extra='')=>here(which)&&<p className="research-export-step" role="status">{job!.step}…{extra}</p>;
+ const choices:Choices={run:run?.number,researchLogs,researchBackup,options:{...options,columns:shownColumns}},stepLine=(which:Kind,extra='')=>here(which)&&<p className="research-export-step" role="status">{job!.step}…{extra}</p>;
  // The files are made from the study as it is now; the modules that write them are loaded when first needed.
- const context=(progress:(step:string)=>Promise<void>)=>({study:{name:studyName||'Study',dataset,requests:dataset.requests,lab},read:documentReader(dataset,extractText),intervals:intervalsOf,onProgress:progress,backup,now:new Date()});
+ // other: what the study's other data set holds, which a research repository's README names (its tables cover one).
+ const otherData=()=>{const rest=datasets.find(d=>d.kind!==dataset.kind);return rest&&rest.rows.length?{kind:rest.kind,rows:rest.rows.filter(row=>!row.removedAt).length,runs:runLines(rest).length}:undefined;};
+ const context=(progress:(step:string)=>Promise<void>)=>({study:{name:studyName||'Study',dataset,requests:dataset.requests,lab,other:otherData()},read:documentReader(dataset,extractText),intervals:intervalsOf,onProgress:progress,backup,now:new Date()});
  const excel=()=>run&&build('excel',dataset.kind,'Excel workbook',choices,async progress=>{
   const {buildRunWorkbook}=await import('@/lib/research/export-packages'),book=await buildRunWorkbook(context(progress),run.number);
   downloadBytes(book.name,book.data,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
  });
  const repository=()=>build('research',dataset.kind,'research repository',choices,async progress=>{
-  const {buildResearchRepository,zipPackage}=await import('@/lib/research/export-packages'),pack=await buildResearchRepository(context(progress),{logs:researchLogs});
+  const {buildResearchRepository,zipPackage}=await import('@/lib/research/export-packages'),pack=await buildResearchRepository(context(progress),{logs:researchLogs,backup:researchBackup});
   downloadBytes(pack.name+'.zip',await zipPackage(pack,progress) as BlobPart,'application/zip');
   return pack.warning;
  });
@@ -126,11 +128,13 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
     <h3>Research repository</h3>
     <p className="hint">Everything, for your own archive: every run and prompt version, the {unit}s, all results, the requests and replies, and a backup of the study that can be imported again.</p>
     {option(researchLogs,setResearchLogs,'Include request and response logs')}
+    {backup&&option(researchBackup,setResearchBackup,'Include the study backup','The backup holds the whole study: both data sets, and the texts and subjects deleted from it.')}
+    {!all.length&&dataset.rows.length>0&&<p className="research-export-note">No run has been made on these {unit}s yet: the repository will hold the {unit}s{backup&&researchBackup?' and the backup':''}, and no prompts, runs, or results.</p>}
     <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!dataset.rows.length} onClick={()=>{void repository();}} aria-label="Download research repository (.zip)"><Download size={16}/>{here('research')?'Building…':'Download .zip'}</Button>{stepLine('research',' (a large corpus with logs can take several minutes; keep this tab open)')}</div>
    </section>
    <section className="research-export-card">
     <h3>Supplementary repository</h3>
-    <p className="hint">What a journal or an OSF or Zenodo deposit needs for the chosen run: a record of the settings, the prompt and output schema, the results, agreement, and a Python script that sends the requests again (with a template marking every inserted value).</p>
+    <p className="hint">What a journal or an OSF or Zenodo deposit needs for the chosen run: a record of the settings, the prompt and output schema, the results, agreement, and a Python script that sends the requests again.</p>
     {option(options.texts,texts=>setOptions(now=>({...now,texts})),`Include the ${unit}s`,knowledge?`Off by default. The results name each subject either way; this adds every subject as the requests carried it.${offered.length?' The subjects’ other fields are chosen under “Label and metadata columns” below.':''}`:'Off by default: check copyright and privacy before sharing texts publicly.')}
     {option(options.explanations,explanations=>setOptions(now=>({...now,explanations})),'Include the model’s explanations','The explanation written before the answers. An answer field of your own that holds an explanation is always included.')}
     {option(options.logs,logs=>setOptions(now=>({...now,logs})),'Include request and response logs',`These contain the ${unit}s.`)}

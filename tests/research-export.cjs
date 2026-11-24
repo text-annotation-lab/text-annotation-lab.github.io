@@ -165,41 +165,41 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  // --- The supplementary repository -------------------------------------------------------------------
  const full=await packages.buildSupplementary(context(),2,{texts:true,explanations:true,logs:true});
  assert.equal(full.name,'tone-study_supplementary_20261116');
- assert.deepEqual(names(full),['README.md','data/corpus.csv','data/files/report.pdf','logs/requests.jsonl','logs/responses.jsonl','metadata.json','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt'],'No codebook: the schema gives the fields');
+ assert.deepEqual(names(full),['README.md','data/corpus.csv','data/files/report.pdf','logs/requests.jsonl','logs/responses.jsonl','metadata.json','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py'],'No codebook (the schema gives the fields), and of the script only the script: no template and no requirements file');
  const metadata=JSON.parse(await read(full,'metadata.json')),kept=study.requests;
  assert.deepEqual([metadata.study,metadata.run.number,metadata.run.status_when_exported,metadata.model.provider,metadata.model.requested,metadata.model.max_output_tokens,metadata.prompt.version,metadata.options.prompt_caching],['Tone study',2,undefined,'anthropic','claude-haiku-5-5',16000,2,'off'],'A finished run says nothing about its status');
  assert.deepEqual(Object.keys(metadata.run),['number','started_at','finished_at','processing'],'No label, scope, or batch IDs');assert.deepEqual(Object.keys(metadata.prompt),['version','sha256_prefix','answer_format','explanation_requested','answer_fields'],'The fields only because the schema has them under short keys; no system prompt or answer settings (prompt/ has them)');
  assert(!('data' in metadata)&&!('cost_usd' in metadata)&&!('samples' in metadata),'Nothing of the Lab’s own: no data source, cost, or list of samples');assert(!('study_notes' in metadata)&&!('software' in metadata),'No study notes and nothing that names the Lab or its build');
  assert.deepEqual(metadata.requests,{total:13,ok:12,failed:1,replaced_by_retries:1,sent_in_all:14,first_requested_at:'2026-11-16T09:59:00.000Z',last_completed_at:'2026-11-16T10:02:09.000Z'});
- assert.deepEqual(metadata.requests_as_sent.bodies.map(body=>[body.kind,body.requests,body.recorded,body.url]),[['text',13,true,'https://api.anthropic.com/v1/messages'],['pdf',1,true,'https://api.anthropic.com/v1/messages']]);
+ assert.deepEqual(metadata.requests_as_sent.bodies.map(body=>[body.kind,body.requests,'recorded' in body,'note' in body,body.url]),[['text',13,false,false,'https://api.anthropic.com/v1/messages'],['pdf',1,false,false,'https://api.anthropic.com/v1/messages']],'Every different body with the number of its requests; a body kept when it was sent says nothing about that');
  const named=JSON.parse(kept[0].body);named.output_config.format.schema='see prompt/output_schema.json';assert.deepEqual(metadata.requests_as_sent.bodies[0].body,named,'The request as sent, with the schema named, not repeated');assert(!('record' in metadata.requests_as_sent));
  assert.deepEqual(metadata.corpus,{n_texts_in_run:13,n_texts_with_usable_annotation:12,n_texts_all_requests_failed:1},'Counters that are 0 are left out, the totals kept');assert.equal(metadata.tokens.known_for_requests,14);
  assert.equal(await read(full,'prompt/prompt.txt'),PROMPT);assert((await read(full,'prompt/prompt_as_sent.txt')).startsWith(frames.formText(PROMPT)+'\n\nLab response format'));
  assert.deepEqual(JSON.parse(await read(full,'prompt/output_schema.json')),JSON.parse(kept[0].body).output_config.format.schema);
  const resultsCsv=readCsv(await read(full,'results/results.csv'));
  assert((await read(full,'results/results.csv')).startsWith('﻿'),'With a byte-order mark, so Excel reads every letter');assert.deepEqual(resultsCsv[0],results[0].filter(name=>!['n_ok','n_error'].includes(name)),'No n_ok or n_error with one annotation per text');assert.equal(resultsCsv[1].at(-1),TEXTS[0]);assert.equal(resultsCsv.length,14);
- const byReplicate=readCsv(await read(full,'results/results_by_replicate.csv'));assert.equal(byReplicate.length,14);assert.deepEqual(byReplicate[0],['doc_id','status','error','stop_reason','input_tokens','output_tokens','requested_at','completed_at','response_id'],'One annotation per text: no replicate and no answers (results.csv has them), no column with one value for the run (model_reported among them), none empty throughout');
+ const byReplicate=readCsv(await read(full,'results/results_by_replicate.csv'));assert.equal(byReplicate.length,14);assert.deepEqual(byReplicate[0],['doc_id','status','error','stop_reason','input_tokens','output_tokens','requested_at','completed_at'],'One annotation per text: no replicate and no answers (results.csv has them), no column with one value for the run (model_reported among them), none empty throughout, and no response ID (it points into the researcher’s own account)');
  assert.deepEqual(readCsv(await read(full,'results/agreement.csv')).map(line=>line[3]),['compared_with','tone_human','Tone coder2','Tone coder2']);
  assert.deepEqual(readCsv(await read(full,'data/corpus.csv'))[13],['report','','','report.pdf','4','4','north','','good','files/report.pdf']);assert.equal(fileOf(full,'data/files/report.pdf').data,PDF);
  // The logs: every request as it was sent, and what was kept of every reply.
  const sentLines=jsonLines(await read(full,'logs/requests.jsonl')),replies=jsonLines(await read(full,'logs/responses.jsonl'));
  assert.equal(sentLines.length,14);assert.equal(replies.length,14);
- assert.deepEqual(sentLines[0],{doc_id:'text-1',replicate:1,attempt:1,request:frames.fillRequest(kept[0].body,{filename:'text-1.txt',text:TEXTS[0]}),run:2,recorded:true,url:'https://api.anthropic.com/v1/messages'});
+ assert.deepEqual(sentLines[0],{doc_id:'text-1',replicate:1,attempt:1,request:frames.fillRequest(kept[0].body,{filename:'text-1.txt',text:TEXTS[0]}),run:2,url:'https://api.anthropic.com/v1/messages'},'A request kept when it was sent says nothing about that in the public logs');
  assert.deepEqual(Object.keys(sentLines[0]).slice(0,4),['doc_id','replicate','attempt','request'],'doc_id, replicate, attempt, and the request first');
  assert.deepEqual(sentLines.slice(1,3).map(line=>[line.doc_id,line.attempt,line.sent_again]),[['text-2',1,true],['text-2',2,undefined]]);
  const pdfLine=sentLines[13],pdfData=pdfLine.request.messages[0].content[1].source.data;
  assert.match(pdfData,/^\[PDF file: report\.pdf, 15 bytes, SHA-256 [0-9a-f]{64}; in this package at data\/files\/report\.pdf\]$/);assert.equal(pdfLine.request.messages[0].content[0].text.split('\n')[0],'Document filename: report.pdf');
- assert.deepEqual(replies[0],{doc_id:'text-1',replicate:1,attempt:1,response:{response_text:dataset.rows[0].output,model_reported:'claude-haiku-5-5-20260901',stop_reason:'end_turn',response_id:'msg_0',usage:dataset.rows[0].usage,requested_at:'2026-11-16T10:00:00.000Z',completed_at:'2026-11-16T10:01:00.000Z'},run:2,status:'ok'});
+ assert.deepEqual(replies[0],{doc_id:'text-1',replicate:1,attempt:1,response:{response_text:dataset.rows[0].output,model_reported:'claude-haiku-5-5-20260901',stop_reason:'end_turn',usage:dataset.rows[0].usage,requested_at:'2026-11-16T10:00:00.000Z',completed_at:'2026-11-16T10:01:00.000Z'},run:2,status:'ok'},'No response ID in the public logs');
  assert.deepEqual(Object.keys(replies[1]).slice(0,7),['doc_id','replicate','attempt','status','error','parse_error','response'],'A replaced attempt gives its status, error, and parse_error before the response');
  assert.deepEqual([replies[1].status,replies[1].sent_again,replies[1].error,replies[1].parse_error,replies[1].response.response_text],['error',true,'Claude did not return a valid annotation. Check your usage before retrying.',null,null]);
  const readme=await read(full,'README.md');
  for(const part of ['# Tone study: LLM annotation materials','| Provider / model | anthropic / `claude-haiku-5-5` |','| Texts with a usable annotation | 12 of 13 |','| Requests (ok / failed) | 12 / 1 |','| Failed attempts sent again | 1 (','## Agreement with human labels','| Tone | model | tone_human | 11 (of 12) | 81.8% [','| Tone | tone_human | Tone coder2 | 12 (of 13) |','Brackets: 95% intervals','human–human baseline','Label columns not used for agreement: tone_note (a note or rating), quality (mostly not values of Tone).','## Files','`data/files/`','## Reproducing','export ANTHROPIC_API_KEY=...','python annotate.py ../data/corpus.csv'])assert(readme.includes(part),'README: '+part);
  assert(!readme.includes('Methods text')&&!readme.split('\n').some(line=>line.startsWith('> ')),'No draft methods text in the README');
  const script=await read(full,'scripts/annotate.py');
- assert(!/\{\{[A-Z_]+\}\}/.test(script),'Every placeholder is filled');assert.match(await read(full,'scripts/annotate_template.py'),/REQUEST = \{\{REQUEST\}\}/);assert(script.includes('PROVIDER = "anthropic"')&&script.includes('API_KEY_ENV = "ANTHROPIC_API_KEY"')&&script.includes('FIELDS = ["Tone"]')&&script.includes('PLAIN_TEXT = False')&&script.includes('TIMEOUT = 180'));
+ assert(!/\{\{[A-Z_]+\}\}/.test(script),'Every placeholder is filled');assert(!script.includes('annotate_template'),'The script does not name a template the package does not have');assert(script.includes('PROVIDER = "anthropic"')&&script.includes('API_KEY_ENV = "ANTHROPIC_API_KEY"')&&script.includes('FIELDS = ["Tone"]')&&script.includes('PLAIN_TEXT = False')&&script.includes('TIMEOUT = 180'));
  // Without the texts, the explanations, and the logs.
  const lean=await packages.buildSupplementary(context(),2,{texts:false,explanations:false,logs:false});
- assert.deepEqual(names(lean),['README.md','metadata.json','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt']);
+ assert.deepEqual(names(lean),['README.md','metadata.json','prompt/output_schema.json','prompt/prompt.txt','prompt/prompt_as_sent.txt','results/agreement.csv','results/results.csv','results/results_by_replicate.csv','scripts/annotate.py']);
  const leanResults=readCsv(await read(lean,'results/results.csv'))[0];assert(!leanResults.includes('text')&&!leanResults.includes('rationale'));assert(!readCsv(await read(lean,'results/results_by_replicate.csv'))[0].includes('rationale'));
  const leanReadme=await read(lean,'README.md');assert(leanReadme.includes('The annotated texts are not included in this package')&&leanReadme.includes('python annotate.py your_corpus.csv')&&!leanReadme.includes('logs/'));
  for(const text of TEXTS)for(const file of lean.files)assert(!(await textOf(file.data)).includes(text.split('\n')[0]),'No text of the corpus is in a package made without the texts: '+file.path);
@@ -207,8 +207,8 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  // --- The research repository ---------------------------------------------------------------------
  const repository=await packages.buildResearchRepository(context(),{logs:true});
  assert.equal(repository.name,'tone-study_research_20261116');
- assert.deepEqual(names(repository),['README.md','corpus/corpus.csv','corpus/corpus.jsonl','corpus/files/report.pdf',...['v1','v2'].flatMap(version=>['codebook.json','codebook.md','output_schema.json','prompt.txt'].map(name=>`prompts/${version}/${name}`)),'results/agreement.csv','results/results_all_runs_long.csv','results/results_run-02.xlsx','results/runs.csv',
-  ...['run-01','run-02'].flatMap(run=>['codebook.json','codebook.md','output_schema.json','prompt_as_sent.txt','requests.jsonl','responses.jsonl','results_long.csv','results_wide.csv','run.json'].map(name=>`runs/${run}/${name}`)),'scripts/annotate.py','scripts/annotate_template.py','scripts/requirements.txt','software_versions.json','study-backup.json','study.json'].sort());
+ assert.deepEqual(names(repository),['README.md','corpus/corpus.csv','corpus/corpus.jsonl','corpus/files/report.pdf','prompts/v1/prompt.txt','prompts/v2/prompt.txt','results/agreement.csv','results/results_all_runs_long.csv','results/results_run-02.xlsx','results/runs.csv',
+  ...['run-01','run-02'].flatMap(run=>['codebook.json','codebook.md','output_schema.json','prompt_as_sent.txt','requests.jsonl','responses.jsonl','results_long.csv','results_wide.csv','run.json'].map(name=>`runs/${run}/${name}`)),'scripts/annotate.py','scripts/annotate_template.py','software_versions.json','study-backup.json','study.json'].sort(),'A prompt version is its prompt: the codebook and the schema are each run’s own (runs of one version can ask for different answer fields). No requirements file');
  assert.equal(await read(repository,'study-backup.json'),'{"format":"backup"}');assert.equal(await read(repository,'prompts/v1/prompt.txt'),before.prompt);
  assert.deepEqual(JSON.parse(await read(repository,'study.json')).runs,[1,2]);assert.equal(readCsv(await read(repository,'results/results_all_runs_long.csv')).length,17);assert.equal(readCsv(await read(repository,'results/runs.csv')).length,3);
  assert.deepEqual(jsonLines(await read(repository,'corpus/corpus.jsonl'))[12],{doc_id:'report',text:null,source:'report.pdf',meta:{tone_human:'4','Tone coder2':'4',region:'north',tone_note:'',quality:'good'},file:'files/report.pdf'});
@@ -216,12 +216,101 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  // Run 1 was made before the Lab kept requests: its requests are built again, and say so.
  const earlier=jsonLines(await read(repository,'runs/run-01/requests.jsonl'));
  assert.equal(earlier.length,3);assert.equal(earlier[0].recorded,false);assert.equal(earlier[0].answer_format_unchanged,true);
- assert.deepEqual(earlier[0].request,frames.fillRequest(frames.requestFrame(before,false).body,{filename:'text-1.txt',text:TEXTS[0]}));
+ assert.deepEqual(earlier[0].request,frames.fillRequest(frames.requestFrame({...before,at:'2026-11-10T09:00:00.000Z'},false).body,{filename:'text-1.txt',text:TEXTS[0]}),'Built again with the output limit of its day');
  const firstRun=JSON.parse(await read(repository,'runs/run-01/run.json'));assert.equal(firstRun.requests_as_sent.bodies[0].recorded,false);assert.equal(firstRun.model.requested,'gpt-6-luna');
  assert.match(jsonLines(await read(repository,'runs/run-02/requests.jsonl'))[13].request.messages[0].content[1].source.data,/in this package at corpus\/files\/report\.pdf/);
  const repositoryReadme=await read(repository,'README.md');
  for(const part of ['# Tone study: research repository','- 13 texts, 2 runs, 17 requests with an outcome.','- API keys are never stored or exported.','`study-backup.json` | A backup of the whole study','`results/results_run-02.xlsx` | Excel workbook for run #2','sends the requests of run #2 again'])assert(repositoryReadme.includes(part),'README: '+part);
  assert(steps.includes('Computing agreement for run 2')&&steps.includes('Writing corpus/corpus.csv')&&steps.some(step=>step.startsWith('Reading the texts')),'Each step is named before it starts');
+ // The README names the data set, lists only what the repository holds, says what the backup holds, and gives the
+ // command that sends the main run's texts again (the corpus holds every text of the study).
+ for(const part of ['Complete record of this study’s uploaded texts and the runs on them','both data sets (the uploaded texts with their files, and the Model knowledge subjects)','`prompts/vN/prompt.txt` | Each version of the annotation prompt','`runs/run-NN/codebook.md`, `codebook.json`, `output_schema.json`, and `prompt_as_sent.txt` | The run’s own answer format',
+  'python annotate.py ../corpus/corpus.csv --only ../runs/run-02/results_wide.csv','The prompt hash is the first 12 hexadecimal digits of the SHA-256 of `prompts/vN/prompt.txt`','`recorded` is false for a request that was not kept when it was sent'])assert(repositoryReadme.includes(part),'README: '+part);
+ assert(!repositoryReadme.includes('requirements.txt')&&!repositoryReadme.includes('prompts/vN/codebook')&&!repositoryReadme.includes('also holds'),'Nothing about files that are not there, or about another data set that holds nothing');
+ assert.equal(JSON.parse(await read(repository,'study.json')).data_set,'uploaded texts');
+ // Max output tokens is what each run's requests say: run 1 (November 10) had the limit of its day, 12,000, and the
+ // kept requests of run 2 say 16,000. The overview, the run's record, and its logs agree.
+ const runsCsv=readCsv(await read(repository,'results/runs.csv'));
+ assert.deepEqual(column(runsCsv,'max_output_tokens'),['12000','16000']);assert.equal(firstRun.model.max_output_tokens,12000);assert.equal(earlier[0].request.max_output_tokens,12000);assert.equal(JSON.parse(await read(repository,'runs/run-02/run.json')).model.max_output_tokens,16000);
+ assert.deepEqual(sheetRows('All runs').map(row=>row[sheetRows('All runs')[0].indexOf('max_output_tokens')]).slice(1),[12000,16000],'The workbook’s All runs sheet too');
+ // One wording for each thing, in every file: how the requests were sent, a setting left to the model, a run's status.
+ assert.deepEqual(column(runsCsv,'mode'),['one by one','one by one']);assert.deepEqual(column(runsCsv,'temperature'),['model default','model default']);assert.deepEqual(column(runsCsv,'status'),['completed','completed']);
+ assert.deepEqual([firstRun.run.processing,firstRun.run.status_when_exported,firstRun.model.temperature],['one by one','completed','model default']);assert.equal(settings.get('Mode'),'one by one');assert.equal(metadata.run.processing,'one by one');
+ assert(runsCsv[0].includes('finished_at')&&!runsCsv[0].includes('results_collected_at'),'No batch: no time of collection');
+ // No reasoning count from the provider is not a count of zero.
+ assert.equal(firstRun.tokens.reasoning,null);assert(!runsCsv[0].includes('reasoning_tokens'));
+ // By replicate starts with what a row is.
+ assert.deepEqual(sheetRows('By replicate')[0].slice(0,3),['doc_id','replicate','model_reported']);
+ // The prompt hash is the SHA-256 of prompt.txt.
+ assert.equal(require('node:crypto').createHash('sha256').update(await read(full,'prompt/prompt.txt'),'utf8').digest('hex').slice(0,12),metadata.prompt.sha256_prefix);assert(readme.includes('The prompt hash is the first 12 hexadecimal digits of the SHA-256 of `prompt/prompt.txt`')&&readme.includes('CR LF'));
+ assert(readme.includes('| Requests sent | one by one |')&&readme.includes('| Annotation period | 2026-11-16T09:59:00.000Z to 2026-11-16T10:02:09.000Z |')&&!readme.includes('annotate_template')&&!readme.includes('requirements.txt'));
+ // Without the backup: it holds more than the repository's tables (both data sets, deleted texts), so it can be left out.
+ const noBackup=await packages.buildResearchRepository(context(),{logs:false,backup:false}),noBackupReadme=await read(noBackup,'README.md');
+ assert(!names(noBackup).includes('study-backup.json'));assert.equal(noBackup.warning,undefined);assert(noBackupReadme.includes('- The study backup was left out of this export.')&&!noBackupReadme.includes('`study-backup.json` |'));
+ // A study without runs: only what is there is listed, the tables keep their column names, and the other data set is named.
+ const fresh={name:'Fresh',lab:'x',other:{kind:'knowledge',rows:7,runs:1},dataset:{kind:'texts',columns:[],samples:[],runs:[],rows:['One.','Two.'].map((text,i)=>({id:'n'+i,name:`n${i}.txt`,file:new File([text],`n${i}.txt`),status:'pending'}))}};
+ const empty=await packages.buildResearchRepository({study:fresh,read:data.documentReader(fresh.dataset,file=>file.text()),backup:async()=>'{}',now:NOW},{logs:true}),emptyReadme=await read(empty,'README.md');
+ assert.deepEqual(names(empty),['README.md','corpus/corpus.csv','corpus/corpus.jsonl','results/results_all_runs_long.csv','results/runs.csv','software_versions.json','study-backup.json','study.json']);
+ const emptyRuns=readCsv(await read(empty,'results/runs.csv'));assert.equal(emptyRuns.length,1);assert(emptyRuns[0].includes('run')&&emptyRuns[0].includes('max_output_tokens'),'A table without runs keeps its column names');
+ for(const part of ['- 2 texts, 0 runs, 0 requests with an outcome.','- No run has been made on these texts yet','- The study also holds Model knowledge subjects: 7 subjects and 1 run. They are not in the tables here, only in `study-backup.json`; export them from the Model knowledge tab.','(none yet: the column names only)'])assert(emptyReadme.includes(part),'README without runs: '+part);
+ for(const absent of ['prompts/','runs/run-NN','agreement.csv','.xlsx','scripts/','requests.jsonl','prompt hash'])assert(!emptyReadme.includes(absent),'README without runs says nothing of '+absent);
+
+ // --- A run on part of the study, before requests were kept (run 1) -----------------------------------------
+ const sampled=makeStudy();sampled.dataset.runs[0].scope='Checked texts (3)';sampled.dataset.samples=[{column:'sample',value:'pilot',date:'2026-11-10',size:3,eligible:13,seed:42,strata:[],allocation:[],exclude:null,taken:[],method:'sampling method 2'}];
+ const sampledContext={study:sampled,read:data.documentReader(sampled.dataset,file=>file.text()),now:NOW};
+ const partPack=await packages.buildSupplementary(sampledContext,1,{texts:false,explanations:true,logs:true}),partRecord=JSON.parse(await read(partPack,'metadata.json')),partReadme=await read(partPack,'README.md');
+ assert.equal(partRecord.run.scope,'Checked texts (3)');assert.match(partRecord.study_notes,/3 of 13 texts drawn at random; seed 42/);
+ assert(partReadme.includes('| Texts the run covered | Checked texts (3) |')&&partReadme.includes('How the study’s samples were drawn: Sample sample = pilot'),'A run on part of the study says which part, and how the samples were drawn');
+ const whole=JSON.parse(await read(await packages.buildSupplementary(sampledContext,2,{texts:false,explanations:true,logs:false}),'metadata.json'));
+ assert(!('scope' in whole.run)&&!('study_notes' in whole),'A run on every text of the study says neither');
+ // Its requests were not kept, so the package does not call them the requests as sent.
+ assert.deepEqual(partRecord.requests_as_sent.bodies.map(body=>[body.recorded,body.note,body.requests]),[[false,'Not kept when it was sent: built again from the run’s settings.',3]]);assert.equal(partRecord.model.max_output_tokens,12000);
+ assert(partReadme.includes('with the body of the requests, built again from the run’s settings (the requests were not kept when the run was made)')&&partReadme.includes('`recorded` is false for a request that was not kept when it was sent')&&partReadme.includes('`answer_format_unchanged`'));
+ assert((await read(partPack,'scripts/annotate.py')).includes('The request body below was not kept when the run was made: it was built again'));
+ assert.deepEqual(jsonLines(await read(partPack,'logs/requests.jsonl')).map(line=>line.recorded),[false,false,false]);
+ // OpenAI's cache option with caching off is explained where a body has it.
+ assert.equal(partReadme.includes('"prompt_cache_options": {"mode": "explicit"}'),JSON.stringify(partRecord.requests_as_sent.bodies[0].body).includes('prompt_cache_options'));
+
+ // --- A batch: when it was submitted, when the provider ended it, and when its results were collected --------------
+ const batchSetup={...setup,provider:'openai',model:'gpt-6-luna'},SUBMITTED='2026-11-18T21:02:48.000Z',COLLECTED='2026-11-19T08:12:44.000Z',ENDED='2026-11-18T21:40:00.000Z';
+ const batchStudy=ended=>({name:'Batch',lab:'x',dataset:{kind:'texts',columns:[],samples:[],runs:[{...batchSetup,number:1,startedAt:SUBMITTED}],
+  rows:['One.','Two.'].map((text,i)=>({id:'b'+i,name:`b${i}.txt`,file:new File([text],`b${i}.txt`),status:'done',runNo:1,...batchSetup,answers:{f0:'3'},score:'',explanation:'x',startedAt:SUBMITTED,time:COLLECTED,processing:'batch',batchId:'batch_1',responseId:'resp_'+i,...(ended?{batchEndedAt:ended}:{}),usage:{input_tokens:10,output_tokens:5}}))}});
+ for(const ended of [ENDED,'']){
+  const batchContext={study:batchStudy(ended),now:NOW};batchContext.read=data.documentReader(batchContext.study.dataset,file=>file.text());
+  const archive=await packages.buildResearchRepository(batchContext,{logs:true}),batchRecord=JSON.parse(await read(archive,'runs/run-01/run.json')),batchRuns=readCsv(await read(archive,'results/runs.csv'));
+  assert.deepEqual([batchRecord.run.finished_at,batchRecord.run.results_collected_at,batchRecord.run.processing],[ended||null,COLLECTED,'batch'],'Finished is the provider’s time for the end of the batch, or nothing: never the time of collection');
+  assert.deepEqual([batchRecord.requests.first_requested_at,batchRecord.requests.last_completed_at,batchRecord.requests.last_results_collected_at],[SUBMITTED,ended||null,COLLECTED]);
+  assert.deepEqual(column(batchRuns,'results_collected_at'),[COLLECTED]);assert.deepEqual(batchRuns[0].includes('finished_at')?column(batchRuns,'finished_at'):[],ended?[ended]:[]);assert.deepEqual(column(batchRuns,'mode'),['batch']);
+  assert.equal(batchRecord.model.max_output_tokens,12000,'Sent before the limit became 16,000');assert.deepEqual(column(batchRuns,'max_output_tokens'),['12000']);
+  const batchReply=jsonLines(await read(archive,'runs/run-01/responses.jsonl'))[0].response;assert.deepEqual([batchReply.batch_id,batchReply.batch_ended_at,batchReply.response_id],['batch_1',ended||undefined,'resp_0']);
+  assert((await read(archive,'README.md')).includes('For a request sent through the provider’s batch interface, `requested_at` is when its batch was submitted and `completed_at` when its results were collected'));
+  const paper=await packages.buildSupplementary(batchContext,1,{texts:false,explanations:true,logs:true}),paperRecord=JSON.parse(await read(paper,'metadata.json')),paperReadme=await read(paper,'README.md');
+  assert.deepEqual(Object.keys(paperRecord.run),['number','started_at',...(ended?['finished_at']:[]),'results_collected_at','processing']);assert.equal('last_completed_at' in paperRecord.requests,Boolean(ended));assert.equal(paperRecord.requests.last_results_collected_at,COLLECTED);
+  assert(paperReadme.includes(`| Batch submitted | ${SUBMITTED} |`)&&paperReadme.includes(`| Batch results collected | ${COLLECTED} |`)&&paperReadme.includes('| Requests sent | batch |')&&!paperReadme.includes('Annotation period'),'A batch has no annotation period that ends when its results were collected');
+  assert.equal(paperReadme.includes(`| Batch ended (the provider’s time) | ${ENDED} |`),Boolean(ended));
+  // The public package has none of the provider's IDs: not of the batch, not of a reply.
+  const paperReply=jsonLines(await read(paper,'logs/responses.jsonl'))[0].response;assert(!('batch_id' in paperReply)&&!('response_id' in paperReply));assert(!readCsv(await read(paper,'results/results_by_replicate.csv'))[0].includes('response_id'));
+  for(const file of paper.files)assert(!/batch_1|resp_0/.test(await textOf(file.data)),'No ID of the provider’s in '+file.path);
+  const batchBook=new ExcelJS.Workbook();await batchBook.xlsx.load((await packages.buildRunWorkbook(batchContext,1)).data);const batchSettings=new Map();batchBook.getWorksheet('Settings').eachRow(row=>batchSettings.set(row.values[1],row.values[2]));
+  assert.deepEqual([batchSettings.get('Finished'),batchSettings.get('Batch results collected'),batchSettings.get('Mode')],[ended||undefined,COLLECTED,'batch']);
+ }
+
+ // --- Claude's thinking tokens are its reasoning tokens ------------------------------------------------------
+ const thought=makeStudy();thought.dataset.rows[0].usage={...thought.dataset.rows[0].usage,output_tokens_details:{thinking_tokens:25}};thought.dataset.rows[2].usage={...thought.dataset.rows[2].usage,output_tokens_details:{thinking_tokens:0}};
+ assert.equal(data.tokensOf(thought.dataset.rows[0]).reasoning,25);assert.equal(data.tokensOf(thought.dataset.rows[1]).reasoning,'','No count is not a count of zero');
+ const thoughtFacts=tables.runFacts(thought.dataset,data.reportableRuns(thought.dataset)[0]);assert.deepEqual([thoughtFacts.tokens.reasoning,thoughtFacts.tokens.reasoningKnownFor],[25,2]);
+ const thoughtRuns=tables.runsOverview(thought,await tables.promptHashes(thought.dataset));assert.deepEqual(column(thoughtRuns,'reasoning_tokens'),['',25],'Blank for the run whose provider reported none');
+ assert.deepEqual(column(tables.requestsTable(thought,[2],await tables.promptHashes(thought.dataset)),'reasoning_tokens').slice(0,3),[25,'',0]);
+
+ // --- Texts that were split: how, in the corpus and in the run's record ------------------------------------------
+ const splitStudy=makeStudy();splitStudy.dataset.rows.slice(0,2).forEach((row,i)=>Object.assign(row,{sourceId:'long-1',sourceName:'long.txt',chunkIndex:i+1,chunkCount:2,wordsPerChunk:200,chunkMethod:'sentences',segmenter:'Intl.Segmenter/en/sentence',wordStart:1+i*198,wordEnd:198+i*190}));
+ const splitContext={study:splitStudy,read:data.documentReader(splitStudy.dataset,file=>file.text()),now:NOW},splitPack=await packages.buildSupplementary(splitContext,2,{texts:true,explanations:true,logs:false});
+ assert.deepEqual(JSON.parse(await read(splitPack,'metadata.json')).corpus.split,{n_chunks:2,n_source_documents:1,chunk_words:200,chunk_method:'sentences',sentence_segmenter:'Intl.Segmenter/en/sentence'});
+ const splitCorpus=readCsv(await read(splitPack,'data/corpus.csv')),from=splitCorpus[0].indexOf('source_document');
+ assert.deepEqual(splitCorpus[0].slice(from,from+6),['source_document','chunk','chunk_words','chunk_method','word_start','word_end']);assert.deepEqual(splitCorpus[2].slice(from,from+6),['long.txt','2 of 2','200','sentences','199','388']);assert.deepEqual(splitCorpus[3].slice(from,from+6),['','','','','',''],'A text that was not split has none of them');
+ assert((await read(splitPack,'README.md')).includes('2 of the run’s texts are parts of 1 longer text that was split before annotation, into parts of about 200 words (ending at sentence boundaries where possible)'));
+ assert(!readCsv(await read(splitPack,'results/results.csv'))[0].includes('chunk_words'),'The results keep to which part a row is');
+ assert.deepEqual(Object.keys(jsonLines(await read(await packages.buildResearchRepository(splitContext,{logs:false}),'corpus/corpus.jsonl'))[1]).filter(key=>/chunk|word/.test(key)),['chunk','chunk_words','chunk_method','word_start','word_end']);
  const bare=await packages.buildResearchRepository(context({backup:async()=>{throw new Error('Wait for both workspaces to finish opening');}}),{logs:false});
  assert(!names(bare).includes('study-backup.json')&&!names(bare).some(name=>name.endsWith('.jsonl')&&name.startsWith('runs/')));assert((await read(bare,'README.md')).includes('Not included: Wait for both workspaces to finish opening'));
  assert.match(bare.warning,/^study-backup\.json is missing: .*Wait for both workspaces to finish opening/,'The page says so too');assert.equal(full.warning,undefined);
@@ -233,7 +322,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  // --- A run that is still going --------------------------------------------------------------------
  const going=makeStudy();Object.assign(going.dataset.rows[4],{status:'running',answers:undefined,explanation:undefined,output:undefined,rawResponse:undefined});
  const goingPack=await packages.buildSupplementary({...context(),study:going,read:data.documentReader(going.dataset,file=>file.text())},2,{texts:false,explanations:true,logs:false}),goingRecord=JSON.parse(await read(goingPack,'metadata.json'));
- assert.equal(goingRecord.run.status_when_exported,'in progress');assert.equal(goingRecord.run.finished_at,null);assert.equal(goingRecord.corpus.n_texts_without_result_yet,1);
+ assert.equal(goingRecord.run.status_when_exported,'running','The words of the runs table');assert(!('finished_at' in goingRecord.run),'No time where there is none');assert.equal(goingRecord.corpus.n_texts_without_result_yet,1);
  assert((await read(goingPack,'README.md')).includes('**This run was not finished when these materials were exported**'));
 
  // --- Plain text ------------------------------------------------------------------------------------
@@ -263,16 +352,28 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
  assert(ownReadme.includes('Model knowledge: no texts were supplied.')&&!ownReadme.includes('on judging from learned knowledge'),'A run whose prompt held the paragraph says nothing was added');
  const learnedResults=readCsv(await read(learned,'results/results.csv'));
  assert.deepEqual(learnedResults[0],['doc_id','score','rationale','menace_human','text','subject','Year'],'The shared layout, then the subject and its fields; a heading that only repeats the subject’s name has no column of its own');assert.deepEqual(learnedResults[1],['Jaws','4','Known.','5',knowledgeText.knowledgeDocumentText(SUBJECT('Jaws'),undefined,true),'Jaws','1975'],'The subject as its run’s requests carried it (here the earlier layout)');
- assert.equal(jsonLines(await read(learned,'logs/requests.jsonl'))[0].doc_id,'Jaws');assert.deepEqual(jsonLines(await read(learned,'logs/requests.jsonl'))[0].request,frames.fillRequest(frames.requestFrame({...knowledgeSetup,knowledge:true},false).body,{filename:'subject.txt',text:knowledgeText.knowledgeDocumentText(SUBJECT('Jaws'),undefined,true)}),'A result without a layout was sent in the earlier layout, with the subject as a labeled JSON block');
+ assert.equal(jsonLines(await read(learned,'logs/requests.jsonl'))[0].doc_id,'Jaws');assert.deepEqual(jsonLines(await read(learned,'logs/requests.jsonl'))[0].request,frames.fillRequest(frames.requestFrame({...knowledgeSetup,knowledge:true,at:'2026-11-16T10:00:00.000Z'},false).body,{filename:'subject.txt',text:knowledgeText.knowledgeDocumentText(SUBJECT('Jaws'),undefined,true)}),'A result without a layout was sent in the earlier layout, with the subject as a labeled JSON block');
  // A run whose requests carried web search results has no script: the search was a step of its own.
  const searched=await packages.buildSupplementary(knowledgeContext,2,{texts:false,explanations:true,logs:true});
  assert(!names(searched).some(name=>name.startsWith('scripts/')));assert((await read(searched,'README.md')).includes('No script is included: each request of this run carried web search results'));
  assert(jsonLines(await read(searched,'logs/requests.jsonl'))[0].request.input.some(part=>JSON.stringify(part).includes('Found on the web.')),'The log holds the request with the search results it carried');
  assert(!readCsv(await read(searched,'results/results_by_replicate.csv'))[0].includes('web_search')&&JSON.parse(await read(searched,'metadata.json')).options.web_search===true,'Web search, the same for every request of the run, is given once, in metadata.json');
 
+ // A run without a record of its own can hold results made with different settings: the README says so first, and
+ // the record holds every different body with the number of its requests.
+ const mixedItems=[...items.filter(item=>!item.webSearch),{id:'m2',subjectId:'s2',name:'Psycho',status:'done',score:'6',explanation:'Known.',runNumber:1,...knowledgeSetup,model:'gpt-6.2-sol',prompt:'Rate the villain’s menace from 1 to 7.',webSearch:false,fields:SUBJECT('Psycho'),startedAt:'2026-11-16T10:05:00.000Z',time:'2026-11-16T10:05:03.000Z',processing:'instant'}];
+ const mixedSet={...knowledgeSet,rows:knowledgeLib.knowledgeRows(mixedItems)},mixedPack=await packages.buildSupplementary({study:{...knowledgeStudy,dataset:mixedSet},read:data.documentReader(mixedSet,async()=>''),now:NOW},1,{texts:false,explanations:true,logs:false});
+ const mixedReadme=await read(mixedPack,'README.md'),mixedRecord=JSON.parse(await read(mixedPack,'metadata.json'));
+ assert(mixedReadme.indexOf('**The results of this run were not all made with the same settings.**')>0&&mixedReadme.indexOf('**The results of this run')<mixedReadme.indexOf('## Summary'),'The warning stands before the summary');
+ for(const part of ['Its 3 requests had 2 different request bodies: 2 models, `gpt-6-luna` (2 requests) and `gpt-6.2-sol` (1 request), and 2 different prompts.','with the different bodies of the requests, built again from the run’s settings (the requests were not kept when the run was made), each with the number of its requests (marks stand for the document)'])assert(mixedReadme.includes(part),'README of a mixed run: '+part);
+ const mixedArchive=await read(await packages.buildResearchRepository({study:{...knowledgeStudy,dataset:mixedSet},read:data.documentReader(mixedSet,async()=>''),now:NOW},{logs:false}),'README.md');
+ assert(mixedArchive.includes('- The results of run #1 were not all made with the same settings')&&mixedArchive.includes('Complete record of this study’s Model knowledge subjects and the runs on them')&&!repositoryReadme.includes('not all made with the same settings'),'The research repository names its mixed runs too');
+ assert.equal(mixedRecord.requests_as_sent.different_bodies,2);assert.deepEqual(mixedRecord.requests_as_sent.bodies.map(body=>[body.requests,body.body.model]),[[2,'gpt-6-luna'],[1,'gpt-6.2-sol']]);
+ assert(!learnedReadme.includes('not all made with the same settings'),'A run made with one setup has no such warning');
+
  // --- Nothing names the Lab or its build, except the research repository's software_versions.json ---------
  const TRACE=/text annotation lab|\bthe lab\b|lab’s|abcdef0|92310b4|2026-11-16 abcdef0/i;
- for(const pack of [full,lean,learned,searched,plainPack])for(const file of pack.files)if(!(file.data instanceof File))assert(!TRACE.test(await textOf(file.data)),'No trace of the Lab in '+file.path);
+ for(const pack of [full,lean,learned,searched,plainPack,partPack,splitPack,mixedPack,noBackup,empty])for(const file of pack.files)if(!(file.data instanceof File)&&!file.path.endsWith('software_versions.json')&&!file.path.endsWith('.xlsx'))assert(!TRACE.test(await textOf(file.data)),'No trace of the Lab in '+file.path);
  for(const file of repository.files)if(!(file.data instanceof File)&&!file.path.endsWith('software_versions.json')&&!file.path.endsWith('.xlsx')&&!/prompt_as_sent\.txt$|requests\.jsonl$|run\.json$/.test(file.path))assert(!TRACE.test(await textOf(file.data)),'No trace of the Lab in '+file.path);
  const versions=JSON.parse(await read(repository,'software_versions.json'));
  assert.deepEqual([versions.software,versions.exported_with,versions.runs],['Text Annotation Lab','2026-11-16 abcdef0',[{run:1,made_with:'not recorded'},{run:2,made_with:LAB}]]);assert.match(versions.note,/Keep it private/);
@@ -309,7 +410,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
   fs.writeFileSync(path.join(folder,'corpus.csv'),toCsv([['doc_id','text','n_characters','source','file'],['d1',TEXT,'','näme “1”.txt',''],['d2','','','report.pdf','report.pdf'],['d3','','','empty.txt','']]));
   const models={openai:'gpt-6-luna',anthropic:'claude-haiku-5-5',gemini:'gemini-4-hydrogen',openrouter:'openai/gpt-6-luna'},keyHeader={openai:['authorization','Bearer '+KEY],anthropic:['x-api-key',KEY],gemini:['x-goog-api-key',KEY],openrouter:['authorization','Bearer '+KEY]};
   const scriptFor=(provider,extra={},repeats)=>{const settings={...setup,provider,model:models[provider],...extra},text=frames.requestFrame(settings,false),pdf=frames.requestFrame(settings,true);
-   fs.writeFileSync(path.join(folder,provider+'.py'),python.fillScript(python.SCRIPT_TEMPLATE,python.scriptValues({lab:'test',studyName:'Tone “study”',runDescription:'#2',provider,text,pdf,fields:settings.answerFields,plain:Boolean(settings.answerSettings?.plain),repeats})));return {text,pdf};};
+   fs.writeFileSync(path.join(folder,provider+'.py'),python.fillScript(python.SCRIPT_TEMPLATE,python.scriptValues({lab:'test',studyName:'Tone “study”',runDescription:'#2',provider,text,pdf,fields:settings.answerFields,columns:tables.fieldKeys(settings.answerFields,new Set(settings.answerFields)),plain:Boolean(settings.answerSettings?.plain),repeats})));return {text,pdf};};
   for(const provider of ['openai','anthropic','gemini','openrouter']){
    const {text,pdf}=scriptFor(provider);received.length=0;respond=()=>[200,reply[provider],{}];
    const done=await run([provider+'.py','corpus.csv','--base-url',base,'--out',provider+'.csv','--log',provider+'.jsonl'],{[python.keyVariable(provider)]:KEY});
@@ -320,7 +421,7 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
    assert.equal(received[0].url,new URL(text.url).pathname,provider+': the same path');assert.equal(received[0].headers[keyHeader[provider][0]],keyHeader[provider][1],provider+': the key travels in the provider’s header');
    if(provider==='anthropic')assert.equal(received[0].headers['anthropic-version'],'2023-06-01');
    const out=readCsv(fs.readFileSync(path.join(folder,provider+'.csv'),'utf8'));
-   assert.deepEqual(out[0],['doc_id','replicate','status','Tone','explanation','error','model_reported','stop_reason','input_tokens','output_tokens','latency_s','completed_at','response_id']);
+   assert.deepEqual(out[0],['doc_id','replicate','status','tone','rationale','error','model_reported','stop_reason','input_tokens','output_tokens','latency_s','completed_at','response_id'],provider+': the answers under the column names of the run’s own tables (tone, not Tone; a separate explanation under rationale)');
    assert.deepEqual(out.slice(1).map(line=>line.slice(0,6)),[['d1','1','ok','4','Because “it” says so.',''],['d2','1','ok','4','Because “it” says so.',''],['d3','1','error','','','No document to send (an empty text, or a kind of document the run did not send)']],provider);
    assert.deepEqual(out[1].slice(8,10),[provider==='anthropic'?'12':'10','5'],provider+': tokens as the provider counts them');
    const log=fs.readFileSync(path.join(folder,provider+'.jsonl'),'utf8');
@@ -352,6 +453,15 @@ const context=(extra={})=>({study,read:data.documentReader(dataset,file=>file.te
   assert.equal(thrice.code,0,thrice.stderr);assert.equal(received.length,3);assert(received.every(request=>request.body===received[0].body),'The same request each time');
   assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'three.csv'),'utf8')).slice(1).map(line=>line.slice(0,4)),[['d1','1','ok','4'],['d1','2','ok','4'],['d1','3','ok','4']]);
   assert.deepEqual(jsonLines(fs.readFileSync(path.join(folder,'three.jsonl'),'utf8')).map(line=>line.replicate),[1,2,3]);assert.match(thrice.stderr,/\[1\/1\] d1 \(annotation 3 of 3\)/);
+  // --only: the documents a CSV file lists by doc_id (a results table of the run, say), in the order of the corpus.
+  fs.writeFileSync(path.join(folder,'only.csv'),toCsv([['doc_id','tone'],['d2','4'],['d9','1']]));scriptFor('anthropic');received.length=0;respond=()=>[200,reply.anthropic,{}];
+  const some=await run(['anthropic.py','corpus.csv','--only','only.csv','--base-url',base,'--out','some.csv','--log','some.jsonl'],{ANTHROPIC_API_KEY:KEY});
+  assert.equal(some.code,0,some.stderr);assert.equal(received.length,1,'Only the listed document is sent');assert.deepEqual(readCsv(fs.readFileSync(path.join(folder,'some.csv'),'utf8')).slice(1).map(line=>line[0]),['d2']);
+  fs.writeFileSync(path.join(folder,'none.csv'),toCsv([['doc_id'],['d9']]));fs.writeFileSync(path.join(folder,'no-ids.csv'),toCsv([['id'],['d1']]));received.length=0;
+  const none=await run(['anthropic.py','corpus.csv','--only','none.csv','--base-url',base],{ANTHROPIC_API_KEY:KEY}),noIds=await run(['anthropic.py','corpus.csv','--only','no-ids.csv','--base-url',base],{ANTHROPIC_API_KEY:KEY});
+  assert.notEqual(none.code,0);assert.match(none.stderr,/None of the documents that none\.csv lists are in corpus\.csv/);assert.notEqual(noIds.code,0);assert.match(noIds.stderr,/No doc_id values were found in no-ids\.csv/);assert.equal(received.length,0,'Nothing is sent when the list matches nothing');
+  // A script made without the tables' column names keeps the fields' names.
+  assert.equal(python.scriptValues({studyName:'s',runDescription:'r',provider:'anthropic',text:frames.requestFrame(setup,false),fields:FIELDS,plain:false}).COLUMNS,'["Tone"]');
   // A dry run prints the first request and sends nothing; without a key nothing is sent either.
   received.length=0;const {text:dryFrame}=scriptFor('anthropic'),dry=await run(['anthropic.py','corpus.csv','--dry-run'],{ANTHROPIC_API_KEY:'',PYTHONIOENCODING:'utf-8'});
   assert.equal(dry.code,0,dry.stderr);assert(dry.stdout.startsWith('POST https://api.anthropic.com/v1/messages\n'));assert.deepEqual(JSON.parse(dry.stdout.slice(dry.stdout.indexOf('\n')+1)),frames.fillRequest(dryFrame.body,{filename:'näme “1”.txt',text:TEXT}));

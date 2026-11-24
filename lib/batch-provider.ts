@@ -150,6 +150,14 @@ export function parseBatchAnnotation(provider:Provider,out:any,plain=false,recor
   return {...metadata,answers:value.answers,score:value.score,explanation:value.explanation};
  }catch{return {...metadata,error:'The provider did not return a valid annotation. Check its response before retrying.'};}
 }
+// When a batch ended, by the provider's own clock: OpenAI gives seconds since 1970 (completed_at, or the time it
+// failed, expired, or was cancelled), Anthropic ended_at, and Gemini endTime, as time stamps. Nothing where the
+// provider gives no readable time.
+function endedAt(provider:Provider,out:any):{endedAt?:string}{
+ const value=provider==='openai'?[out?.completed_at,out?.failed_at,out?.expired_at,out?.cancelled_at].find(time=>typeof time==='number'&&time>0):provider==='anthropic'?out?.ended_at:out?.metadata?.endTime??out?.endTime;
+ const ms=typeof value==='number'?value*1000:typeof value==='string'?Date.parse(value):NaN;
+ return Number.isFinite(ms)&&ms>0&&ms<4102444800000?{endedAt:new Date(ms).toISOString()}:{};
+}
 export async function checkBatch(provider:Provider,key:string,id:string,collect:boolean,plain=false,record=false,summary=false,format?:ReplyFormat):Promise<BatchUpdate>{
  const base=provider==='openai'?'https://api.openai.com/v1/batches/':provider==='anthropic'?'https://api.anthropic.com/v1/messages/batches/':'https://generativelanguage.googleapis.com/v1beta/';
  const out=await call(provider,key,base+id,{},false,provider==='gemini'?MAX_RECORDED_RESULT_BYTES:MAX_RESULT_BYTES);
@@ -158,7 +166,7 @@ export async function checkBatch(provider:Provider,key:string,id:string,collect:
  const counts=out.request_counts||out.metadata?.batchStats||out.batchStats||{};
  const completed=Number(provider==='anthropic'?(counts.succeeded||0)+(counts.errored||0)+(counts.canceled||0)+(counts.expired||0):provider==='openai'?(counts.completed||0)+(counts.failed||0):Number(counts.successfulRequestCount||0)+Number(counts.failedRequestCount||0));
  const total=Number(provider==='anthropic'?completed+(counts.processing||0):counts.total||counts.requestCount||0);
- const update:BatchUpdate={id,terminal,state,completed,total};if(!terminal||!collect)return update;
+ const update:BatchUpdate={id,terminal,state,completed,total,...(terminal?endedAt(provider,out):{})};if(!terminal||!collect)return update;
  const results:BatchResult[]=[],seen=new Set<string>();let resultBytes=0;
  const append=(result:BatchResult)=>{if(typeof result.id!=='string'||seen.has(result.id))throw new BatchError('The results could not be matched reliably to documents. Check the provider’s batch output.',502);seen.add(result.id);resultBytes+=new TextEncoder().encode(JSON.stringify(result)).length;if(results.length>=MAX_BATCH_ITEMS||resultBytes>(record?MAX_RECORDED_RESULT_BYTES:MAX_RESULT_BYTES))throw new BatchError('The annotations exceed the collection limit. Download them from your provider’s console. Your saved job is unchanged.',413);results.push(result);};
  if(provider==='openai'){

@@ -78,7 +78,9 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
  assert.equal(text(nodes(nodes(tree).find(n=>n.props?.className==='research-technical-part')).find(n=>n.type==='pre')),'{"explanation":"Because.","score":"4"}','The reply kept with an older result');
  button(tree,'Show full request and response').props.onClick();await settle();tree=older.tree();
  const rebuilt=JSON.parse(text(nodes(tree).find(n=>n.type==='pre'&&nodes(tree).indexOf(n)>nodes(tree).findIndex(x=>x.props?.className==='research-technical-full'))));
- assert.match(rebuilt.recorded,/^built again from the result’s settings/);assert.equal(JSON.stringify(rebuilt.request),JSON.stringify(sent),'Built again in the layout the result was sent in');
+ // (with the output limit of its day: the result is of November 16, when the limit was 12,000)
+ const sentThen=frames.providerBody({provider:'openai',model,effort:'medium',prompt:PROMPT+load('lib/answer-fields.ts').answerInstructions([],undefined),schemaPrompt:PROMPT,answerFields:[],at:'2026-11-16T07:00:00.000Z'},{filename:'speech-001.txt',text:await file.text()});
+ assert.match(rebuilt.recorded,/^built again from the result’s settings/);assert.equal(JSON.stringify(rebuilt.request),JSON.stringify(sentThen),'Built again in the layout the result was sent in');assert.equal(rebuilt.request.max_output_tokens,12000);assert.equal(sent.max_output_tokens,16000);
  // A result sent before the prompt and the text went in one message is built again in that earlier layout.
  const earlier=result({requestId:undefined,layout:undefined,runNo:1}),earliest=mount(Technical,{row:{...row,...earlier},of:earlier,run:1,study});
  button(earliest.tree(),'Show full request and response').props.onClick();await settle();
@@ -159,7 +161,7 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
  assert(knowledgePage.includes("<DetailSteps index={currentAt} total={stepIds.length} onStep={stepTo}/>"));assert(knowledgePage.includes("{research&&<ResearchDetail row={current} columns={columns} study={{kind:'knowledge',requests,versions:promptVersions}}/>}"));
  // The export's logs and the details are written by the same code.
  const packages=fs.readFileSync(path.join(root,'lib/research/export-packages.ts'),'utf8');
- assert(packages.includes('const {request,...kept}=requestRecord(sent,doc,result,pdf),{status,error,...reply}=responseRecord(result)')&&packages.includes('requests.push({...head,request,run,')&&packages.includes('response:reply,run,'));
+ assert(packages.includes('const {request,recorded:_recorded,...kept}=requestRecord(sent,doc,result,pdf),{status,error,...whole}=responseRecord(result)')&&packages.includes('requests.push({...head,request,run,')&&packages.includes('response:reply,run,'));
 
  console.log('Text details: technical details per request, the full request and response as the logs hold them, and Previous / Next.');
 })().catch(error=>{console.error(error);process.exit(1);});

@@ -7,7 +7,7 @@ function request(provider,action='submit',extra={}){const f=new FormData();const
 const annotation={score:'2',explanation:'Grounded evidence'};
 const output=p=>p==='openai'?{status:'completed',id:'resp_test',usage:{total_tokens:12},output:[{content:[{type:'output_text',text:JSON.stringify(annotation)}]}]}:p==='anthropic'?{stop_reason:'end_turn',usage:{input_tokens:10,output_tokens:2},content:[{type:'text',text:JSON.stringify(annotation)}]}:{candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify(annotation)}]}}],usageMetadata:{totalTokenCount:12}};
 (async()=>{
- const route=load('app/api/batch/route.ts'),lib=load('lib/batch-provider.ts'),knowledge=load('lib/model-knowledge.ts');
+ const route=load('app/api/batch/route.ts'),lib=load('lib/batch-provider.ts'),knowledge=load('lib/model-knowledge.ts'),ENDED='2026-11-18T21:40:00.000Z';
  for(const provider of ['openai','anthropic','gemini']){
   calls=[];mock=async url=>Response.json(url.endsWith('/files')?{id:'file-test'}:provider==='openai'?{id:'batch_test'}:provider==='anthropic'?{id:'msgbatch_test'}:{name:'batches/test'});
   const res=await route.POST(request(provider));assert.equal(res.status,200);const id=(await res.json()).id;assert(lib.validBatchId(provider,id));
@@ -18,16 +18,23 @@ const output=p=>p==='openai'?{status:'completed',id:'resp_test',usage:{total_tok
   calls=[];mock=async url=>{
    if(url.endsWith('/content'))return new Response(JSON.stringify({custom_id:'lab_test_1',response:{status_code:200,body:output(provider)}})+'\n'+JSON.stringify({custom_id:'lab_test_0',error:{code:'failed'}}));
    if(url.endsWith('/results'))return new Response(JSON.stringify({custom_id:'lab_test_1',result:{type:'succeeded',message:output(provider)}})+'\n'+JSON.stringify({custom_id:'lab_test_0',result:{type:'expired'}}));
-   return Response.json(provider==='openai'?{status:'completed',output_file_id:'file-results',request_counts:{completed:1,failed:1,total:2}}:provider==='anthropic'?{processing_status:'ended',request_counts:{succeeded:1,expired:1}}:{done:true,metadata:{state:'BATCH_STATE_SUCCEEDED'},response:{inlinedResponses:{inlinedResponses:[{metadata:{key:'lab_test_1'},response:output(provider)},{metadata:{key:'lab_test_0'},error:{code:1}}]}}});
+   return Response.json(provider==='openai'?{status:'completed',output_file_id:'file-results',completed_at:Date.parse(ENDED)/1000,request_counts:{completed:1,failed:1,total:2}}:provider==='anthropic'?{processing_status:'ended',ended_at:'2026-11-18T21:40:00Z',request_counts:{succeeded:1,expired:1}}:{done:true,metadata:{state:'BATCH_STATE_SUCCEEDED',endTime:'2026-11-18T21:40:00.000000Z'},response:{inlinedResponses:{inlinedResponses:[{metadata:{key:'lab_test_1'},response:output(provider)},{metadata:{key:'lab_test_0'},error:{code:1}}]}}});
   };
-  const check=await route.POST(request(provider,'check',{id}));assert.equal(check.status,200);assert.equal((await check.json()).terminal,true);assert.equal(calls.length,1,'status checks must not fetch result files');
-  const collection=await route.POST(request(provider,'collect',{id}));assert.equal(collection.status,200);const out=await collection.json();assert.equal(out.results[0].id,'lab_test_1');assert.equal(out.results[0].score,'2');assert.equal(out.results[0].tokens,12);assert(out.results[1].error);
+  const check=await route.POST(request(provider,'check',{id}));assert.equal(check.status,200);const checked=await check.json();assert.equal(checked.terminal,true);assert.equal(calls.length,1,'status checks must not fetch result files');
+  // The provider's own time for the end of the batch is kept: the time its results are collected says nothing of it.
+  assert.equal(checked.endedAt,ENDED,provider+': when the batch ended');
+  const collection=await route.POST(request(provider,'collect',{id}));assert.equal(collection.status,200);const out=await collection.json();assert.equal(out.endedAt,ENDED);assert.equal(out.results[0].id,'lab_test_1');assert.equal(out.results[0].score,'2');assert.equal(out.results[0].tokens,12);assert(out.results[1].error);
   const limited={...output(provider),id:'test-response',responseId:'test-response',status:'incomplete',stop_reason:'max_tokens',candidates:[{finishReason:'MAX_TOKENS'}]};
   const failed=lib.parseBatchAnnotation(provider,limited);
   assert(failed.error);assert.equal(failed.tokens,12);assert.equal(failed.responseId,'test-response');
   assert.deepEqual(failed.usage,limited.usage||limited.usageMetadata);
   assert(lib.parseBatchAnnotation(provider,null).error);assert(lib.parseBatchAnnotation(provider,provider==='openai'?{...output(provider),output:[{content:[{type:'output_text',text:'{"score":2}'}]}]}:provider==='anthropic'?{...output(provider),content:[{type:'text',text:'null'}]}:{candidates:[{finishReason:'STOP',content:{parts:[{text:'[]'}]}}]}).error);
  }
+ // A batch that is still running has no end, and where the provider gives no time none is made up.
+ calls=[];mock=async()=>Response.json({status:'in_progress',completed_at:null,request_counts:{completed:0,failed:0,total:2}});
+ const running=await (await route.POST(request('openai','check',{id:'batch_test'}))).json();assert.equal(running.terminal,false);assert(!('endedAt' in running));
+ mock=async()=>Response.json({status:'completed',output_file_id:'file-results',request_counts:{completed:2,failed:0,total:2}});
+ const untimed=await (await route.POST(request('openai','check',{id:'batch_test'}))).json();assert.equal(untimed.terminal,true);assert(!('endedAt' in untimed));
  calls=[];mock=async()=>{throw Error('network')};const bad=request('openai');bad.headers.set('origin','https://evil.test');assert.equal((await route.POST(bad)).status,403);assert.equal(calls.length,0);
  assert.equal((await route.POST(request('openai','collect',{id:'../../secrets'}))).status,400);assert.equal(calls.length,0);
  assert.equal((await route.POST(request('openai','submit',{ids:'["lab_test_0","lab_test_0"]'}))).status,400);assert.equal(calls.length,0);

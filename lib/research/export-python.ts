@@ -44,8 +44,7 @@ Run:    {{RUN_DESCRIPTION}}
 
 This script sends the requests of the run above again: the same model, prompt,
 answer format, and request settings, to the same address. It holds the body of
-the run's requests as sent in the original run, with marks where each
-document goes.
+the run's requests, with marks where each document goes.
 Values marked with {{...}} in annotate_template.py are inserted from the study.
 It needs Python 3.9 or later and no other packages.{{SCRIPT_NOTE}}
 
@@ -54,6 +53,7 @@ Usage
     export {{API_KEY_ENV}}=...            # your own API key
     python annotate.py corpus.csv
     python annotate.py corpus.csv --dry-run   # print the first request, send nothing
+    python annotate.py corpus.csv --only ids.csv   # only the documents whose doc_id ids.csv lists
 
 corpus.csv has one document per row, with these columns: doc_id; text (the
 document's text) or file (the path of a PDF, from the folder of corpus.csv);
@@ -97,8 +97,9 @@ URL = {{URL}}
 # The environment variable that holds your API key.
 API_KEY_ENV = {{API_KEY_ENV_NAME}}
 
-# The body of the run's requests, as sent in the original run: the model, the
-# prompt, the answer format, and every request setting. Three
+# The body of the run's requests: the model, the prompt, the answer format, and
+# every request setting (the opening text above says whether it was kept when
+# the run was made or built again from the run's settings). Three
 # marks stand for the document: <<DOCUMENT_FILENAME>>, <<DOCUMENT_TEXT>>, and
 # <<FILE_BASE64>> (the data of a PDF). None: the run sent only PDFs.
 REQUEST = {{REQUEST}}
@@ -122,11 +123,18 @@ FIELDS = {{FIELDS}}
 # under "answers" as f0, f1, ..., and the explanation under "explanation".
 KEYS = {{KEYS}}
 
-# The key of the explanation in the answer format (None: none was asked for, or
-# the earlier format).
+# The column of each answer field in the original results, in the order of
+# FIELDS (an empty list: the one column "score").
+COLUMNS = {{COLUMNS}}
+
+# The key of a separate explanation in the answer format: one the run asked for
+# apart from its answer fields (None: it asked for no separate explanation, as
+# when one of the answer fields holds the explanation; or the earlier format).
 RATIONALE = {{RATIONALE}}
 
-# Whether a reply must carry a non-empty explanation (as the original run required).
+# Whether a reply must carry a non-empty separate explanation, as the original
+# run required. (An answer field that holds the explanation is checked like
+# every answer field: it may not be empty.)
 EXPLANATION_REQUIRED = {{EXPLANATION_REQUIRED}}
 
 # The values the answer format allows for a field (a field not listed: any text).
@@ -365,6 +373,7 @@ def main():
     ap.add_argument("--name-column", default="source", help="column with the name each request gives for the document")
     ap.add_argument("--out", default="results.csv")
     ap.add_argument("--log", default="log.jsonl")
+    ap.add_argument("--only", default=None, help="CSV file with a column doc_id: only annotate the documents it lists (a results table of the original run, say)")
     ap.add_argument("--limit", type=int, default=None, help="only annotate the first N documents")
     ap.add_argument("--dry-run", action="store_true", help="print the first request and exit")
     ap.add_argument("--base-url", default=None, help="send to another server at the same path (a proxy or a test server)")
@@ -374,6 +383,15 @@ def main():
     csv.field_size_limit(min(sys.maxsize, 2**31 - 1))
     with open(args.corpus, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
+    if args.only:
+        with open(args.only, newline="", encoding="utf-8-sig") as f:
+            wanted = {(listed.get("doc_id") or "").strip() for listed in csv.DictReader(f)}
+        wanted.discard("")
+        if not wanted:
+            sys.exit("No doc_id values were found in " + args.only)
+        rows = [row for row in rows if (row.get(args.id_column) or "").strip() in wanted]
+        if not rows:
+            sys.exit("None of the documents that %s lists are in %s" % (args.only, args.corpus))
     if args.limit:
         rows = rows[: args.limit]
     if not rows:
@@ -398,14 +416,16 @@ def main():
     if not key:
         sys.exit("Set the environment variable " + API_KEY_ENV + " to your API key.")
     answers = ["response"] if PLAIN_TEXT else (FIELDS or ["score"])
-    explained = not PLAIN_TEXT and "explanation" not in [name.lower() for name in answers]
+    # As in the original results: each answer under its column there, and a separate explanation under rationale.
+    theirs = answers if PLAIN_TEXT or len(COLUMNS) != len(FIELDS) else (COLUMNS or ["score"])
+    explained = not PLAIN_TEXT and EXPLANATION_REQUIRED and "explanation" not in [name.lower() for name in answers]
     own = ["doc_id", "replicate", "status", "error", "model_reported", "stop_reason", "input_tokens", "output_tokens", "latency_s", "completed_at", "response_id"]
-    # As in the original results: a field named like one of these columns is written as answer_<name>, and no two
-    # columns have names that differ only in case (a second one gets _2, _3, ...).
+    # A column named like one of this script's own is written as answer_<name>, and no two columns have names that
+    # differ only in case (a second one gets _2, _3, ...).
     taken = {name.lower() for name in own}
     column_of = {}
-    for name in answers + (["explanation"] if explained else []):
-        column = "answer_" + name if name.lower() in own else name
+    for name, column in list(zip(answers, theirs)) + ([("explanation", "rationale")] if explained else []):
+        column = "answer_" + column if column.lower() in own else column
         base, n = column, 2
         while column.lower() in taken:
             column, n = base + "_" + str(n), n + 1
@@ -486,7 +506,8 @@ function allowedValues(frame:RequestFrame,fields:string[],keys?:string[]):Record
 // repeats: the run's annotations per text (absent: one). inserts: for each placeholder of the prompt that was
 // filled in, the corpus column that holds its values (null: the study no longer has the column).
 // settings: the run's answer settings (for the named format).
-export type ScriptInput={studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];plain:boolean;settings?:AnswerSettings;repeats?:number;note?:string;inserts?:[string,string|null][]};
+// columns: the column of each answer field in the run's results tables (absent: the fields' names).
+export type ScriptInput={studyName:string;runDescription:string;provider:Provider;text?:RequestFrame;pdf?:RequestFrame;fields:string[];columns?:string[];plain:boolean;settings?:AnswerSettings;repeats?:number;note?:string;inserts?:[string,string|null][]};
 // The output limit a recorded request was sent with.
 function sentLimit(frame:RequestFrame):number|undefined{
  try{const body=JSON.parse(frame.body),limit=body.max_output_tokens??body.max_tokens??body.generationConfig?.maxOutputTokens;return Number.isInteger(limit)?limit:undefined;}catch{return undefined;}
@@ -500,7 +521,7 @@ export function scriptValues(input:ScriptInput):Record<string,string>{
   PROVIDER:JSON.stringify(input.provider),URL:JSON.stringify(frame.url),
   REQUEST:input.text?pyLiteral(JSON.parse(input.text.body)):'None',REQUEST_PDF:input.pdf?pyLiteral(JSON.parse(input.pdf.body)):'None',
   INSERTS:pyLiteral(Object.fromEntries(input.inserts||[])),
-  FIELDS:pyLiteral(input.plain?[]:input.fields),KEYS:keys?pyLiteral(keys):'None',RATIONALE:named&&input.settings?.rationale!==false&&!input.fields.some(isExplanationField)?JSON.stringify(RATIONALE_KEY):'None',EXPLANATION_REQUIRED:!input.plain&&input.settings?.rationale!==false&&(!named||!input.fields.some(isExplanationField))?'True':'False',ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields,keys)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
+  FIELDS:pyLiteral(input.plain?[]:input.fields),KEYS:keys?pyLiteral(keys):'None',COLUMNS:pyLiteral(input.plain?[]:input.columns&&input.columns.length===input.fields.length?input.columns:input.fields),RATIONALE:named&&input.settings?.rationale!==false&&!input.fields.some(isExplanationField)?JSON.stringify(RATIONALE_KEY):'None',EXPLANATION_REQUIRED:!input.plain&&input.settings?.rationale!==false&&(!named||!input.fields.some(isExplanationField))?'True':'False',ALLOWED:pyLiteral(input.plain?{}:allowedValues(frame,input.fields,keys)),PLAIN_TEXT:input.plain?'True':'False',REPLICATES:String(Number.isInteger(input.repeats)&&input.repeats!>=1&&input.repeats!<=10?input.repeats:1),
   // As long as the browser waits: longer for a model that thinks at length or an output limit above the Lab's own.
   TIMEOUT:String(requestTimeout(input.provider,model,{maxOutput:sentLimit(frame)})/1000),
  };
@@ -510,4 +531,7 @@ export function scriptValues(input:ScriptInput):Record<string,string>{
 export function fillScript(template:string,values:Record<string,string>):string{
  return template.replace(/\{\{([A-Z_]+)\}\}/g,(whole,key:string)=>Object.hasOwn(values,key)?values[key]:whole);
 }
-export const REQUIREMENTS='# annotate.py needs no packages: it uses only Python’s standard library (Python 3.9 or later).\n';
+// The line of the script's opening text that names its template. A package without the template (the supplementary
+// repository) has the script without this line.
+export const TEMPLATE_LINE='Values marked with {{...}} in annotate_template.py are inserted from the study.\n';
+export const withoutTemplateLine=(script:string)=>script.replace(TEMPLATE_LINE,'');

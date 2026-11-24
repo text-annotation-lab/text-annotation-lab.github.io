@@ -19,7 +19,9 @@ export type RequestDocument={filename:string;text:string}|{filename:string;pdf:s
 // earlier: the layout of requests before `layout` (see below), for "Retry failed" on a run made then and for the
 // record of a result made then. spots (research mode): where the prompt had {{text}}, taken out of `prompt`; the
 // text goes there (lib/prompt-inserts.ts, fillPlaces).
-export type BodyOptions={provider:Provider;model:string;effort:string;prompt:string;schemaPrompt:string;answerFields:string[];settings?:AnswerSettings;request?:RequestSettings;knowledge?:boolean;batch?:boolean;inserts?:boolean;earlier?:boolean;spots?:number[]};
+export type BodyOptions={provider:Provider;model:string;effort:string;prompt:string;schemaPrompt:string;answerFields:string[];settings?:AnswerSettings;request?:RequestSettings;knowledge?:boolean;batch?:boolean;inserts?:boolean;earlier?:boolean;spots?:number[];
+ // at: for a request built again from a result's settings, when it was sent (the Lab's own output limit of that day).
+ at?:string};
 
 export const requestUrl=(provider:Provider,model:string)=>provider==='openai'?'https://api.openai.com/v1/responses':provider==='anthropic'?'https://api.anthropic.com/v1/messages':provider==='gemini'?`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`:'https://openrouter.ai/api/v1/chat/completions';
 
@@ -52,7 +54,7 @@ export function framePrompt(slot:string,content:unknown):{prompt:string;system?:
 export function providerBody(o:BodyOptions,doc:RequestDocument):Record<string,unknown>{
  const {provider,model,effort}=o,knowledge=Boolean(o.knowledge),plain=Boolean(o.settings?.plain),pdf='pdf' in doc?doc.pdf:undefined,text='pdf' in doc?'':doc.text;
  const note=documentNote(provider,knowledge,doc.filename),schema=(google:boolean)=>annotationSchema(o.answerFields,google,o.schemaPrompt,knowledge,o.settings);
- const request=sentRequestSettings(provider,model,o.request,effort),limit=outputLimit(provider,model,request),temperature=request?.temperature===undefined?{}:{temperature:request.temperature};
+ const request=sentRequestSettings(provider,model,o.request,effort,o.at),limit=outputLimit(provider,model,request,o.at),temperature=request?.temperature===undefined?{}:{temperature:request.temperature};
  const system=request?.system,earlier=Boolean(o.earlier),spots=earlier?[]:o.spots||[],placed=spots.length>0;
  const shared=o.inserts||placed?fixedLength(o.schemaPrompt,placed):o.schemaPrompt.length,fixed=shared<o.schemaPrompt.length?shared:undefined;
  // The message with the document: the prompt, then the text between tags (or in the prompt's places for it), or
@@ -161,13 +163,14 @@ export const REQUEST_MARKS={filename:'<<DOCUMENT_FILENAME>>',text:'<<DOCUMENT_TE
 // breaks are put in the form they were sent in). inserts: the prompt's placeholders were filled in for each text.
 // placed: the text went where the prompt has {{text}} (research mode, current layout).
 // layout: as the result records it (absent: the earlier layout, see Layout).
-export type FrameSettings={provider:Provider;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;requestSettings?:RequestSettings;knowledge?:boolean;webSearch?:boolean;batch?:boolean;inserts?:boolean;placed?:boolean;layout?:string};
+// at: when the request was sent, for one that is built again afterwards (absent: a request of now).
+export type FrameSettings={provider:Provider;model:string;effort:string;prompt:string;answerFields:string[];answerSettings?:AnswerSettings;requestSettings?:RequestSettings;knowledge?:boolean;webSearch?:boolean;batch?:boolean;inserts?:boolean;placed?:boolean;layout?:string;at?:string};
 export type RequestFrame={url:string;body:string};
 // The request of one result, with marks for its document. The Lab's own instructions are added to the prompt
 // here exactly as the request handlers add them.
 export function requestFrame(s:FrameSettings,pdf:boolean):RequestFrame{
  const knowledge=Boolean(s.knowledge),written=formText(s.prompt),framed=s.placed&&s.layout===LAYOUT?fillPlaces(written,(name,whole)=>s.inserts?`<<INSERT:${name}>>`:whole):{prompt:s.inserts?markInserts(written):written,spots:undefined},added=knowledge?knowledgeAddition(Boolean(s.webSearch)&&!s.batch,s.answerSettings):'';
- const body=providerBody({provider:s.provider,model:s.model,effort:s.effort,prompt:framed.prompt+added+answerInstructions(s.answerFields,s.answerSettings),schemaPrompt:s.batch?written+added:written,answerFields:s.answerFields,settings:s.answerSettings,request:s.requestSettings,knowledge,batch:s.batch,inserts:s.inserts,earlier:s.layout!==LAYOUT,spots:framed.spots},pdf?{filename:REQUEST_MARKS.filename,pdf:REQUEST_MARKS.file}:{filename:REQUEST_MARKS.filename,text:REQUEST_MARKS.text});
+ const body=providerBody({provider:s.provider,model:s.model,effort:s.effort,prompt:framed.prompt+added+answerInstructions(s.answerFields,s.answerSettings),schemaPrompt:s.batch?written+added:written,answerFields:s.answerFields,settings:s.answerSettings,request:s.requestSettings,knowledge,batch:s.batch,inserts:s.inserts,earlier:s.layout!==LAYOUT,spots:framed.spots,at:s.at},pdf?{filename:REQUEST_MARKS.filename,pdf:REQUEST_MARKS.file}:{filename:REQUEST_MARKS.filename,text:REQUEST_MARKS.text});
  return {url:requestUrl(s.provider,s.model),body:JSON.stringify(body)};
 }
 // A recorded request with one document put back. `file` stands for a PDF's data (the data itself, or a note
