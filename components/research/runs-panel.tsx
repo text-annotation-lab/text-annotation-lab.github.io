@@ -6,7 +6,7 @@ import {Download} from 'lucide-react';
 import {Button} from '@/components/ui/button';
 import {Dialog,DialogContent,DialogTitle,DialogDescription} from '@/components/ui/dialog';
 import {PROVIDERS,modelName,reasoningOptionLabel,type Provider} from '@/lib/providers';
-import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSources,runJob,sourceFields,sourceLabel,statLines,type LevelChoice} from '@/lib/research/agreement';
+import {agreementJob,agreementTable,autoLevel,disagreements,leftOutNote,pairSources,runJob,sourceFields,sourceLabel,statLines,type LevelChoice,type StatGroup,type StatLine} from '@/lib/research/agreement';
 import {computeIntervals,intervalsOf} from '@/lib/research/intervals';
 import {comparableValues} from '@/lib/research/comparable';
 import {comparisonReport,groupColumns} from '@/lib/research/comparison-report';
@@ -30,6 +30,27 @@ const when=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(
 const whenCell=(time:string)=>{const date=new Date(time);return !time||Number.isNaN(date.getTime())?'—':<><span className="research-nowrap">{date.toLocaleDateString('en-US',{dateStyle:'medium'})},</span> <span className="research-nowrap">{date.toLocaleTimeString('en-US',{timeStyle:'short'})}</span></>;};
 const money=(amount:number)=>amount===0?'$0':amount<0.0001?'< $0.0001':'$'+amount.toFixed(amount<0.1?4:2);
 const BOOTSTRAPPED=new Set(['cohenKappa','weightedKappa','weightedKappaLinear','krippendorffAlpha','gwetAC1','gwetAC2Linear','meanDifference','mae']);
+const GROUP_NAMES:Record<Exclude<StatGroup,'share'>,string>={chance:'Agreement beyond chance',association:'Association',distance:'Distance on the scale'};
+// The figures: the shares of texts as tiles (what a reader checks first), then every coefficient in one table, grouped,
+// with its estimate and interval side by side. No coefficient is singled out.
+function StatFigures({stats,ci,unit}:{stats:Agreement;ci:Agreement['ci']|undefined;unit:string}){
+ const lines=statLines(stats,ci,unit);
+ const ciCell=(line:StatLine)=>line.key==='n'||line.key==='spearman'?'':line.ciText||(stats.n>=10&&BOOTSTRAPPED.has(line.key)&&!ci?'computing…':'');
+ const groups=(['chance','association','distance'] as const).map(group=>({group,lines:lines.filter(line=>line.group===group)})).filter(g=>g.lines.length);
+ return <div className="research-figures">
+  <div className="research-stats">{lines.filter(line=>line.group==='share').map(line=><div key={line.key} className="research-stat" title={line.help}>
+   <span className="research-stat-label">{line.label}</span><strong>{line.value}</strong>
+   {line.key!=='n'&&<span className="research-stat-ci">{line.ciText?`95% CI ${line.ciText}`:''}</span>}
+  </div>)}</div>
+  <div className="research-table-scroll"><table className="research-table research-measures">
+   <thead><tr><th scope="col">Measure</th><th scope="col" className="num">Estimate</th><th scope="col" className="num">95% CI</th><th scope="col" className="research-measure-help">What it measures</th></tr></thead>
+   {groups.map(({group,lines})=><tbody key={group}>
+    <tr className="research-measure-group"><th scope="colgroup" colSpan={4}>{GROUP_NAMES[group]}</th></tr>
+    {lines.map(line=><tr key={line.key}><th scope="row" title={line.help}>{line.label}</th><td className="num">{line.value}</td><td className="num research-measure-ci">{ciCell(line)}</td><td className="research-measure-help">{line.help}</td></tr>)}
+   </tbody>)}
+  </table></div>
+ </div>;
+}
 const EMPTY:Dataset={kind:'texts',rows:[],runs:[],columns:[],samples:[]};
 const DATASET_NAMES={texts:'Uploaded texts',knowledge:'Model knowledge'} as const;
 const count=(n:number)=>n.toLocaleString('en-US');
@@ -255,10 +276,7 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
     </div>
     {stats&&pairing&&(stats.n?<>
      <Glance stats={stats} unit={unit}/>
-     <div className="research-stats">{statLines(stats,ci,unit).map(line=><div key={line.key} className="research-stat" title={line.help}>
-      <span className="research-stat-label">{line.label}</span><strong>{line.value}</strong>
-      {line.key!=='n'&&line.key!=='spearman'&&<span className="research-stat-ci">{line.ciText?`95% CI ${line.ciText}`:stats.n<10?'':BOOTSTRAPPED.has(line.key)&&!ci?'95% CI: computing…':''}</span>}
-     </div>)}</div>
+     <StatFigures stats={stats} ci={ci} unit={unit}/>
      <p className="hint">{[pairing.onlyA?`${pairing.onlyA.toLocaleString('en-US')} ${unit}${pairing.onlyA===1?' has':'s have'} a value only in ${sourceLabel(a)}`:'',pairing.onlyB?`${pairing.onlyB.toLocaleString('en-US')} only in ${sourceLabel(b)}`:''].filter(Boolean).join('; ')}{pairing.onlyA||pairing.onlyB?'; these are not compared. ':''}{leftOutNote(stats,unit,pairing.leftOut)} {pairing.basis}{partsNote?' '+partsNote:''} {fieldA&&fieldB&&fieldA.toLowerCase()!==fieldB.toLowerCase()?<strong>{`${sourceLabel(b)} has no field “${fieldLabel(fieldA)}”, so its “${fieldLabel(fieldB)}” is compared with it. `}</strong>:null}{stats.n<10?`Intervals need at least 10 compared ${unit}s.`:`Intervals for the coefficients are bootstrap percentile intervals (10,000 resamples of the ${unit}s, fixed seed); those for shares are Wilson intervals.`} Values are compared after trimming and ignoring case.</p>
      {categories.length>0&&(categories.length<=25?<div className="research-table-scroll"><table className="research-table research-confusion"><caption>Rows: {sourceLabel(a)}. Columns: {sourceLabel(b)}.</caption><thead><tr><th/>{categories.map(c=><th key={c} scope="col">{c}</th>)}</tr></thead><tbody>{categories.map(row=><tr key={row}><th scope="row">{row}</th>{categories.map(column=>{const n=stats.confusion[row]?.[column]??0;return <td key={column} className={n?row===column?'agree':'disagree':''}>{n||''}</td>;})}</tr>)}</tbody></table></div>:<p className="hint">{categories.length} distinct values: too many to show as a table. The downloaded comparison includes the full table.</p>)}
      <div className="research-page-actions"><Button type="button" variant="outline" onClick={downloadComparison}><Download size={16}/>Download this comparison (CSV)</Button>

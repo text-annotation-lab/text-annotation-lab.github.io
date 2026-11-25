@@ -239,7 +239,9 @@ export function agreementJob(p:Pairing,level:LevelChoice,tolerance:number):Agree
 }
 export const runJob=(job:AgreementJob,withIntervals:boolean)=>agreement(job.a,job.b,job.level,job.allowed,job.tolerance,{withIntervals,scaleSeen:job.scaleSeen,range:job.range,known:job.known});
 
-export type StatLine={key:string;label:string;value:string;ci?:[number,number]|null;ciText?:string;help?:string};
+// group: shares of texts (shown as tiles), agreement beyond chance, association, and distance on the scale.
+export type StatGroup='share'|'chance'|'association'|'distance';
+export type StatLine={key:string;label:string;value:string;ci?:[number,number]|null;ciText?:string;help?:string;group:StatGroup};
 const interval=(ci:[number,number]|null|undefined,format:(x:number)=>string)=>ci?`${format(ci[0])} to ${format(ci[1])}`:'';
 // The statistics as lines to show or export. `ci` holds the intervals once they are computed.
 export function statLines(stats:Agreement,ci:Agreement['ci']|undefined,unit='text'):StatLine[]{
@@ -247,9 +249,10 @@ export function statLines(stats:Agreement,ci:Agreement['ci']|undefined,unit='tex
  const numeric=stats.weightedKappa!==null||stats.spearman!==null||stats.mae!==null;
  const line=(key:CiStat|'spearman'|'n',label:string,value:number|null,format:(x:number|null)=>string,help?:string):StatLine=>{
   const range=key==='spearman'||key==='n'?undefined:ci?.[key];
-  return {key,label,value:format(value),ci:range,ciText:interval(range,x=>format(x)),help};
+  const group:StatGroup=key==='n'||key==='percentAgreement'||key==='withinTolerance'?'share':key==='spearman'?'association':key==='meanDifference'||key==='mae'?'distance':'chance';
+  return {key,label,value:format(value),ci:range,ciText:interval(range,x=>format(x)),help,group};
  };
- const lines:StatLine[]=[{key:'n',label:unit[0].toUpperCase()+unit.slice(1)+'s compared',value:stats.n.toLocaleString('en-US')}];
+ const lines:StatLine[]=[{key:'n',label:unit[0].toUpperCase()+unit.slice(1)+'s compared',value:stats.n.toLocaleString('en-US'),group:'share'}];
  lines.push(line('percentAgreement','Percent agreement',stats.percentAgreement,fmtPct,`Share of ${unit}s with exactly the same value.`));
  if(numeric&&stats.withinTolerance!==null)lines.push(line('withinTolerance',`Within ±${stats.tolerance}`,stats.withinTolerance,fmtPct,`Share of ${unit}s whose two values differ by at most the tolerance.`));
  lines.push(line('cohenKappa','Cohen’s κ',stats.cohenKappa,fmtStat,'Agreement beyond chance; every disagreement counts the same.'));
