@@ -48,16 +48,20 @@ export function PasteTextDialog({rows,removed,onAdd,onClose}:{rows:Existing[];re
 
 export function TableImportDialog({file,rows,removed,onAdd,onClose,onUseAsLabels}:{file:File;rows:Existing[];removed?:Existing[];onAdd:AddTexts;onClose:()=>void;onUseAsLabels:(sheet:Sheet,fileName:string)=>void}){
  const [sheet,setSheet]=useState<Sheet>(),[error,setError]=useState(''),[textIndex,setTextIndex]=useState(0),[idIndex,setIdIndex]=useState(-1),[adding,setAdding]=useState(false),[problem,setProblem]=useState('');
+ // An Excel workbook with several worksheets that hold data: the one chosen (by default the first with rows).
+ const [requested,setRequested]=useState<string>(),[book,setBook]=useState<{name?:string;all:string[]}>({all:[]});
  useEffect(()=>{
   let current=true;
-  parseCorpusTable(file).then(parsed=>{
+  setError('');
+  parseCorpusTable(file,requested).then(parsed=>{
    if(!current)return;
-   if(!parsed.header.length||!parsed.rows.length){setError('This table has no rows below its header row.');return;}
+   setBook({name:parsed.sheetName,all:parsed.sheets||[]});
+   if(!parsed.header.length||!parsed.rows.length){setSheet(undefined);setError(`This ${parsed.sheets?'worksheet':'table'} has no rows below its header row.`);return;}
    const text=guessTextColumn(parsed),id=guessIdColumn(parsed);
    setSheet(parsed);setTextIndex(text);setIdIndex(id===text?-1:id);
   }).catch(reason=>{if(current)setError(reason instanceof Error?reason.message:'This table could not be read.');});
   return()=>{current=false;};
- },[file]);
+ },[file,requested]);
  const plan=useMemo(()=>sheet?planTable(sheet,textIndex,idIndex,file.name):undefined,[sheet,textIndex,idIndex,file.name]);
  // A sheet of labels or metadata for texts already here would otherwise become one junk text per row.
  const matched=useMemo(()=>{if(!sheet||!rows.length)return 0;const key=guessKeyColumn(rows,sheet);return matchRows(rows,sheet.rows.map(row=>row[key]||'')).rowOf.size;},[sheet,rows]);
@@ -78,6 +82,7 @@ export function TableImportDialog({file,rows,removed,onAdd,onClose,onUseAsLabels
   <DialogContent className="research-dialog research-wide">
    <DialogTitle>Import table: {file.name}</DialogTitle>
    <DialogDescription>Each row becomes one text. Choose the column that holds the texts and, if the table has one, the column that identifies them.</DialogDescription>
+   {book.all.length>1&&<div className="research-field-row"><label htmlFor="table-sheet">Worksheet</label><select id="table-sheet" value={book.name} disabled={adding} onChange={event=>setRequested(event.target.value)}>{book.all.map(name=><option key={name} value={name}>{name}</option>)}</select></div>}
    {!sheet&&!error&&<p className="hint" role="status">Reading the table…</p>}
    {error&&<p className="message" role="alert">{error}</p>}
    {sheet&&plan&&<>

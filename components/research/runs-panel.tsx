@@ -102,11 +102,12 @@ function Glance({stats,unit}:{stats:Agreement;unit:string}){
  // With half points among the differences (combined answers such as 0.5 or 1.5), the middle group is every
  // difference under 2 points, not “off by 1”.
  const segments=g?[{n:same,kind:'same',label:'Same answer'},{n:small,kind:'near',label:g.fractional?'Off by less than 2':'Off by 1'},{n:large,kind:'far',label:'Off by 2 or more'}]:[{n:same,kind:'same',label:'Same answer'},{n:diff,kind:'far',label:'Different answer'}];
- const mixups=g?[]:stats.categories.flatMap(x=>stats.categories.filter(y=>y!==x&&(stats.confusion[x]?.[y]??0)>0).map(y=>({x,y,n:stats.confusion[x][y]}))).sort((p,q)=>q.n-p.n).slice(0,3);
+ // (From the cells that occur: with many distinct values the table holds only those.)
+ const mixups=g?[]:stats.categories.flatMap(x=>Object.entries(stats.confusion[x]??{}).filter(([y,n])=>y!==x&&n>0).map(([y,n])=>({x,y,n}))).sort((p,q)=>q.n-p.n).slice(0,3);
  const opposite=stats.oppositeDirection!==null&&stats.midpoint!==null?Math.round(stats.oppositeDirection*n):0;
  return <div className="research-glance">
   <h4>At a glance</h4>
-  <p><strong>{plural(same)}</strong> ({share(same)}) got the same answer from both sides{diff>0?<>; <strong>{plural(diff)}</strong> ({share(diff)}) got different answers.</>:'.'}</p>
+  <p><strong>{plural(same)}</strong> ({share(same)}) got the same answer from both sides{diff>0?<>; <button type="button" className="textbutton research-glance-jump" onClick={()=>{const list=document.getElementById('research-disagreements');list?.scrollIntoView({behavior:'smooth',block:'start'});list?.focus({preventScroll:true});}} title="Show these texts in the list of disagreements below"><strong>{plural(diff)}</strong> ({share(diff)}) got different answers</button>.</>:'.'}</p>
   <div className="research-glance-bar" role="img" aria-label={segments.map(x=>`${x.label}: ${x.n}`).join(', ')}>{segments.map(x=><div key={x.kind} className={x.kind} style={{width:`${x.n/Math.max(1,n)*100}%`}} title={`${x.label}: ${x.n}`}/>)}</div>
   <div className="research-glance-legend">{segments.map(x=><span key={x.kind}><i className={x.kind}/>{x.label}: <strong>{count(x.n)}</strong> ({share(x.n)})</span>)}</div>
   {g&&diff>0&&<ul>
@@ -175,6 +176,12 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
   return()=>{clearTimeout(timer);stop();};
  },[jobKey]);
  const ci=intervals?.key===jobKey?intervals.ci:undefined;
+ // Parts of split texts compared one by one: the intervals treat them as independent.
+ const partsNote=useMemo(()=>{
+  if(!pairing||!stats||stats.n<10)return '';
+  const byId=new Map(dataset.rows.map(row=>[row.id,row])),parts=pairing.ids.map(id=>byId.get(id)).filter(row=>row?.sourceId),sources=new Set(parts.map(row=>String(row!.sourceId))).size;
+  return parts.length>sources?`${parts.length.toLocaleString('en-US')} of these ${unit}s are parts of ${sources.toLocaleString('en-US')} longer text${sources===1?'':'s'}; the intervals treat each part as independent, so they may be too narrow for a claim about whole texts.`:'';
+ },[pairing,stats,dataset.rows,unit]);
  // Only the pairs the figures compare (lib/research/comparable.ts).
  const differing=useMemo(()=>pairing&&job?disagreements(pairing,comparableValues(job.a.map((x,i)=>[x,job.b[i]]),job.level,job.allowed,{scaleSeen:job.scaleSeen,range:job.range,known:job.known})):[],[pairing,job]);
  const [showAll,setShowAll]=useState(false);
@@ -252,14 +259,14 @@ export function RunsPanel({datasets,studyName,locked,onShowRun,onDeleteRun,onOpe
       <span className="research-stat-label">{line.label}</span><strong>{line.value}</strong>
       {line.key!=='n'&&line.key!=='spearman'&&<span className="research-stat-ci">{line.ciText?`95% CI ${line.ciText}`:stats.n<10?'':BOOTSTRAPPED.has(line.key)&&!ci?'95% CI: computing…':''}</span>}
      </div>)}</div>
-     <p className="hint">{[pairing.onlyA?`${pairing.onlyA.toLocaleString('en-US')} ${unit}${pairing.onlyA===1?' has':'s have'} a value only in ${sourceLabel(a)}`:'',pairing.onlyB?`${pairing.onlyB.toLocaleString('en-US')} only in ${sourceLabel(b)}`:''].filter(Boolean).join('; ')}{pairing.onlyA||pairing.onlyB?'; these are not compared. ':''}{leftOutNote(stats,unit,pairing.leftOut)} {pairing.basis} {fieldA&&fieldB&&fieldA.toLowerCase()!==fieldB.toLowerCase()?<strong>{`${sourceLabel(b)} has no field “${fieldLabel(fieldA)}”, so its “${fieldLabel(fieldB)}” is compared with it. `}</strong>:null}{stats.n<10?`Intervals need at least 10 compared ${unit}s.`:`Intervals for the coefficients are bootstrap percentile intervals (10,000 resamples of the ${unit}s, fixed seed); those for shares are Wilson intervals.`} Values are compared after trimming and ignoring case.</p>
+     <p className="hint">{[pairing.onlyA?`${pairing.onlyA.toLocaleString('en-US')} ${unit}${pairing.onlyA===1?' has':'s have'} a value only in ${sourceLabel(a)}`:'',pairing.onlyB?`${pairing.onlyB.toLocaleString('en-US')} only in ${sourceLabel(b)}`:''].filter(Boolean).join('; ')}{pairing.onlyA||pairing.onlyB?'; these are not compared. ':''}{leftOutNote(stats,unit,pairing.leftOut)} {pairing.basis}{partsNote?' '+partsNote:''} {fieldA&&fieldB&&fieldA.toLowerCase()!==fieldB.toLowerCase()?<strong>{`${sourceLabel(b)} has no field “${fieldLabel(fieldA)}”, so its “${fieldLabel(fieldB)}” is compared with it. `}</strong>:null}{stats.n<10?`Intervals need at least 10 compared ${unit}s.`:`Intervals for the coefficients are bootstrap percentile intervals (10,000 resamples of the ${unit}s, fixed seed); those for shares are Wilson intervals.`} Values are compared after trimming and ignoring case.</p>
      {categories.length>0&&(categories.length<=25?<div className="research-table-scroll"><table className="research-table research-confusion"><caption>Rows: {sourceLabel(a)}. Columns: {sourceLabel(b)}.</caption><thead><tr><th/>{categories.map(c=><th key={c} scope="col">{c}</th>)}</tr></thead><tbody>{categories.map(row=><tr key={row}><th scope="row">{row}</th>{categories.map(column=>{const n=stats.confusion[row]?.[column]??0;return <td key={column} className={n?row===column?'agree':'disagree':''}>{n||''}</td>;})}</tr>)}</tbody></table></div>:<p className="hint">{categories.length} distinct values: too many to show as a table. The downloaded comparison includes the full table.</p>)}
      <div className="research-page-actions"><Button type="button" variant="outline" onClick={downloadComparison}><Download size={16}/>Download this comparison (CSV)</Button>
       {runVsRun&&<><Button type="button" variant="outline" disabled={report!==null} onClick={downloadReport} title="Every answer field the two runs can be compared on, in one Excel file: the figures with intervals, a sheet for expert review, draft text for a paper, and the runs’ settings"><Download size={16}/>{report===null?'Download comparison report (Excel)':`Building the report…${report?` ${report}`:''}`}</Button>
       {groups.length>0&&<select className="research-report-groups" aria-label="Break the comparison report down by a column" value={groups.includes(groupBy)?groupBy:''} disabled={report!==null} onChange={event=>setGroupBy(event.target.value)} title="Adds a sheet with the same figures for each value of the column (exploratory)"><option value="">No breakdown</option>{groups.map(column=><option key={column} value={column}>Break down by {column}</option>)}</select>}</>}
      </div>
      {reportError&&<p className="message" role="alert">{reportError}</p>}
-     <h4>Disagreements ({differing.length.toLocaleString('en-US')})</h4>
+     <h4 id="research-disagreements" tabIndex={-1}>Disagreements ({differing.length.toLocaleString('en-US')})</h4>
      {differing.length?<><div className="research-table-scroll"><table className="research-table"><thead><tr><th>{unit==='text'?'Document':'Subject'}</th><th>{sourceLabel(a)}</th><th>{sourceLabel(b)}</th></tr></thead><tbody>{differing.slice(0,showAll?2000:25).map(d=><tr key={d.id}><td>{dataset.kind==='texts'&&!gone.has(d.id)?<button type="button" className="docbutton" onClick={()=>onOpenText(d.id)}>{d.name}</button>:d.name}{gone.has(d.id)&&<span className="research-tag" title="Deleted from the study; kept for the runs that used it">deleted</span>}</td><td><span className="answer-cell">{d.a}</span></td><td><span className="answer-cell">{d.b}</span></td></tr>)}</tbody></table></div>{differing.length>25&&<button type="button" className="textbutton" onClick={()=>setShowAll(v=>!v)}>{showAll?'Show fewer':`Show all ${Math.min(differing.length,2000).toLocaleString('en-US')}`}</button>}</>:<p className="hint">The two sources give the same value for every compared {unit}.</p>}
     </>:<p className="research-empty">{stats.leftOut.n?`No ${unit} could be compared. ${leftOutNote(stats,unit,pairing.leftOut)}`:`No ${unit} has a value in both ${sourceLabel(a)} and ${sourceLabel(b)} yet.`}</p>)}
    </>}

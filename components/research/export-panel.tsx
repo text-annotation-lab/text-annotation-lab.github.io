@@ -130,19 +130,19 @@ export function ExportPanel({datasets,studyName,lab,backup}:{datasets:ExportSour
     {option(researchLogs,setResearchLogs,'Include request and response logs')}
     {backup&&option(researchBackup,setResearchBackup,'Include the study backup','The backup holds the whole study: both data sets, and the texts and subjects deleted from it.')}
     {!all.length&&dataset.rows.length>0&&<p className="research-export-note">No run has been made on these {unit}s yet: the repository will hold the {unit}s{backup&&researchBackup?' and the backup':''}, and no prompts, runs, or results.</p>}
-    <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!dataset.rows.length} onClick={()=>{void repository();}} aria-label="Download research repository (.zip)"><Download size={16}/>{here('research')?'Building…':'Download .zip'}</Button>{stepLine('research',' (a large corpus with logs can take several minutes; keep this tab open)')}</div>
+    <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!dataset.rows.length} onClick={()=>{void repository();}}><Download size={16}/>{here('research')?'Building…':'Download research .zip'}</Button>{stepLine('research',' (a large corpus with logs can take several minutes; keep this tab open)')}</div>
    </section>
    <section className="research-export-card">
     <h3>Supplementary repository</h3>
     <p className="hint">What a journal or an OSF or Zenodo deposit needs for the chosen run: a record of the settings, the prompt and output schema, the results, agreement, and a Python script that sends the requests again.</p>
-    {option(options.texts,texts=>setOptions(now=>({...now,texts})),`Include the ${unit}s`,knowledge?`Off by default. The results name each subject either way; this adds every subject as the requests carried it.${offered.length?' The subjects’ other fields are chosen under “Label and metadata columns” below.':''}`:'Off by default: check copyright and privacy before sharing texts publicly.')}
+    {option(options.texts,texts=>setOptions(now=>({...now,texts})),`Include the ${unit}s`,knowledge?'Off by default. The results name each subject either way; this adds each subject’s other fields (such as a year or a note) and every subject as the requests carried it.':'Off by default: check copyright and privacy before sharing texts publicly.')}
     {option(options.explanations,explanations=>setOptions(now=>({...now,explanations})),'Include the model’s explanations','The explanation written before the answers. An answer field of your own that holds an explanation is always included.')}
     {option(options.logs,logs=>setOptions(now=>({...now,logs})),'Include request and response logs',`These contain the ${unit}s.`)}
     {offered.length>0&&<details className="research-export-columns"><summary>Label and metadata columns: {shownColumns.length} of {offered.length} included</summary>
      <p className="hint">In results.csv, data/corpus.csv, and the agreement figures. A column left out stays out of all three, also when the prompt’s placeholders read it (the README then says the script needs it); the logs, when included, hold the requests as sent.</p>
      {offered.map(name=><label key={name} className="research-check research-export-option"><input type="checkbox" checked={shownColumns.includes(name)} disabled={busy} onChange={()=>toggleColumn(name)}/><span>{name}</span></label>)}
     </details>}
-    <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!run} onClick={()=>{void supplementary();}} aria-label="Download supplementary repository (.zip)"><Download size={16}/>{here('supplementary')?'Building…':'Download .zip'}</Button>{stepLine('supplementary')}</div>
+    <div className="research-export-go"><Button type="button" variant="outline" disabled={busy||!run} onClick={()=>{void supplementary();}}><Download size={16}/>{here('supplementary')?'Building…':'Download supplementary .zip'}</Button>{stepLine('supplementary')}</div>
    </section>
   </div>
   {backup&&<section className="research-export-backup">

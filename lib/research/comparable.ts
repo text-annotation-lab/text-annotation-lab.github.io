@@ -16,7 +16,7 @@ export function comparableValues(pairs:[string,string][],level:Level,allowed:str
  return v=>!abstains(v)&&!tied(v)&&fits(v);
 }
 function valueFits(pairs:[string,string][],level:Level,allowed:string[],{scaleSeen=false,range,known}:{scaleSeen?:boolean;range?:[number,number];known?:string[]}):(value:string)=>boolean{
- const numericCodebook=!scaleSeen&&allowed.length>0&&allowed.every(isNum),allowedNums=allowed.filter(isNum).map(Number);
+ const numericCodebook=!scaleSeen&&allowed.length>0&&allowed.every(isNum)&&new Set(allowed.map(Number)).size===allowed.length,allowedNums=allowed.filter(isNum).map(Number);
  const seed:[number,number]|null=!scaleSeen?null:range??(allowedNums.length?[Math.min(...allowedNums),Math.max(...allowedNums)]:null);
  let fits:((v:string)=>boolean)|null=null,onNumbers=false;
  if(scaleSeen){
@@ -38,7 +38,8 @@ function valueFits(pairs:[string,string][],level:Level,allowed:string[],{scaleSe
  }
  if(!fits)return ()=>true;
  const onScale=fits,missing=(v:string)=>!onScale(v)&&isMissingLabel(v);
- const labelled=pairs.filter(([x,y])=>!missing(x)&&!missing(y)),kept=labelled.filter(([x,y])=>onScale(x)&&onScale(y));
- const asWords=onNumbers?labelled.filter(([x,y])=>!isNum(x)||!isNum(y)).length*2>labelled.length:!(kept.length&&kept.length>=labelled.length/2);
+ const labelled=pairs.filter(([x,y])=>!missing(x)&&!missing(y));
+ // (Declared categories: a label that is none of them is always left out.)
+ const asWords=onNumbers&&labelled.filter(([x,y])=>!isNum(x)||!isNum(y)).length*2>labelled.length;
  return v=>!missing(v)&&(asWords||onScale(v));
 }

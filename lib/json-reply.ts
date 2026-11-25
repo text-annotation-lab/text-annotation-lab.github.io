@@ -13,7 +13,8 @@ export const jsonColumn=(key:string)=>key.toLowerCase()===OWN_COLUMN?'answer_'+k
 // A reply that contains a JSON object (`{"key": …`), as opposed to prose that happens to use braces.
 export const looksLikeJson=(raw:string)=>/\{\s*"/.test(raw);
 
-// One value per column, or null when the reply as a whole is not a JSON object.
+// One value per column, or null when the reply as a whole is not a JSON object, or when two of its values would get
+// the same column ({"race":{"score":3},"race_score":-3}: both race_score), so that neither silently replaces the other.
 export function flattenJsonReply(raw:unknown):Record<string,string>|null{
  if(typeof raw!=='string'||!raw.trim())return null;
  try{
@@ -25,6 +26,7 @@ export function flattenJsonReply(raw:unknown):Record<string,string>|null{
    else if(key)entries.push([jsonColumn(key),written(value)]);
   };
   walk(parsed,'');
+  if(new Set(entries.map(([key])=>key)).size<entries.length)return null;
   // fromEntries defines each key as the reply's own, whatever its name ("__proto__", "constructor").
   return Object.fromEntries(entries);
  }catch{return null;}
@@ -33,6 +35,10 @@ export function flattenJsonReply(raw:unknown):Record<string,string>|null{
 // but no object, such as a list of objects, is kept as it is, in one column.)
 const validJson=(raw:string)=>{try{JSON.parse(unfenced(raw));return true;}catch{return false;}};
 export const unreadableJson=(raw:string)=>looksLikeJson(raw)&&!flattenJsonReply(raw)&&!validJson(raw);
+// A whole reply that is one JSON object, two of whose values would get the same column (see flattenJsonReply).
+export function collidingJson(raw:string):boolean{
+ try{const parsed:unknown=JSON.parse(unfenced(raw));return Boolean(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))&&!flattenJsonReply(raw);}catch{return false;}
+}
 
 // The same reply is read once, however often a table or a comparison asks for it: results keep their
 // `answers` object for as long as they exist, and a result that is replaced gets a new one.

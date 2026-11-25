@@ -34,9 +34,10 @@ export const sourceName=(dataset:Dataset,row:Row)=>dataset.kind==='knowledge'?''
 // source (counted from 1).
 const SPLIT_COLUMNS=['chunk_words','chunk_method','word_start','word_end'];
 const whole=(value:unknown):number|''=>typeof value==='number'&&Number.isFinite(value)?value:'';
-function textExtras(dataset:Dataset,split=false){
+// subjectFields: a subject's fields other than its name (false in a public package that leaves the subjects out).
+function textExtras(dataset:Dataset,split=false,subjectFields=true){
  const knowledge=dataset.kind==='knowledge',chunked=!knowledge&&dataset.rows.some(row=>row.sourceId);
- const fields=knowledge?subjectHeadings(dataset.rows).filter(heading=>dataset.rows.some(row=>subjectField(row,heading)!==String(row.name??''))):[];
+ const fields=knowledge&&subjectFields?subjectHeadings(dataset.rows).filter(heading=>dataset.rows.some(row=>subjectField(row,heading)!==String(row.name??''))):[];
  return {header:[...(knowledge?['subject']:[]),...(chunked?['source_document','chunk',...(split?SPLIT_COLUMNS:[])]:[]),...fields],
   cells:(row:Row):(string|number)[]=>[...(knowledge?[String(row.name??'')]:[]),...(chunked?[String(row.sourceName??''),row.sourceId?`${row.chunkIndex} of ${row.chunkCount}`:'',...(split?(row.sourceId?[whole(row.wordsPerChunk),String(row.chunkMethod??'exact-words'),whole(row.wordStart),whole(row.wordEnd)]:['','','','']):[])]:[]),...fields.map(heading=>subjectField(row,heading))]};
 }
@@ -166,10 +167,11 @@ export function runFacts(dataset:Dataset,run:RunLine,all:RequestLine[]=requestLi
 // text where asked for, and the columns only the Lab has. A text is in the run when the run sent a request
 // for it; a text whose requests all failed has empty answers.
 // columns: the places in dataset.columns of the label and metadata columns to include (all by default).
-export function resultsTable(study:ExportStudy,run:number,options:{texts?:Map<string,string>;explanation?:boolean;columns?:number[]}={}):Table{
+// subjectFields: Model knowledge, the subjects' fields other than their names (by default included).
+export function resultsTable(study:ExportStudy,run:number,options:{texts?:Map<string,string>;explanation?:boolean;columns?:number[];subjectFields?:boolean}={}):Table{
  const {dataset}=study,counts=new Map<string,[number,number]>();
  for(const line of requestLines(dataset))if(line.run===run){const count=counts.get(line.row.id)||[0,0];count[line.result.status==='done'?0:1]++;counts.set(line.row.id,count);}
- const rows=dataset.rows.filter(row=>counts.has(row.id)),results=rows.map(row=>rowForRun(row,run)),extra=textExtras(dataset);
+ const rows=dataset.rows.filter(row=>counts.has(row.id)),results=rows.map(row=>rowForRun(row,run)),extra=textExtras(dataset,false,options.subjectFields!==false);
  const plan=fieldPlan(results),done=results.filter(result=>result.status==='done');
  const json=done.some(result=>result.answerSettings?.plain)&&plan.some(p=>p.field!==PLAIN_FIELD),reply=json?plan.find(p=>p.field===PLAIN_FIELD):undefined,middle=plan.filter(p=>p!==reply);
  const rationale=options.explanation!==false&&done.some(asksRationale);

@@ -27,7 +27,7 @@ function recordsToSheet(records:unknown[]):Sheet{
  const header=uniqueHeader(keys.map((key,i)=>tidy(key)||'Column '+(i+1)));
  return {header,rows:rows.map(row=>Array.from({length:header.length},(_,i)=>row[i]??''))};
 }
-export async function parseCorpusTable(file:File):Promise<Sheet>{
+export async function parseCorpusTable(file:File,sheetName?:string):Promise<Sheet>{
  if(file.size>MAX_TABLE_MEGABYTES*1024*1024)throw new Error(`Choose a table of up to ${MAX_TABLE_MEGABYTES} MB.`);
  if(/\.jsonl$/i.test(file.name)){
   const records:unknown[]=[];
@@ -44,7 +44,7 @@ export async function parseCorpusTable(file:File):Promise<Sheet>{
   if(!records)throw new Error('Expected a JSON array of objects, one per text.');
   return recordsToSheet(records);
  }
- return parseSpreadsheet(file,MAX_TABLE_MEGABYTES);
+ return parseSpreadsheet(file,MAX_TABLE_MEGABYTES,sheetName);
 }
 
 // A first guess at the column that holds the texts: a telling name, or else the longest values.

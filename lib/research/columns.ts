@@ -4,7 +4,8 @@
 // under the column's name, so any column name is safe in backups.
 
 export type Column={name:string;role:'label'|'meta'};
-export type Sheet={header:string[];rows:string[][]};
+// sheetName and sheets: an Excel workbook, the worksheet read and (when several hold data) the names of those.
+export type Sheet={header:string[];rows:string[][];sheetName?:string;sheets?:string[]};
 export type CellRow={id:string;name:string;sourceName?:string;cells?:string[];[key:string]:any};
 export type Role=''|'label'|'meta';
 
@@ -200,13 +201,13 @@ export function appendTexts<T extends CellRow>(docs:T[],columns:Column[],texts:N
 }
 
 // Write one value in one column for the chosen texts (used to mark a sample).
-// With `clearOthers`, texts that held this value before and are not chosen lose it.
+// With `clearOthers`, texts that held this value before (in any capitals, as the sampler reads it) and are not chosen lose it.
 export function markColumn<T extends CellRow>(docs:T[],columns:Column[],ids:Set<string>,name:string,value:string,clearOthers=false):{docs:T[];columns:Column[]}{
  const next=columns.map(c=>({...c}));let index=columnIndex(next,name);
  if(index<0){next.push({name:tidy(name),role:'meta'});index=next.length-1;}
  return {columns:next,docs:docs.map(doc=>{
   const held=doc.cells?.[index]??'';
-  const target=ids.has(doc.id)?value:clearOthers&&held===value?'':held;
+  const target=ids.has(doc.id)?value:clearOthers&&held.trim().toLowerCase()===value.trim().toLowerCase()?'':held;
   if(target===held&&(doc.cells?.length??0)>=next.length)return doc;
   if(target===held&&!doc.cells?.length)return doc;
   const cells=Array.from({length:next.length},(_,i)=>doc.cells?.[i]??'');cells[index]=target;

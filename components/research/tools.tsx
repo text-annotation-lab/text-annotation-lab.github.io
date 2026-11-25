@@ -53,6 +53,8 @@ export function ResearchTools({rows,removed,fields,columns,samples,unit,disabled
 // A label sheet reaches the texts deleted from the study too: their labels still count in their runs' comparisons.
 function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,onClose,initial}:Props&{onClose:()=>void;initial?:{sheet:Sheet;fileName:string}}){
  const [sheet,setSheet]=useState<Sheet>(),[fileName,setFileName]=useState(''),[error,setError]=useState(''),[reading,setReading]=useState(false);
+ // An Excel workbook with several worksheets that hold data: the file, so that another worksheet can be read.
+ const [book,setBook]=useState<File>();
  const [keyIndex,setKeyIndex]=useState(0),[roles,setRoles]=useState<Role[]>([]),[clearUnlisted,setClearUnlisted]=useState(false);
  const all=useMemo(()=>removed.length?[...rows,...removed]:rows,[rows,removed]);
  // Each text's doc_id as the exports give it, so a sheet keyed by doc_id finds the text it names.
@@ -63,11 +65,11 @@ function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,on
   setRoles(parsed.header.map((header,i)=>i===key||!validColumnName(header)?'':columnIndex(columns,header)>=0?columns[columnIndex(columns,header)].role:guessRole(header,fields)));
  }
  useEffect(()=>{if(initial)adopt(initial.sheet,initial.fileName);},[]);
- async function choose(file:File|undefined){
+ async function choose(file:File|undefined,sheetName?:string){
   if(!file)return;
-  setReading(true);setError('');
+  setReading(true);setError('');setBook(file);
   try{
-   const parsed=await parseSpreadsheet(file);
+   const parsed=await parseSpreadsheet(file,20,sheetName);
    if(!parsed.header.length||!parsed.rows.length)throw new Error('This file has no rows below its header row.');
    adopt(parsed,file.name);
   }catch(problem){setSheet(undefined);setError(problem instanceof Error?problem.message:'This file could not be read.');}
@@ -94,6 +96,7 @@ function LabelsDialog({rows,removed=[],fields=[],columns,samples,unit,onApply,on
    <DialogTitle>Add labels or metadata from a spreadsheet</DialogTitle>
    <DialogDescription>Choose a CSV or Excel file with one row per {unit}. One column names the {unit}s{unit==='text'?' (the file name, with or without its extension, or the doc_id from the exports)':''}; the others can be added as human labels, to compare with the model’s answers, or as metadata such as year or author.</DialogDescription>
    <label className="research-file"><span>{fileName||'Choose a spreadsheet'}</span><input type="file" accept={SPREADSHEET_ACCEPT} aria-label="Choose a spreadsheet" onChange={event=>{void choose(event.target.files?.[0]);event.target.value='';}}/></label>
+   {book&&sheet?.sheets&&sheet.sheets.length>1&&<div className="research-field-row"><label htmlFor="labels-sheet">Worksheet</label><select id="labels-sheet" value={sheet.sheetName} disabled={reading} onChange={event=>{void choose(book,event.target.value);}}>{sheet.sheets.map(name=><option key={name} value={name}>{name}</option>)}</select></div>}
    {reading&&<p className="hint" role="status">Reading the spreadsheet…</p>}
    {error&&<p className="message" role="alert">{error}</p>}
    {sheet&&match&&<>
@@ -126,7 +129,7 @@ function SampleDialog({rows,columns,samples,unit,onApply,onClose}:Props&{onClose
  const options={size:Number(size)||0,strata,exclude,markedAs,seed:Math.round(Number(seed))||0};
  const draw=useMemo(()=>drawStratifiedSample(rows as any,columns,options),[rows,columns,size,seed,strata.join('\n'),excludeColumn,excludeValue,column,value]);
  const markIndex=markedAs?columnIndex(columns,markedAs.column):-1;
- const already=markedAs&&markIndex>=0?rows.filter(row=>(row.cells?.[markIndex]??'')===markedAs.value).length:0;
+ const already=markedAs&&markIndex>=0?rows.filter(row=>(row.cells?.[markIndex]??'').trim().toLowerCase()===markedAs.value.toLowerCase()).length:0;
  const taken=draw.taken.reduce((n,t)=>n+t.n,0),empty=draw.strata.filter(s=>s.drawn===0).length;
  function apply(){
   if(!markedAs||!draw.ids.length)return;
