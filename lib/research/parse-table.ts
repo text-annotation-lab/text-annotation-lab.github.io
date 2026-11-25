@@ -62,13 +62,18 @@ function cellText(value:any):string{
  return String(value);
 }
 export const SPREADSHEET_ACCEPT='.csv,.tsv,.txt,.xlsx';
-export async function parseSpreadsheet(file:File,maxMegabytes=20):Promise<Sheet>{
+// sheetName: the worksheet of an Excel workbook to read; by default the first with more than a header row. The
+// result names it and, when several worksheets hold data, lists them, so that another can be chosen.
+export async function parseSpreadsheet(file:File,maxMegabytes=20,sheetName?:string):Promise<Sheet>{
  if(file.size>maxMegabytes*1024*1024)throw new Error(`Choose a spreadsheet of up to ${maxMegabytes} MB.`);
  if(/\.xls$/i.test(file.name))throw new Error('Save this workbook as .xlsx or .csv first; the older .xls format cannot be read.');
  if(/\.xlsx$/i.test(file.name)){
   const ExcelJS=(await import('exceljs')).default,workbook=new ExcelJS.Workbook();
   await workbook.xlsx.load(await file.arrayBuffer());
-  const sheet=workbook.worksheets.find(candidate=>candidate.actualRowCount>1)||workbook.worksheets[0];
+  // (A hidden worksheet is offered only when no visible one holds data.)
+  const visible=workbook.worksheets.filter(candidate=>candidate.state!=='hidden'&&candidate.state!=='veryHidden'),pool=visible.some(candidate=>candidate.actualRowCount>1)?visible:workbook.worksheets;
+  const withData=pool.filter(candidate=>candidate.actualRowCount>0);
+  const sheet=(sheetName!==undefined?workbook.worksheets.find(candidate=>candidate.name===sheetName):undefined)||pool.find(candidate=>candidate.actualRowCount>1)||workbook.worksheets[0];
   if(!sheet)return {header:[],rows:[]};
   const rows:string[][]=[];
   sheet.eachRow({includeEmpty:false},row=>{
@@ -78,7 +83,7 @@ export async function parseSpreadsheet(file:File,maxMegabytes=20):Promise<Sheet>
    const filled=Array.from(values,value=>value??'');
    if(filled.some(value=>value.trim()!==''))rows.push(filled);
   });
-  return toSheet(rows);
+  return {...toSheet(rows),sheetName:sheet.name,...(withData.length>1?{sheets:withData.map(candidate=>candidate.name)}:{})};
  }
  return parseDelimited(await readTableText(file));
 }

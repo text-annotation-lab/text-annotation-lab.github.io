@@ -1,8 +1,8 @@
 // Pair two sources of labels for the same texts (a run's answers, or a column
 // of human labels) and describe how far they agree. The statistics themselves
 // are in metrics.ts.
-import {agreement,fmtPct,fmtStat,isMissingLabel,type Agreement,type CiStat,type Level} from './metrics';
-import {normalizeLabel,isPlainNumber,lowest,highest,abstains} from './normalize';
+import {agreement,DENSE_LIMIT,fmtPct,fmtStat,isMissingLabel,type Agreement,type CiStat,type Level} from './metrics';
+import {normalizeLabel,isPlainNumber,lowest,highest,abstains,collidingCategories,plainLabel} from './normalize';
 import {rowForRun,type Row} from './runs';
 import {requestsOf} from './repeats';
 import {cellOf,columnIndex,type Column} from './columns';
@@ -86,7 +86,10 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
  // One type for the comparison: a single typed run, or two runs that gave the field the same type.
  const type=typed.length&&typed.every(spec=>spec.type===typed[0].type)?typed[0].type:undefined;
  // The values every typed run allowed; none when a typed run named none, so the scale or the categories are then read from the answers.
- const lists=typed.map(spec=>spec.values.map(value=>normalizeLabel(value)).filter(Boolean)),declared=type&&lists.every(list=>list.length>=2)?[...new Set(lists.flat())]:[];
+ // Declared categories that would merge when read as labels ("01" and "1" are both the number 1): every value is
+ // then compared as written (trimmed, in lower case), with no rule for numbers or for yes / no.
+ const asWritten=type==='category'&&typed.some(spec=>collidingCategories(spec.values)),label=asWritten?plainLabel:(value:string)=>normalizeLabel(value);
+ const lists=typed.map(spec=>spec.values.map(label).filter(Boolean)),declared=type&&lists.every(list=>list.length>=2)?[...new Set(lists.flat())]:[];
  // Each run's side of the comparison, with its single answers. `words`: a yes / no in words (a yes / no field, or
  // categories yes and no). `codes`: allowed values of exactly 0 and 1.
  const sides=([[a,fieldA,specA],[b,fieldB,specB]] as [CompareSource,string,Typed|undefined][]).flatMap(([source,field,spec])=>{
@@ -104,10 +107,10 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
  // Yes / no: a yes / no in words in one run (a yes / no field, or categories yes and no), compared with a column, or
  // with a run that has one in words or as 0 and 1, or answers in words without a type. It also reads 1 and 0, y and
  // n, and ja and nej. Scores that are no yes / no in numbers (a 1 to 5 rating) are not read as yes and no.
- const yesNo=sides.some(side=>side.words)&&sides.every(side=>side.words||flagged(side)||(!side.own&&!scored(side.single)));
+ const yesNo=!asWritten&&sides.some(side=>side.words)&&sides.every(side=>side.words||flagged(side)||(!side.own&&!scored(side.single)));
  // One run with values of 0 and 1, compared with a column: the column's yes and no are read as 1 and 0.
- const flag=!yesNo&&sides.length===1&&flagged(sides[0]);
- const read=(value:string,source:CompareSource)=>yesNo?normalizeLabel(value,true):flag&&source.kind==='column'?oneZero(value):normalizeLabel(value);
+ const flag=!asWritten&&!yesNo&&sides.length===1&&flagged(sides[0]);
+ const read=(value:string,source:CompareSource)=>asWritten?plainLabel(value):yesNo?normalizeLabel(value,true):flag&&source.kind==='column'?oneZero(value):normalizeLabel(value);
  const p:Pairing={ids:[],names:[],a:[],b:[],rawA:[],rawB:[],onlyA:0,onlyB:0,numeric:false,level:'nominal',allowed:[],scaleSeen:false,leftOut:'marker',basis:'',...(flag?{zeroOne:true}:{})};
  // Every value as it is compared, '' where a source has none.
  const ra=va.map(value=>value?read(value,a):''),rb=vb.map(value=>value?read(value,b):'');
@@ -138,7 +141,7 @@ export function pairSources(rows:Row[],columns:Column[],a:CompareSource,fieldA:s
   return fill(isMissingLabel);
  }
  if(type==='category'&&declared.length&&(!twoRuns||typed.length===2)){
-  p.allowed=declared;p.leftOut='value';p.basis=`Categories: the field’s ${declared.length} allowed values.`;
+  p.allowed=declared;p.leftOut='value';p.basis=`Categories: the field’s ${declared.length} allowed values${asWritten?', compared as written (some of them would otherwise read as the same value, such as 01 and 1)':''}.`;
   return fill(label=>isMissingLabel(label)&&!declared.includes(label));
  }
  // Categories that are numbers (codes 0 and 1) in one run, scores in a run without a type in the other: the codes,
@@ -291,6 +294,8 @@ export function agreementTable(title:{a:string;b:string;field:string;dataset:str
  for(const [name,value,key] of raw){if(value===null)continue;const range=key?ci?.[key]:undefined;rows.push([name,value,range?range[0]:'',range?range[1]:'']);}
  rows.push([unit+'s_left_out',stats.leftOut.n,'','']);
  if(stats.leftOut.abstained)rows.push([unit+'s_left_out_both_insufficient_knowledge',stats.leftOut.abstained.both,'',''],[unit+'s_left_out_one_insufficient_knowledge',stats.leftOut.abstained.one,'','']);
+ // A table of every value against every other only for up to 100 values (a Number field with decimals can have thousands).
+ if(stats.categories.length>DENSE_LIMIT){rows.push([],[`confusion_matrix: not included (${stats.categories.length} distinct values)`]);return rows;}
  rows.push([],['confusion_matrix: rows = '+title.a+', columns = '+title.b]);
  rows.push(['',...stats.categories]);
  for(const row of stats.categories)rows.push([row,...stats.categories.map(column=>stats.confusion[row]?.[column]??0)]);

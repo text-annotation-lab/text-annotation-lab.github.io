@@ -329,7 +329,11 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  assert(!readme.includes('the prompt was completed with'),'No draft methods text in the README');
  // Without the texts, the README names the columns a corpus of one's own needs.
  const lean=await packages.buildSupplementary({study,read:data.documentReader(dataset,file=>file.text()),now:NOW},1,{texts:false,explanations:false,logs:false});
- assert((await read(lean,'README.md')).includes('and the columns the prompt’s placeholders take their values from (doc_id, Year, Outlet name, meta_text). The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent. '));
+ assert((await read(lean,'README.md')).includes('and the columns the prompt’s placeholders take their values from (doc_id, Year, Outlet name, meta_text, gone). The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent. '));
+ // A placeholder whose metadata column was removed after the run (it held values then): the script asks for the column
+ // instead of sending nothing in its place (Astra audit, Nov 25, #4).
+ assert(readme.includes('The prompt’s placeholder `{{meta.gone}}` took values from a metadata column the study no longer has; the script stops until the corpus has a column `gone` with the values the requests carried'),'The README names the column the script needs');
+ assert((await read(pack,'scripts/annotate.py')).includes('"meta.gone": "gone"'),'The script maps the placeholder to a column of that name');
  // A study without placeholders says nothing of them.
  const bareSetup={...setup,prompt:'Rate the tone from 1 to 5.'},bareFrame=records.recordRequest(undefined,frames.requestFrame(bareSetup,false));
  const bareStudy={name:'Plain',lab:study.lab,requests:bareFrame.list,dataset:{...dataset,rows:rows.slice(0,3).map(row=>{const {inserts:_,...rest}=row;return {...rest,...bareSetup,requestId:bareFrame.id,responseFormat:formatsLib.annotationFormatRecord(E_FIELDS,bareSetup.prompt,false,E_SETTINGS)};}),runs:[{...bareSetup,number:1,startedAt:'2026-11-16T10:00:00.000Z'}]}};
@@ -349,7 +353,7 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
  assert((await read(oldPack,'scripts/annotate.py')).includes('\n    "id": "source",\n')&&(await read(oldPack,'README.md')).includes('`{{id}}` with the text’s name;'),'An earlier run’s {{id}} is read from source');
  assert.deepEqual(JSON.parse(python.scriptValues({lab:'x',studyName:'s',runDescription:'r',provider:'anthropic',text:textFrame,fields:E_FIELDS,plain:false,inserts:[['id','document'],['meta.gone',null]]}).INSERTS.replace(/,\n\}/,'\n}').replace('None','null')),{id:'document','meta.gone':null});
  assert.equal(python.scriptValues({lab:'x',studyName:'s',runDescription:'r',provider:'anthropic',text:textFrame,fields:E_FIELDS,plain:false}).INSERTS,'{}');
- for(const line of ['"id": "doc_id",','"meta.year": "Year",','"meta.Outlet name": "Outlet name",','"meta.text": "meta_text",','"meta.gone": None,','"meta.tone_human": None,'])assert(script.includes('\n    '+line+'\n'),'annotate.py: '+line);
+ for(const line of ['"id": "doc_id",','"meta.year": "Year",','"meta.Outlet name": "Outlet name",','"meta.text": "meta_text",','"meta.gone": "gone",','"meta.tone_human": None,'])assert(script.includes('\n    '+line+'\n'),'annotate.py: '+line);
  if(spawnSync('python3',['--version']).status!==0){console.log('prompt-inserts: python3 is not installed; the script itself was not run.');}
  else{
   const folder=fs.mkdtempSync(path.join(os.tmpdir(),'lab-inserts-')),run=(args,env={})=>new Promise(resolve=>execFile('python3',args,{cwd:folder,env:{...process.env,NO_PROXY:'127.0.0.1,localhost',no_proxy:'127.0.0.1,localhost',...env},encoding:'utf8'},(error,stdout,stderr)=>resolve({code:error?error.code??1:0,stdout,stderr})));
@@ -364,15 +368,22 @@ const marked=provider=>providers.PROVIDERS[provider].models.find(model=>requestS
    const base='http://127.0.0.1:'+server.address().port,KEY='sk-test-0123456789abcdef';
    // The package as exported: the script fills in each request from the corpus beside it.
    for(const file of pack.files){const target=path.join(folder,file.path);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,file.data instanceof Blob?Buffer.from(await file.data.arrayBuffer()):file.data);}
-   const home=path.join(pack.name,'scripts'),sent=await run([path.join(home,'annotate.py'),path.join(pack.name,'data','corpus.csv'),'--base-url',base,'--out','out.csv','--log','out.jsonl'],{ANTHROPIC_API_KEY:KEY});
+   const home=path.join(pack.name,'scripts'),corpusFile=path.join(folder,pack.name,'data','corpus.csv');
+   // A placeholder whose metadata column the study no longer has, which held values in the run: the script stops and
+   // names the column instead of sending nothing in its place (Astra audit, Nov 25, #4).
+   const stopped=await run([path.join(home,'annotate.py'),path.join(pack.name,'data','corpus.csv'),'--base-url',base,'--out','out.csv','--log','out.jsonl'],{ANTHROPIC_API_KEY:KEY});
+   assert.notEqual(stopped.code,0);assert.match(stopped.stderr,/columns that were not found: gone\./);assert.equal(received.length,0,'Nothing was sent');
+   // With the column added back (the values the requests carried), every request is the one the run sent.
+   const lines=fs.readFileSync(corpusFile,'utf8').replace(/^\uFEFF/,'').split('\r\n').filter(Boolean),readRows=lines.slice(1);
+   assert.equal(readRows.length,4,'One line per text in the corpus (no value there spans lines)');
+   fs.writeFileSync(corpusFile,'\uFEFF'+[lines[0]+',gone',...readRows.map((line,i)=>line+',was here '+(i+1))].join('\r\n')+'\r\n');
+   const sent=await run([path.join(home,'annotate.py'),path.join(pack.name,'data','corpus.csv'),'--base-url',base,'--out','out.csv','--log','out.jsonl'],{ANTHROPIC_API_KEY:KEY});
    assert.equal(sent.code,0,sent.stderr);assert.equal(received.length,4);
-   // Byte for byte the request the run sent: the corpus holds the values the run sent (text 2's year as it was
-   // then), and a column the study no longer has is filled in empty.
-   const now=i=>{const values=[...rows[i].inserts];values[4]='';return inserts.insertMap(E_PROMPT,values);};
+   // Byte for byte the request the run sent: the corpus holds the values the run sent (text 2's year as it was then).
+   const now=i=>inserts.insertMap(E_PROMPT,[...rows[i].inserts]);
    for(const [i,text] of E_TEXTS.entries())assert.equal(received[i],JSON.stringify(frames.fillRequest(textFrame.body,{filename:rows[i].name,text,inserts:now(i)})),'The script’s request for text '+(i+1));
    assert.equal(received[3],JSON.stringify(frames.fillRequest(pdfFrame.body,{filename:'report.pdf',file:Buffer.from(await E_PDF.arrayBuffer()).toString('base64'),inserts:now(3)})),'The script’s request for the PDF');
-   // Where nothing changed since the run, that is the request the run sent; a column the study no longer has is filled in empty.
-   assert.equal(received[2].split('was here 3').length,1);assert.equal(received[2],JSON.stringify(logged[2].request).replace('was here 3',''),'Text 3: the logged request, but for the removed column');
+   assert.equal(received[2],JSON.stringify(logged[2].request),'Text 3: the logged request');
    // The script reads a reply as the Lab does: a blank explanation fails.
    const parsed=await run(['-c','import importlib.util,json,sys;s=importlib.util.spec_from_file_location("a",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(json.dumps([m.parse_answer(t)[1] for t in sys.argv[2:]]))',path.join(folder,home,'annotate.py'),'{"explanation":"","score":"","answers":{"f0":"4"}}','{"explanation":"  ","score":"","answers":{"f0":"4"}}','{"explanation":"Because.","score":"","answers":{"f0":"4"}}']);
    assert.equal(parsed.code,0,parsed.stderr);assert.deepEqual(JSON.parse(parsed.stdout),['The reply is missing its explanation','The reply is missing its explanation','']);

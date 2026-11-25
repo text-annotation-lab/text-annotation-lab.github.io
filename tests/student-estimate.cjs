@@ -22,5 +22,9 @@ const {studentEstimate}=load('lib/student-estimate.ts'),{PROVIDERS}=load('lib/pr
  assert.equal((await studentEstimate({...c,provider:'openrouter',model:'openai/gpt-6-luna',rows:[...pdfRows,oldPdf]})).samples,0,'Earlier text-only PDF calls must not calibrate native PDF costs');
  assert.equal((await studentEstimate({...c,provider:'openrouter',model:'openai/gpt-6-luna',rows:[...pdfRows,{...oldPdf,inputMode:'pdf-native'}]})).samples,1);
  const stopped=new AbortController();stopped.abort();await assert.rejects(()=>studentEstimate({...c,signal:stopped.signal}),/abort/i);
+ {// A placeholder used several times counts its value each time (Astra audit, Nov 25, #10).
+  const note='A long note about the text. '.repeat(200),value=()=>[note];
+  const once=await studentEstimate({...c,prompt:'Rate. Note: {{meta.note}}',inserts:value}),five=await studentEstimate({...c,prompt:'Rate. Note: {{meta.note}} {{meta.note}} {{meta.note}} {{meta.note}} {{meta.note}}',inserts:value}),bare=await studentEstimate({...c,prompt:'Rate. Note:'});
+  const added=once.input.low-bare.input.low;assert(added>1000,'The value is counted');assert(five.input.low-bare.input.low>4.5*added,'Five uses count five times');}
  assert.equal(calls,0);console.log('PASS: actual uploaded text, PDF page allowances, field-based subjects, prompt updates and extraction reuse, usage calibration/mismatch exclusion, every selectable model, web search, and cancellation. No provider calls.');
 })().catch(e=>{console.error(e);process.exit(1)});

@@ -289,15 +289,23 @@ function promptFiles(study:ExportStudy,report:RunReport,which:'all'|'version'|'r
 // The placeholders of a run's prompt that were filled in for each text, read from the marks of its request.
 const runInserts=(sent:RunRequests):string[]=>markedInserts((sent.text||sent.pdf)?.frame.body||'');
 // Where the corpus table holds the values of each: {{id}} is the text's doc_id (idColumn), {{meta.<column>}} a
-// metadata column (null: the study no longer has it).
+// metadata column. One whose column the study no longer has as metadata (removed, or now human labels): null where
+// it held no value in the run's requests (the script fills in nothing, as the run did), else the column's own name,
+// which the corpus then lacks, so the script stops and asks for it (goneInserts) instead of sending nothing.
 // withFiles: the package's corpus table has a `file` column for PDFs (a metadata column named file is then meta_file).
 function insertColumns(dataset:ExportStudy['dataset'],names:string[],run:number,withFiles:boolean):[string,string|null][]{
- const columns=corpusColumnNames(dataset,withFiles);
+ const columns=corpusColumnNames(dataset,withFiles),valued=valuedInserts(dataset,run);
  return names.map(name=>{
   if(name==='id')return [name,idColumn(dataset,run)];
   const index=columnIndex(dataset.columns,name.slice(5));
-  return [name,index>=0&&dataset.columns[index].role==='meta'?columns[index]:null];
+  return [name,index>=0&&dataset.columns[index].role==='meta'?columns[index]:valued.has(name)?name.slice(5):null];
  });
+}
+// The {{meta.<column>}} placeholders of a run that held values in its requests but whose column the study no longer
+// has as metadata: the column names the script asks for.
+function goneInserts(dataset:ExportStudy['dataset'],names:string[],run:number):string[]{
+ const valued=valuedInserts(dataset,run);
+ return names.filter(name=>name.startsWith('meta.')&&valued.has(name)&&!(c=>c>=0&&dataset.columns[c].role==='meta')(columnIndex(dataset.columns,name.slice(5)))).map(name=>name.slice(5));
 }
 const listed=(items:string[])=>items.length>2?items.slice(0,-1).join(', ')+', and '+items[items.length-1]:items.join(' and ');
 const written=(names:string[])=>listed(names.map(name=>`\`{{${name}}}\``));
@@ -364,11 +372,11 @@ function combiningLine(study:ExportStudy,report:RunReport,record:RunRecord):stri
  const head=`Each ${unit}’s ${reps} annotations were combined`,typeOf=(name:string)=>fieldSpec(run.answerSettings,name)?.type;
  if(run.answerSettings?.plain){
   const offScale=record.requests.scores_off_scale_left_out_when_combined??0;
-  return `${head}: numbers in the answers by the median, other values by majority vote${offScale?`; a score off the scale was left out where another annotation of the same ${unit} was on it`:''}.`;
+  return `${head}: numbers in the answers by the median, other values by the most frequent value${offScale?`; a score off the scale was left out where another annotation of the same ${unit} was on it`:''}.`;
  }
  const voted=votedFields(run).length>0;
- const kinds=([[voted,'categorical labels by majority vote'],[run.answerFields.some(name=>typeOf(name)==='ordinal'),'ordinal labels by the median'],[run.answerFields.some(name=>typeOf(name)==='number'),'numbers by the mean'],[run.answerFields.some(name=>typeOf(name)==='text'&&!/(^|_)(explanation|reasoning)$/i.test(name)),'free text by majority vote of the exact wording']] as [boolean,string][]).filter(kind=>kind[0]).map(kind=>kind[1]);
- return `${head}${run.answerFields.some(name=>typeOf(name))&&kinds.length?': '+listed(kinds):' by majority vote'}${voted?'; a tied vote is kept as both values (for example, “a | b”) and is left out of the agreement figures':''}.`;
+ const kinds=([[voted,'categorical labels by the most frequent value'],[run.answerFields.some(name=>typeOf(name)==='ordinal'),'ordinal labels by the median'],[run.answerFields.some(name=>typeOf(name)==='number'),'numbers by the mean'],[run.answerFields.some(name=>typeOf(name)==='text'&&!/(^|_)(explanation|reasoning)$/i.test(name)),'free text by the most frequent exact wording']] as [boolean,string][]).filter(kind=>kind[0]).map(kind=>kind[1]);
+ return `${head}${run.answerFields.some(name=>typeOf(name))&&kinds.length?': '+listed(kinds):' by the most frequent value'}${voted?'; a tied vote is kept as both values (for example, “a | b”) and is left out of the agreement figures':''}.`;
 }
 
 const tableRow=(cells:(string|number)[])=>'| '+cells.join(' | ')+' |';
@@ -404,7 +412,11 @@ function agreementSection(study:ExportStudy,report:RunReport):string[]{
    lines.push(tableRow([fieldLabel(a.field),a.source,a.comparedWith,`${s.n} (of ${a.withLabel}${s.leftOut.n?`; ${s.leftOut.n} left out`:''})`,s.percentAgreement===null?'—':(s.percentAgreement*100).toFixed(1)+'%'+ci(s.ci.percentAgreement,true),fmtStat(s.cohenKappa)+ci(s.ci.cohenKappa),`${fmtStat(s.krippendorffAlpha)}${ci(s.ci.krippendorffAlpha)} (${s.level})`,fmtStat(s.gwetAC1)+ci(s.ci.gwetAC1)]));
   }
   const withIntervals=report.agreement.filter(a=>Object.values(a.stats.ci).some(Boolean)).length;
-  lines.push('',(withIntervals?`Brackets: 95% intervals: Wilson intervals for % agreement, bootstrap intervals (${count(BOOTSTRAP_RESAMPLES)} resamples of ${unit}s) for the coefficients.${withIntervals<report.agreement.length?` A comparison of fewer than 10 ${unit}s has no intervals.`:''}`:`No 95% intervals are given: they need at least 10 compared ${unit}s.`)+` “Of labeled”: this run’s ${unit}s with a value in the “Compared with” column (a missing-value marker such as NA counts as no value). Not compared: ${unit}s without a usable value under Annotations (no usable answer from the model, or no label in that column), and pairs with a value that does not fit the field (“left out”: a word where numbers are compared, such as an answer of NA, a number off the scale, a value that is not one of the field’s categories, or a tie between a text’s annotations with no majority, such as “a | b”). Their number is n_left_out_not_on_scale in agreement.csv.`+(report.agreement.some(a=>a.source!=='model')?` Rows with a column name under Annotations compare two columns of human labels (human–human baseline) on this run’s ${unit}s.`:''));
+  // Parts of split texts are compared one by one: the intervals treat them as independent, which parts of the same
+  // longer text need not be.
+  const parts=report.rows.filter(row=>row.sourceId),sources=new Set(parts.map(row=>String(row.sourceId))).size;
+  const partsNote=withIntervals&&parts.length>sources?` Each part of a split text counts as one ${unit} here, and the intervals treat the parts as independent; ${count(parts.length)} of the ${unit}s are parts of ${count(sources)} longer text${sources===1?'':'s'}, so the intervals may be too narrow for a claim about whole texts.`:'';
+  lines.push('',(withIntervals?`Brackets: 95% intervals: Wilson intervals for % agreement, bootstrap intervals (${count(BOOTSTRAP_RESAMPLES)} resamples of ${unit}s) for the coefficients.${withIntervals<report.agreement.length?` A comparison of fewer than 10 ${unit}s has no intervals.`:''}${partsNote}`:`No 95% intervals are given: they need at least 10 compared ${unit}s.`)+` “Of labeled”: this run’s ${unit}s with a value in the “Compared with” column (a missing-value marker such as NA counts as no value). Not compared: ${unit}s without a usable value under Annotations (no usable answer from the model, or no label in that column), and pairs with a value that does not fit the field (“left out”: a word where numbers are compared, such as an answer of NA, a number off the scale, a value that is not one of the field’s categories, or a tie between a text’s annotations with no majority, such as “a | b”). Their number is n_left_out_not_on_scale in agreement.csv.`+(report.agreement.some(a=>a.source!=='model')?` Rows with a column name under Annotations compare two columns of human labels (human–human baseline) on this run’s ${unit}s.`:''));
  }
  if(report.skipped.length)lines.push('',`Label columns not used for agreement: ${report.skipped.map(skip=>`${skip.column} (${skip.reason})`).join(', ')}.`);
  return [...lines,''];
@@ -412,7 +424,7 @@ function agreementSection(study:ExportStudy,report:RunReport):string[]{
 
 // The README of the supplementary repository: what the package holds, and how to send the requests again. It names
 // neither the Lab nor its build, and has no text for a paper (the researcher writes that).
-function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord,options:SupplementaryOptions,has:{agreement:boolean;script:boolean;scriptWhy:string;schema:boolean;asSent:boolean;files:number;unread:number;answersOnce:boolean;fewer:boolean;source:boolean;partial:boolean;readLeftOut?:string[]}):string{
+function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord,options:SupplementaryOptions,has:{agreement:boolean;script:boolean;scriptWhy:string;schema:boolean;asSent:boolean;files:number;unread:number;answersOnce:boolean;fewer:boolean;source:boolean;partial:boolean;readLeftOut?:string[];gone?:string[]}):string{
  const {dataset}=study,{facts}=report,{run}=facts,unit=unitOf(dataset),knowledge=dataset.kind==='knowledge',plain=Boolean(run.answerSettings?.plain),reps=run.repeats||1;
  // Bodies that were not kept when the run was made are built again from its settings: the package then says so
  // where it would otherwise call them the requests as sent.
@@ -457,7 +469,7 @@ function supplementaryReadme(study:ExportStudy,report:RunReport,record:RunRecord
   '',...(options.logs?[logNote(true)+' A failed attempt’s request may never have reached the provider (a connection that broke, say).'+(rebuilt?' '+REBUILT_NOTE:''),'']:[]),CSV_NOTE,'',TOKEN_NOTE,'',
   ...(batch?[BATCH_TIMES_NOTE,'']:[]),hashNote(Boolean(run.system),'prompt/'),'',...(cacheOff?[CACHE_OPTION_NOTE,'']:[])];
  if(has.script)lines.push('## Reproducing','','```bash','cd scripts',`export ${keyVariable(run.provider as Provider)}=...`,`python annotate.py ${options.texts?'../data/corpus.csv':'your_corpus.csv'}`,'```','',
-  `The script needs Python 3.9 or later and nothing else. ${options.texts&&has.readLeftOut?.length?`\`data/corpus.csv\` leaves out the ${has.readLeftOut.length===1?'column':'columns'} ${listed(has.readLeftOut.map(name=>'`'+name+'`'))}, which the prompt’s placeholders take their values from; add ${has.readLeftOut.length===1?'it':'them'} to the file to run the script. `:''}${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files||report.sent.pdf?' (or file, with the path of a PDF)':''}${[report.sent.text,report.sent.pdf].some(sent=>sent?.frame.body.includes('<<DOCUMENT_FILENAME>>'))?'; a column source gives the name each request states for the document':''}${inserted.length?`; and the columns the prompt’s placeholders take their values from (${insertColumns(dataset,inserted,run.number,Boolean(options.texts&&has.files)).filter(pair=>pair[1]).map(pair=>pair[1]).join(', ')})`:''}. `}${inserted.length?`The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent${options.logs?' (the logs hold the requests as they were sent)':''}. `:''}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
+  `The script needs Python 3.9 or later and nothing else. ${options.texts&&has.readLeftOut?.length?`\`data/corpus.csv\` leaves out the ${has.readLeftOut.length===1?'column':'columns'} ${listed(has.readLeftOut.map(name=>'`'+name+'`'))}, which the prompt’s placeholders take their values from; add ${has.readLeftOut.length===1?'it':'them'} to the file to run the script. `:''}${has.gone?.length?`The prompt’s ${has.gone.length===1?'placeholder':'placeholders'} ${listed(has.gone.map(name=>'`{{meta.'+name+'}}`'))} took values from ${has.gone.length===1?'a metadata column':'metadata columns'} the study no longer has; the script stops until the corpus has ${has.gone.length===1?'a column':'columns'} ${listed(has.gone.map(name=>'`'+name+'`'))} with the values the requests carried${options.logs?' (see the logs)':''}. `:''}${options.texts?'':`Your corpus file needs a column doc_id and a column text${has.files||report.sent.pdf?' (or file, with the path of a PDF)':''}${[report.sent.text,report.sent.pdf].some(sent=>sent?.frame.body.includes('<<DOCUMENT_FILENAME>>'))?'; a column source gives the name each request states for the document':''}${inserted.length?`; and the columns the prompt’s placeholders take their values from (${insertColumns(dataset,inserted,run.number,Boolean(options.texts&&has.files)).filter(pair=>pair[1]).map(pair=>pair[1]).join(', ')})`:''}. `}${inserted.length?`The script fills in the prompt’s placeholders from the corpus file, which holds the values this run sent, so a value changed there gives another request than the run sent${options.logs?' (the logs hold the requests as they were sent)':''}. `:''}Hosted models may be updated or retired and generation is not fully deterministic, so sending the requests again may not reproduce every answer exactly.`,'');
  else if(has.scriptWhy)lines.push('## Reproducing','',has.scriptWhy+(options.logs?' The logs hold every request as it was sent.':' The requests as sent are in the logs when the package includes them.'),'');
  // With the logs, the texts are in every request there.
  if(!options.texts)lines.push(options.logs?`The annotated ${unit}s are not included as a separate file, but \`logs/requests.jsonl\` holds every request with its ${knowledge?'subject':'full text'}${report.sent.pdf?' (a PDF sent as a file is named there, not included)':''}.`:`The annotated ${unit}s are not included in this package (for example, for copyright or privacy reasons).`,'');
@@ -491,7 +503,7 @@ export async function buildSupplementary(ctx:ExportContext,run:number,options:Su
  const prompt=promptFiles(study,report,'all'),schema=prompt.find(file=>file.path==='output_schema.json');
  await add('metadata.json',pretty(publicRecord(record,unitOf(dataset),schema?JSON.parse(String(schema.data)):undefined,partial)));
  for(const file of prompt)await add('prompt/'+file.path,file.data);
- const results=publicResults(resultsTable(study,run,{texts:corpus?.texts,explanation:options.explanations,columns:chosen}),reps);
+ const results=publicResults(resultsTable(study,run,{texts:corpus?.texts,explanation:options.explanations,columns:chosen,subjectFields:options.texts}),reps);
  await add('results/results.csv',toCsv(results));
  const byRequest=leanRequests(requestsTable(study,[run],hashes,{explanation:options.explanations,reasoning:false}),{reps});
  await add('results/results_by_replicate.csv',toCsv(byRequest));
@@ -507,7 +519,7 @@ export async function buildSupplementary(ctx:ExportContext,run:number,options:Su
  const script=scriptFiles(study,report,exportedAt,Boolean(corpus?.files.size));
  for(const file of script.files)await add('scripts/'+file.path,file.data);
  await add('README.md',supplementaryReadme(study,report,record,options,{agreement:report.agreement.length>0,script:script.files.length>0,scriptWhy:script.why,schema:Boolean(schema),asSent:prompt.some(file=>file.path==='prompt_as_sent.txt'),files:corpus?.pdfs.length||0,unread:corpus?.unread||0,
-  answersOnce:reps===1,fewer:results[0].includes('n_ok'),source,partial,readLeftOut}));
+  answersOnce:reps===1,fewer:results[0].includes('n_ok'),source,partial,readLeftOut,gone:goneInserts(dataset,runInserts(report.sent),run)}));
  return {name,files};
 }
 

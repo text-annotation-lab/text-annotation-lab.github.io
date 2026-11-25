@@ -319,6 +319,8 @@
 .research-glance{margin:0 0 18px}
 .research-glance h4{margin:0 0 6px}
 .research-glance p{margin:4px 0 10px;font-size:14.5px;color:#19334f}
+.research-glance .research-glance-jump{display:inline;margin:0;padding:0;font-size:inherit;color:#003d73;text-align:left}
+#research-disagreements{scroll-margin-top:16px}#research-disagreements:focus{outline:none}
 .research-glance-bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:#e3e9f1;max-width:720px}
 .research-glance-bar .same,.research-glance-legend i.same{background:#3f8f62}
 .research-glance-bar .near,.research-glance-legend i.near{background:#e0a63b}

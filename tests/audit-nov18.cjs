@@ -218,8 +218,8 @@ const source=file=>fs.readFileSync(path.join(root,file),'utf8');
  // #1b, #9, #27. The export panel: where the subjects' other fields are chosen, a repository without its backup said
  // on the page, and the two .zip buttons named for screen readers.
  const panel=source('components/research/export-panel.tsx');
- assert(panel.includes('The subjects’ other fields are chosen under “Label and metadata columns” below.')||panel.includes("The subjects' other fields are chosen under “Label and metadata columns” below."));
+ assert(panel.includes('this adds each subject’s other fields (such as a year or a note)'),'The subjects’ other fields follow “Include the subjects” (Astra audit, Nov 25, #1)');
  assert(panel.includes('was downloaded, but not in full.'));
- assert(panel.includes('aria-label="Download research repository (.zip)"')&&panel.includes('aria-label="Download supplementary repository (.zip)"'));
+ assert(panel.includes("'Download research .zip'")&&panel.includes("'Download supplementary .zip'"),'Each package button names its package');
  console.log('PASS: November 18 audit: chart segments, ties, comparable settings, scale per study, review order, assessment status, Excel pieces, backup after a failed save, saved-key line, section links, Clear workspace scope; table encodings, Excel IDs, duplicate headers, unclosed quotes, large tables, long HTML, texts over 20 MB; the cost question for resumed runs, counts of the request as sent, recovered batch IDs, billed fields on unreadable replies; source names shared by two documents, chunk rows in either order, abstentions in agreement and summaries, strata that join alike, the export panel’s notes and button names.');
 })().catch(error=>{console.error(error);process.exit(1);});

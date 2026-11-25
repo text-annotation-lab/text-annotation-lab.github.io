@@ -1,11 +1,13 @@
 // Read RTF text while tracking nested groups, destinations, and Unicode fallbacks.
 export function rtfText(raw: string): string {
   if (!/^\s*\{\\rtf\d/.test(raw)) throw new Error('This file is not a valid RTF document.');
-  type State = {skip:boolean; uc:number; encoding:string};
-  let state:State={skip:false,uc:1,encoding:'windows-1252'},fallback=0;
+  // hidden: text formatted as hidden (\v) or marked deleted in tracked changes (\deleted), which a reader does not
+  // see in the final version; it holds within its group, and \v0, \deleted0, or \plain ends it.
+  type State = {skip:boolean; uc:number; encoding:string; hidden:boolean};
+  let state:State={skip:false,uc:1,encoding:'windows-1252',hidden:false},fallback=0;
   const stack:State[]=[],out:string[]=[];
   const destinations=new Set(['fonttbl','colortbl','stylesheet','info','pict','object','objdata','fldinst','header','headerl','headerr','footer','footerl','footerr','listtable','listoverridetable','generator','filetbl','datastore','themedata','colorschememapping']);
-  const text=(s:string)=>{if(fallback>0){fallback--;return;}if(!state.skip)out.push(s);};
+  const text=(s:string)=>{if(fallback>0){fallback--;return;}if(!state.skip&&!state.hidden)out.push(s);};
   const symbols:Record<string,string>={par:'\n\n',line:'\n',tab:'\t',cell:'\t',row:'\n',emdash:'—',endash:'–',lquote:'‘',rquote:'’',ldblquote:'“',rdblquote:'”',bullet:'•'};
   for(let i=0;i<raw.length;){
     const c=raw[i++];
@@ -23,7 +25,7 @@ export function rtfText(raw: string): string {
       const bytes=[parseInt(hex,16)];
       while(raw.slice(i,i+2)==="\\'"&&/^[0-9a-f]{2}$/i.test(raw.slice(i+2,i+4))){bytes.push(parseInt(raw.slice(i+2,i+4),16));i+=4;}
       const skipped=Math.min(fallback,bytes.length);fallback-=skipped;
-      if(!state.skip&&skipped<bytes.length)out.push(new TextDecoder(state.encoding).decode(new Uint8Array(bytes.slice(skipped))));
+      if(!state.skip&&!state.hidden&&skipped<bytes.length)out.push(new TextDecoder(state.encoding).decode(new Uint8Array(bytes.slice(skipped))));
       continue;
     }
     if(next==='~'){text('\u00a0');continue;}
@@ -39,7 +41,9 @@ export function rtfText(raw: string): string {
     if(destinations.has(word)){state.skip=true;continue;}
     if(word==='uc'&&num!==undefined){state.uc=Math.max(0,num);continue;}
     if(word==='ansicpg'&&num!==undefined){const enc=num===65001?'utf-8':num===932?'shift_jis':num===936?'gbk':num===950?'big5':`windows-${num}`;try{new TextDecoder(enc);}catch{throw new Error('This RTF character encoding is unsupported. Save as DOCX or UTF-8 TXT.');}state.encoding=enc;continue;}
-    if(word==='u'&&num!==undefined){if(!state.skip)out.push(String.fromCharCode(num&65535));fallback=state.uc;continue;}
+    if(word==='v'||word==='deleted'){state.hidden=num!==0;continue;}
+    if(word==='plain'){state.hidden=false;continue;}
+    if(word==='u'&&num!==undefined){if(!state.skip&&!state.hidden)out.push(String.fromCharCode(num&65535));fallback=state.uc;continue;}
     if(symbols[word])text(symbols[word]);
   }
   if(stack.length)throw new Error('The RTF document is incomplete. Save it again and retry.');

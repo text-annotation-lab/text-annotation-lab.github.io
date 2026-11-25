@@ -19,7 +19,7 @@ export const SAMPLING_METHOD='sampling method 2';
 // The method number a record names, for redrawing it (records without one were made with method 1).
 export const methodNumber=(method:string):1|2=>/sampling method 1\b/.test(method)?1:2;
 export const plainMethod=(method:string)=>method.replace(/^Text Annotation Lab (?=sampling method)/,'');
-export type SampleRecord={column:string;value:string;date:string;size:number;eligible:number;seed:number;strata:string[];allocation:Stratum[];exclude:{column:string;value:string}|null;taken:{value:string;n:number}[];method:string};
+export type SampleRecord={column:string;value:string;date:string;size:number;eligible:number;seed:number;strata:string[];allocation:Stratum[];exclude:{column:string;value:string}|null;taken:{value:string;n:number}[];method:string;replacedOn?:string};
 
 // The same small seeded generator (mulberry32) as the statistics use.
 export function seeded(seed:number){
@@ -99,14 +99,17 @@ export function sampleNote(r:SampleRecord):string{
  const left=r.taken.length?`, not from ${r.taken.reduce((n,t)=>n+t.n,0)} texts already marked ${r.taken.map(t=>`${r.column} = ${t.value}`).join(' or ')}`:'';
  return `Sample ${r.column} = ${r.value} (${r.date}): ${r.size} of ${r.eligible} texts drawn at random`+
   (r.strata.length?` within ${r.strata.join(' × ')} strata (${allocationNote(r.allocation)})`:'')+
-  (r.exclude?`, excluding ${r.exclude.column} = ${r.exclude.value}`:'')+left+`; seed ${r.seed} (${plainMethod(r.method)}).`;
+  (r.exclude?`, excluding ${r.exclude.column} = ${r.exclude.value}`:'')+left+`; seed ${r.seed} (${plainMethod(r.method)}).`+
+  (r.replacedOn?` Replaced by a new draw on ${r.replacedOn}.`:'');
 }
 export function sampleRecord(o:SampleOptions&{markedAs:{column:string;value:string}},r:SampleResult,date:string):SampleRecord{
  return {column:o.markedAs.column,value:o.markedAs.value,date,size:r.ids.length,eligible:r.eligible,seed:o.seed,strata:orderStrata(o.strata),allocation:r.strata,exclude:o.exclude,taken:r.taken,method:o.method===1?'sampling method 1':SAMPLING_METHOD};
 }
-// A redraw of the same column and value replaces its earlier record.
+// A redraw of the same column and value (in any capitals) replaces its earlier record as the current one. The earlier
+// record is kept, marked with the date it was replaced, so that the export of a run made on it still names its seed.
 export function recordSample(samples:SampleRecord[],record:SampleRecord):SampleRecord[]{
- return [...samples.filter(s=>!(norm(s.column)===norm(record.column)&&s.value===record.value)),record];
+ const same=(s:SampleRecord)=>norm(s.column)===norm(record.column)&&norm(s.value)===norm(record.value);
+ return [...samples.map(s=>same(s)&&!s.replacedOn?{...s,replacedOn:record.date}:s),record];
 }
 export function cleanSamples(value:unknown):SampleRecord[]{
  if(!Array.isArray(value))return [];
@@ -118,5 +121,6 @@ export function cleanSamples(value:unknown):SampleRecord[]{
   exclude:s.exclude&&typeof s.exclude==='object'&&text(s.exclude.column)?{column:text(s.exclude.column),value:text(s.exclude.value)}:null,
   taken:Array.isArray(s.taken)?s.taken.filter((x:any)=>x&&typeof x==='object').map((x:any)=>({value:text(x.value),n:count(x.n)})):[],
   method:plainMethod(text(s.method))||'sampling method 1',
+  ...(text(s.replacedOn)?{replacedOn:text(s.replacedOn)}:{}),
  }));
 }

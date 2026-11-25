@@ -6,7 +6,7 @@ import {contextWindow,ownRates,priceFor,type OwnPrice} from './cost-estimate/pri
 import {knowledgeAddition,knowledgeItemText} from './model-knowledge';
 import {validModelId,annotationOutputLimit,type Provider} from './providers';
 import {documentTags} from './request-frame';
-import {fillPlaces} from './prompt-inserts';
+import {fillPlaces,promptInserts} from './prompt-inserts';
 const visualCache=new WeakMap<File,Promise<Input>>(),textCache=new WeakMap<File,Promise<Input>>();
 async function fileInput(file:File,textOnly=false):Promise<Input>{
  const cache=textOnly?textCache:visualCache;
@@ -38,7 +38,10 @@ export type PerText={inserts?:(row:any)=>string[]|undefined;placeText?:boolean};
 function asSent(input:Input,row:any,o:{prompt:string}&PerText):Input{
  const copies=o.placeText?Math.max(1,fillPlaces(o.prompt,(_,whole)=>whole).spots.length):1,values=o.inserts?.(row)||[];
  if(copies===1&&!values.length)return input;
- const extra=values.length?textTokens(values.join('\n')):{low:0,high:0};
+ // Each value as often as the prompt places its placeholder (values: one per name, in the order of promptInserts).
+ const times=new Map<string,number>();fillPlaces(o.prompt,(name,whole)=>{times.set(name,(times.get(name)??0)+1);return whole;});
+ const names=promptInserts(o.prompt),placed=values.flatMap((value,i)=>Array<string>(times.get(names[i])??1).fill(value));
+ const extra=placed.length?textTokens(placed.join('\n')):{low:0,high:0};
  return {...input,tokens:{low:input.tokens.low*copies+extra.low,high:input.tokens.high*copies+extra.high}};
 }
 // cache, batch: research mode's prompt caching, and whether the texts go out as a batch (a cache write costs more there).

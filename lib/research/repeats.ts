@@ -8,7 +8,7 @@
 // combined answers, that is, of the annotation closest to them (the first when several are as close).
 // Plain-text replies that are JSON are combined value by value into one JSON reply.
 import {aggregate} from './metrics';
-import {normalizeLabel,toNumber} from './normalize';
+import {collidingCategories,normalizeLabel,plainLabel,toNumber} from './normalize';
 import {fieldSpec,type AnswerSettings} from '../answer-types';
 import {flattenJsonReply,isExplanationKey} from '../json-reply';
 
@@ -17,8 +17,8 @@ export const MAX_REPEATS=10;
 export function repeatsHint(repeats:number,settings:AnswerSettings|undefined,unit:'text'|'subject'):string{
  if(repeats<2)return 'Use 2 or more to measure how consistent the model is.';
  const each=`Each ${unit} is annotated ${repeats} times, each time with a request of its own.`;
- if(settings?.plain)return `${each} Scores in JSON answers are combined by their median, other values by majority. Compare the repeats with each other under Runs & agreement (choose single annotations on both sides).${repeats%2===0?' Use an odd number: with an even one the median of two middle scores can be a half point (for example, 0.5), which never counts as the same score.':''}`;
- return `${each} Results show the majority (categories), the median (ordinal scales), or the mean (numbers), and how consistent the repeats were.${settings?.fields?.some(field=>field.type==='ordinal')&&repeats%2===0?' Use an odd number so the median of an ordinal scale is a whole number.':''}`;
+ if(settings?.plain)return `${each} Scores in JSON answers are combined by their median, other values by the most frequent one. Compare the repeats with each other under Runs & agreement (choose single annotations on both sides).${repeats%2===0?' Use an odd number: with an even one the median of two middle scores can be a half point (for example, 0.5), which never counts as the same score.':''}`;
+ return `${each} Results show the most frequent value (categories), the median (ordinal scales), or the mean (numbers), and how consistent the repeats were.${settings?.fields?.some(field=>field.type==='ordinal')&&repeats%2===0?' Use an odd number so the median of an ordinal scale is a whole number.':''}`;
 }
 // What stays beside the setting (research mode): a warning only. What the setting does is behind its ⓘ.
 export function repeatsWarning(repeats:number,settings:AnswerSettings|undefined):string{
@@ -87,20 +87,20 @@ const own=(answers:Record<string,string>,key:string)=>Object.hasOwn(answers,key)
 // Numbers count by their distance, other answers as the same or not. An annotation that gave no number where the
 // combined answer is one (an abstention, "NA", nothing) comes after every annotation that did, however far that
 // one's number lies from the combined one.
-function closest(given:Record<string,string>[],combined:Record<string,string>,relevant:string[],numeric:Set<string>):number{
+function closest(given:Record<string,string>[],combined:Record<string,string>,relevant:string[],numeric:Set<string>,readOf:(key:string)=>(label:string)=>string=()=>normalizeLabel):number{
  let best=0,least=Infinity,fewest=Infinity;
  given.forEach((answers,i)=>{
   let distance=0,missing=0;
   for(const key of relevant){
    const mine=own(answers,key),shared=own(combined,key);
    if(numeric.has(key)&&isNumber(shared)){if(isNumber(mine))distance+=Math.abs(toNumber(mine)-toNumber(shared));else missing++;}
-   else distance+=normalizeLabel(mine)===normalizeLabel(shared)?0:1;
+   else{const read=readOf(key);distance+=read(mine)===read(shared)?0:1;}
   }
   if(missing<fewest||missing===fewest&&distance<least){best=i;least=distance;fewest=missing;}
  });
  return best;
 }
-const agreeing=(values:string[],value:string)=>values.filter(v=>normalizeLabel(v)===normalizeLabel(value)).length/values.length;
+const agreeing=(values:string[],value:string,read:(label:string)=>string=normalizeLabel)=>values.filter(v=>read(v)===read(value)).length/values.length;
 
 // Plain-text replies. JSON replies are combined value by value: a value that is a number in most replies is
 // a score and gets the median of its numbers ("NA" in one reply is left out); any other value, the one most
@@ -153,15 +153,17 @@ export function combine(ok:Annotation[],names:string[]=[],settings?:AnswerSettin
  const explains=(key:string)=>isExplanationKey(nameOf(key).toLowerCase())&&(typeOf(key)??'text')==='text';
  const labels=keys.filter(key=>!explains(key)&&typeOf(key)!=='text'),numeric=new Set(keys.filter(key=>typeOf(key)==='ordinal'||typeOf(key)==='number'));
  const given=ok.map(a=>(a.answers&&typeof a.answers==='object'?a.answers:{}) as Record<string,string>),answers:Record<string,string>={};
+ // Categories that would merge when read as labels ("01" and "1") are counted as written.
+ const readOf=(key:string)=>typeOf(key)==='category'&&collidingCategories(fieldSpec(settings,nameOf(key))?.values)?plainLabel:normalizeLabel;
  for(const key of keys){
   if(explains(key))continue;
-  const values=given.map(own=>String(own[key]??'')),type=typeOf(key);
-  answers[key]=aggregate(values,type==='ordinal'?'median':type==='number'?'mean':'majority');
+  const values=given.map(own=>String(own[key]??'')),type=typeOf(key),read=readOf(key);
+  answers[key]=aggregate(values,type==='ordinal'?'median':type==='number'?'mean':'majority',read);
   // Free text has no share: replies worded differently are not different answers.
-  if(several&&type!=='text')consistency[key]=agreeing(values,answers[key]);
+  if(several&&type!=='text')consistency[key]=agreeing(values,answers[key],read);
  }
- for(const key of keys.filter(explains))answers[key]=String(given[closest(given,answers,relevantTo(key,labels,nameOf),numeric)]?.[key]??'');
- return {answers,score:'',explanation:String(ok[closest(given,answers,labels,numeric)]?.explanation??''),...(several?{consistency}:{})};
+ for(const key of keys.filter(explains))answers[key]=String(given[closest(given,answers,relevantTo(key,labels,nameOf),numeric,readOf)]?.[key]??'');
+ return {answers,score:'',explanation:String(ok[closest(given,answers,labels,numeric,readOf)]?.explanation??''),...(several?{consistency}:{})};
 }
 
 // The share of a result's annotations that gave its combined value for a field ('' for the single score or

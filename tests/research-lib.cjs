@@ -156,7 +156,7 @@ assert.equal(sample.drawStratifiedSample(pool,sampleColumns,{...options,exclude:
 assert.equal(sample.drawStratifiedSample(pool,sampleColumns,{...options,size:500,strata:[]}).ids.length,40,'Never more than there are');
 const record=sample.sampleRecord(options,drawn,'2026-11-15');
 assert.equal(sample.sampleNote(record),'Sample sample = validation (2026-11-15): 8 of 40 texts drawn at random within party strata (proportional allocation, at least one per stratum); seed 7 (sampling method 2).');
-assert.equal(sample.recordSample([record],{...record,seed:9}).length,1);assert.equal(sample.recordSample([record],{...record,value:'test'}).length,2);
+{const redrawn=sample.recordSample([record],{...record,seed:9,date:'2026-11-25'});assert.equal(redrawn.length,2);assert.equal(redrawn[0].replacedOn,'2026-11-25');assert(!redrawn[1].replacedOn);assert.match(sample.sampleNote(redrawn[0]),/Replaced by a new draw on 2026-11-25\.$/);}assert.equal(sample.recordSample([record],{...record,value:'test'}).length,2);
 assert.deepEqual(sample.cleanSamples([record,{column:'',value:'x'},null,'x']),[record]);
 
 // --- Views of the results, and comparisons ---------------------------------------------

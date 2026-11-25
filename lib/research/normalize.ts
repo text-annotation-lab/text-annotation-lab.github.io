@@ -30,3 +30,14 @@ export function normalizeLabel(v: string | undefined, yesNo = false): string {
   if (yesNo && s.includes(' | ')) return [...new Set(s.split(' | ').map((x) => normalizeLabel(x, true)))].sort().join(' | ');
   return s;
 }
+
+/** A label trimmed, in lower case, with runs of spaces as one: no rule for numbers or for yes / no. */
+export const plainLabel = (v: string | undefined): string => (v === undefined ? '' : v.trim().toLowerCase().replace(/\s+/g, ' '));
+/**
+ * Whether a field's declared categories would merge when read as labels ("01" and "1" are both the number 1; "yes"
+ * and "true" both yes): such categories are compared as written (`plainLabel`), so that they stay apart.
+ */
+export function collidingCategories(values: string[] | undefined): boolean {
+  const written = [...new Set((values || []).map(plainLabel).filter(Boolean))];
+  return new Set(written.map((value) => normalizeLabel(value))).size < written.length;
+}

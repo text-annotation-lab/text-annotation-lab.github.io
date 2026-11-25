@@ -124,7 +124,46 @@ function valueCounts(pairs: [string, string][], times?: PairCounts): Map<string,
 }
 
 function sortCats(cats: string[]): string[] {
-  return cats.every(isNum) ? cats.sort((a, b) => Number(a) - Number(b)) : cats.sort();
+  if (!cats.every(isNum)) return cats.sort();
+  // (Each label read as a number once, not at every comparison: this runs for every resample.)
+  const keyed = cats.map((c) => [Number(c), c] as const);
+  keyed.sort((a, b) => a[0] - b[0]);
+  for (let i = 0; i < keyed.length; i++) cats[i] = keyed[i][1];
+  return cats;
+}
+
+/** Above this many distinct values, the coefficients and the table of values are worked out without a full table (see cohenKappa). */
+export const DENSE_LIMIT = 100;
+/** Σᵢ Σⱼ wa[i]·wb[j]·|at[i] − at[j]|, for positions `at` in ascending order: running totals instead of a double loop. */
+function absDiffSum(at: ArrayLike<number>, wa: ArrayLike<number>, wb: ArrayLike<number>): number {
+  let total = 0;
+  let allB = 0;
+  let allBx = 0;
+  for (let j = 0; j < at.length; j++) (allB += wb[j]), (allBx += wb[j] * at[j]);
+  let belowB = 0;
+  let belowBx = 0;
+  for (let i = 0; i < at.length; i++) {
+    if (wa[i]) {
+      const aboveB = allB - belowB - wb[i];
+      const aboveBx = allBx - belowBx - wb[i] * at[i];
+      total += wa[i] * (at[i] * belowB - belowBx + (aboveBx - at[i] * aboveB));
+    }
+    belowB += wb[i];
+    belowBx += wb[i] * at[i];
+  }
+  return total;
+}
+/** Σᵢ Σⱼ wa[i]·wb[j]·(at[i] − at[j])², from totals (positions taken from their mean, so large values such as years lose no precision). */
+function squaredDiffSum(at: ArrayLike<number>, wa: ArrayLike<number>, wb: ArrayLike<number>): number {
+  let centre = 0;
+  for (let i = 0; i < at.length; i++) centre += at[i] / at.length;
+  let a0 = 0, a1 = 0, a2 = 0, b0 = 0, b1 = 0, b2 = 0;
+  for (let i = 0; i < at.length; i++) {
+    const x = at[i] - centre;
+    (a0 += wa[i]), (a1 += wa[i] * x), (a2 += wa[i] * x * x);
+    (b0 += wb[i]), (b1 += wb[i] * x), (b2 += wb[i] * x * x);
+  }
+  return a2 * b0 + a0 * b2 - 2 * a1 * b1;
 }
 
 export function percentAgreement(pairs: [string, string][]): number | null {
@@ -143,8 +182,12 @@ export function percentAgreement(pairs: [string, string][]): number | null {
 export function cohenKappa(pairs: [string, string][], weights: 'none' | 'linear' | 'quadratic' = 'none', scale: string[] = [], times?: PairCounts): number | null {
   const n = totalOf(pairs, times);
   if (!n) return null;
-  const cats = sortCats(distinct(pairs, scale));
-  if (cats.length < 2) return null;
+  const seen = distinct(pairs, scale);
+  if (seen.length < 2) return null;
+  // Many distinct values (a Number field with decimals): no table of every value against every other, whose size
+  // grows with the square of their number (3,000 values: 9 million cells, for each of 10,000 resamples).
+  if (seen.length > DENSE_LIMIT && (weights === 'none' || seen.every(isNum))) return kappaFromTotals(pairs, seen, weights, n, times);
+  const cats = sortCats(seen);
   const k = cats.length;
   const idx = new Map(cats.map((c, i) => [c, i]));
   // Position on the scale: the value itself for numbers, else the category's rank.
@@ -184,8 +227,10 @@ export function cohenKappa(pairs: [string, string][], weights: 'none' | 'linear'
 export function krippendorffAlpha(pairs: [string, string][], level: Level, times?: PairCounts): number | null {
   if (totalOf(pairs, times) < 2) return null;
   if (level !== 'nominal' && !pairs.every(([a, b]) => isNum(a) && isNum(b))) level = 'nominal';
-  const values = sortCats(distinct(pairs));
-  if (values.length < 2) return null;
+  const seen = distinct(pairs);
+  if (seen.length < 2) return null;
+  if (seen.length > DENSE_LIMIT) return alphaFromTotals(pairs, seen, level, times);
+  const values = sortCats(seen);
   const idx = new Map(values.map((v, i) => [v, i]));
   const k = values.length;
   // Coincidence matrix: each unit with two values contributes once in each direction.
@@ -224,6 +269,89 @@ export function krippendorffAlpha(pairs: [string, string][], level: Level, times
     }
   if (den === 0) return null;
   return 1 - ((n - 1) * num) / den;
+}
+
+/**
+ * Krippendorff's alpha with many distinct values, without the coincidence matrix (see cohenKappa): the observed
+ * disagreement from the pairs, the expected one from the totals of each value. The ordinal distance of two values is
+ * the distance of their midranks (the running total of the values below, plus half their own), so it is worked out as
+ * the interval one on midranks.
+ */
+function alphaFromTotals(pairs: [string, string][], values: string[], level: Level, times?: PairCounts): number | null {
+  // (The values in the order first seen: no sorting of labels, which would be the slowest step of each resample.)
+  const k = values.length;
+  const idx = new Map(values.map((v, i) => [v, i]));
+  const nc = new Float64Array(k);
+  for (let p = 0; p < pairs.length; p++) {
+    const c = times ? times[p] : 1;
+    nc[idx.get(pairs[p][0])!] += c;
+    nc[idx.get(pairs[p][1])!] += c;
+  }
+  let n = 0;
+  for (let c = 0; c < k; c++) n += nc[c];
+  const at = new Float64Array(k);
+  if (level !== 'nominal') for (let c = 0; c < k; c++) at[c] = Number(values[c]);
+  if (level === 'ordinal') {
+    // Midranks: the values below a value, plus half its own count.
+    const order = Array.from({ length: k }, (_, c) => c).sort((x, y) => at[x] - at[y]);
+    // (In the order the full table uses: by number, then as first seen.)
+    const mid = new Float64Array(k);
+    for (let r = 0, below = 0; r < k; r++) (mid[order[r]] = below + nc[order[r]] / 2), (below += nc[order[r]]);
+    at.set(mid);
+  }
+  let num = 0;
+  for (let p = 0; p < pairs.length; p++) {
+    const a = idx.get(pairs[p][0])!;
+    const b = idx.get(pairs[p][1])!;
+    if (a === b) continue;
+    num += 2 * (times ? times[p] : 1) * (level === 'nominal' ? 1 : (at[a] - at[b]) ** 2);
+  }
+  let den: number;
+  if (level === 'nominal') {
+    let same = 0;
+    for (let c = 0; c < k; c++) same += nc[c] * nc[c];
+    den = n * n - same;
+  } else den = squaredDiffSum(at, nc, nc);
+  if (den === 0) return null;
+  return 1 - ((n - 1) * num) / den;
+}
+
+/**
+ * Cohen's kappa with many distinct values (see cohenKappa), from the pairs and the totals of each value instead of a
+ * full table. Weighted: the values are numbers, their distance over the range of all of them.
+ */
+function kappaFromTotals(pairs: [string, string][], values: string[], weights: 'none' | 'linear' | 'quadratic', n: number, times?: PairCounts): number | null {
+  const k = values.length;
+  const idx = new Map(values.map((v, i) => [v, i]));
+  const at = new Float64Array(k);
+  if (weights !== 'none') for (let i = 0; i < k; i++) at[i] = Number(values[i]);
+  const range = weights === 'none' ? 1 : highest(Array.from(at)) - lowest(Array.from(at));
+  if (!(range > 0)) return null;
+  const ra = new Float64Array(k);
+  const rb = new Float64Array(k);
+  let po = 0;
+  for (let p = 0; p < pairs.length; p++) {
+    const i = idx.get(pairs[p][0])!;
+    const j = idx.get(pairs[p][1])!;
+    const c = times ? times[p] : 1;
+    ra[i] += c;
+    rb[j] += c;
+    if (i === j) continue;
+    const d = weights === 'none' ? 1 : Math.abs(at[i] - at[j]) / range;
+    po += (weights === 'quadratic' ? d * d : d) * c;
+  }
+  let pe: number;
+  if (weights === 'none') {
+    let same = 0;
+    for (let i = 0; i < k; i++) same += ra[i] * rb[i];
+    pe = (n * n - same) / n;
+  } else if (weights === 'quadratic') pe = squaredDiffSum(at, ra, rb) / range ** 2 / n;
+  else {
+    const order = Array.from({ length: k }, (_, i) => i).sort((x, y) => at[x] - at[y]);
+    pe = absDiffSum(order.map((i) => at[i]), order.map((i) => ra[i]), order.map((i) => rb[i])) / range / n;
+  }
+  if (pe === 0) return null;
+  return 1 - po / pe;
 }
 
 /** The fixed categories for Gwet's coefficients: the codebook's (numbers: the scale's points, in order); null if fewer than 2. */
@@ -321,7 +449,10 @@ export function gwetAC2Linear(pairs: [string, string][], scale: string[] = [], t
   const w = (a: number, b: number) => 1 - Math.abs(a - b) / range;
   const pa = pairs.reduce((s, [a, b], i) => s + (times ? times[i] : 1) * w(Number(a), Number(b)), 0) / n;
   let tw = 0;
-  for (const a of vals) for (const b of vals) tw += w(a, b);
+  if (q > DENSE_LIMIT) {
+    const ones = new Float64Array(q).fill(1);
+    tw = q * q - absDiffSum([...vals].sort((x, y) => x - y), ones, ones) / range;
+  } else for (const a of vals) for (const b of vals) tw += w(a, b);
   const counts = valueCounts(pairs, times);
   const sum = spread(pi ?? cats.map((c) => (counts.get(c) ?? 0) / (2 * n)));
   const pe = (tw / (q * (q - 1))) * sum;
@@ -548,8 +679,8 @@ export function agreement(
   // scores (`scaleSeen`) the range of the model's answers grown through the labels near it (answers within −10…10
   // only). Codebook values that are all numbers are a scale at every level, so at the nominal level too a combined
   // label between two of them (a 1.5 median) is compared, as a disagreement. With codebook categories that aren't
-  // numbers, a label that is neither a category nor a tie of categories ("a | b") is left out. Those left out are
-  // reported. Mostly words (e.g. "2 (moderate)"): compared as categories instead. A missing-value marker such as
+  // numbers, a label that is neither a category nor a tie of categories ("a | b") is left out, however many there are.
+  // Those left out are reported. On a scale, mostly words (e.g. "2 (moderate)"): compared as categories instead. A missing-value marker such as
   // "NA" or "N/A" that isn't itself a category is always left out (and reported), even where most labels are such
   // markers.
   const leftOut: Agreement['leftOut'] = { n: 0, values: [] };
@@ -566,7 +697,8 @@ export function agreement(
   const tiedPairs = pairs.filter(([x, y]) => tied(x) || tied(y));
   if (tiedPairs.length) pairs = pairs.filter(([x, y]) => !tied(x) && !tied(y));
   let outsideAnswers: Agreement['outsideAnswers'];
-  const numericCodebook = !scaleSeen && allowed.length > 0 && allowed.every(isNum);
+  // (Numbers that are the same number, "01" and "1", are categories compared as written: no scale.)
+  const numericCodebook = !scaleSeen && allowed.length > 0 && allowed.every(isNum) && new Set(allowed.map(Number)).size === allowed.length;
   const allowedNums = allowed.filter(isNum).map(Number);
   // Plain-text scores: the range of the model's answers, and the scale grown from it. Numbers beyond −10…10
   // (percentages, years, counts) are no rating scale: no label is left out for its distance from them.
@@ -618,10 +750,10 @@ export function agreement(
     const labelled = pairs.filter(([x, y]) => !missing(x) && !missing(y));
     const kept = labelled.filter(([x, y]) => onScale(x) && onScale(y));
     // On a scale, a number off it is always left out (also where most labels are, e.g. a column of 99 codes); only
-    // mostly words are compared as they are. Categories: mostly labels that aren't categories.
-    compareAsWords = onNumbers
-      ? labelled.filter(([x, y]) => !isNum(x) || !isNum(y)).length * 2 > labelled.length
-      : !(kept.length && kept.length >= labelled.length / 2);
+    // mostly words are compared as they are.
+    // Declared categories (a codebook): a label that is none of them is always left out and reported, however many
+    // there are (Jens, 2026-11-25), so the figures rest only on labels the codebook allows.
+    compareAsWords = onNumbers ? labelled.filter(([x, y]) => !isNum(x) || !isNum(y)).length * 2 > labelled.length : false;
     const use = compareAsWords ? labelled : kept;
     if (use.length < pairs.length) {
       leftOut.n = pairs.length - use.length;
@@ -644,8 +776,12 @@ export function agreement(
   const categories = sortCats([...new Set([...allowed, ...pairs.flat()])]);
   // (Without a prototype, so a label such as "__proto__" or "constructor" is a row and a column like any other.)
   const confusion: Record<string, Record<string, number>> = Object.create(null);
-  for (const c of categories) confusion[c] = Object.assign(Object.create(null), Object.fromEntries(categories.map((d) => [d, 0])));
-  for (const [x, y] of pairs) confusion[x][y]++;
+  // (With many distinct values, only the cells that occur: a full table grows with the square of their number.)
+  if (categories.length <= DENSE_LIMIT) for (const c of categories) confusion[c] = Object.assign(Object.create(null), Object.fromEntries(categories.map((d) => [d, 0])));
+  for (const [x, y] of pairs) {
+    const row = confusion[x] ?? (confusion[x] = Object.create(null) as Record<string, number>);
+    row[y] = (row[y] ?? 0) + 1;
+  }
   // Plain-text runs (`scaleSeen`): the scale is every whole number of the grown scale above, so a value never used
   // still counts in the weights and in Gwet's q, and a value between whole numbers (a 1.5 median, or a 2.5 answer
   // that made the field interval) is split between them, as on a codebook scale. Without a range, the range of the
@@ -749,7 +885,7 @@ export type Aggregation = 'majority' | 'median' | 'mean';
  * as the same label (`normalizeLabel`: "Essay" and "essay", "very  positive" and "very positive") as one, under the
  * spelling given most often (the first of them when tied), so annotations that differ only in case are no tie.
  */
-export function aggregate(values: string[], method: Aggregation): string {
+export function aggregate(values: string[], method: Aggregation, readAs: (label: string) => string = normalizeLabel): string {
   const v = values.filter((x) => x.trim() !== '');
   if (!v.length) return '';
   // Numbers (a leading − or – read as a minus): an abstention among them is set aside, so "2, 4, INSUFFICIENT_KNOWLEDGE"
@@ -761,12 +897,13 @@ export function aggregate(values: string[], method: Aggregation): string {
     const xs = given.map(toNumber).sort((a, b) => a - b);
     const mid = Math.floor(xs.length / 2);
     const value = method === 'mean' ? xs.reduce((s, x) => s + x, 0) / xs.length : xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2;
-    return String(Math.round(value * 1000) / 1000);
+    // Full precision (two answers of 0.0004 combine to 0.0004), apart from the noise of binary fractions (0.1 + 0.2).
+    return String(Number(value.toPrecision(12)));
   }
   // (Per label as read: how often each spelling of it was given, in the order first given.)
   const labels = new Map<string, { n: number; forms: Map<string, number> }>();
   for (const x of v) {
-    const k = normalizeLabel(x);
+    const k = readAs(x);
     const g = labels.get(k) ?? labels.set(k, { n: 0, forms: new Map() }).get(k)!;
     g.n++;
     g.forms.set(x, (g.forms.get(x) ?? 0) + 1);
